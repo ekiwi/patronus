@@ -3,6 +3,7 @@
 // author: Kevin Laeufer <laeufer@berkeley.edu>
 
 pub mod btor2;
+pub mod ir;
 
 pub fn add(left: usize, right: usize) -> usize {
     left + right
