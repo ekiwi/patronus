@@ -8,23 +8,30 @@ pub type WidthInt = u32;
 /// This restricts the maximum value that a bit-vector literal can carry.
 pub type BVLiteralInt = u64;
 
+/// Add and get items in a context
+pub trait ContextAccess<D, I>
+where
+    I: Clone + Copy,
+{
+    /// Add a new value to the context obtaining a reference
+    fn add(&mut self, val: D) -> I;
+    /// Lookup the value by the reference obtained from a call to add
+    fn get(&self, reference: I) -> &D;
+}
+
 /// IR Nodes are only valid with their context
-pub trait Context {
+pub trait Context: ContextAccess<String, StringRef> + ContextAccess<BVExpr, BVExprRef> {
     // helper functions to construct expressions
     fn bv_literal(&mut self, value: BVLiteralInt, width: WidthInt) -> BVExprRef {
-        self.add_bv_expr(BVExpr::Literal {value, width})
+        self.add(BVExpr::Literal { value, width })
     }
     fn bv_symbol(&mut self, name: &str, width: WidthInt) -> BVExprRef {
-        let name_ref = self.add_string(name.to_string());
-        self.add_bv_expr(BVExpr::Symbol {name: name_ref, width })
+        let name_ref = self.add(name.to_string());
+        self.add(BVExpr::Symbol {
+            name: name_ref,
+            width,
+        })
     }
-
-    // basic functions that need to be implemented by every context
-    fn add_string(&mut self, value: String) -> StringRef;
-    fn get_string(&self, reference: StringRef) -> String;
-    fn add_bv_expr(&mut self, value: BVExpr) -> BVExprRef;
-    fn get_bv_expr(&self, reference: BVExprRef) -> BVExpr;
-
 }
 
 #[derive(Default)]
@@ -34,53 +41,71 @@ struct BasicContext {
     bv_exprs: Vec<BVExpr>,
 }
 
-impl Context for BasicContext {
-    fn add_string(&mut self, value: String) -> StringRef {
+impl ContextAccess<String, StringRef> for BasicContext {
+    fn add(&mut self, value: String) -> StringRef {
         let index = self.strings.len();
         self.strings.push(value);
         StringRef(index as u16)
     }
 
-    fn get_string(&self, reference: StringRef) -> String {
-        self.strings[reference.0 as usize].clone()
+    fn get(&self, reference: StringRef) -> &String {
+        &self.strings[reference.0 as usize]
     }
+}
 
-    fn add_bv_expr(&mut self, value: BVExpr) -> BVExprRef {
+impl ContextAccess<BVExpr, BVExprRef> for BasicContext {
+    fn add(&mut self, value: BVExpr) -> BVExprRef {
         let index = self.bv_exprs.len();
         self.bv_exprs.push(value);
         BVExprRef(index as u32)
     }
 
-    fn get_bv_expr(&self, reference: BVExprRef) -> BVExpr {
-        self.bv_exprs[reference.0 as usize].clone()
+    fn get(&self, reference: BVExprRef) -> &BVExpr {
+        &self.bv_exprs[reference.0 as usize]
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub struct StringRef(u16);
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub struct BVExprRef(u32);
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub struct ArrayExprRef(u32);
+impl Context for BasicContext {}
 
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub struct StringRef(u16);
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub struct BVExprRef(u32);
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub struct ArrayExprRef(u32);
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum STMExpr {
-    BitVec(BVExpr)
+    BitVec(BVExpr),
 }
-
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 /// Represents a SMT bit-vector expression.
 pub enum BVExpr {
     // nullary
-    Symbol{ name : StringRef, width: WidthInt},
+    Symbol {
+        name: StringRef,
+        width: WidthInt,
+    },
     // TODO: support literals that do not fit into 64-bit
-    Literal { value: BVLiteralInt, width: WidthInt},
+    Literal {
+        value: BVLiteralInt,
+        width: WidthInt,
+    },
     // unary operations
-    ZeroExt { e: BVExprRef, by: WidthInt },
-    SignExt { e: BVExprRef, by: WidthInt },
-    Slice { e: BVExprRef, hi: WidthInt, lo: WidthInt },
+    ZeroExt {
+        e: BVExprRef,
+        by: WidthInt,
+    },
+    SignExt {
+        e: BVExprRef,
+        by: WidthInt,
+    },
+    Slice {
+        e: BVExprRef,
+        hi: WidthInt,
+        lo: WidthInt,
+    },
     Not(BVExprRef),
     Negate(BVExprRef),
     ReduceOr(BVExprRef),
@@ -108,31 +133,58 @@ pub enum BVExpr {
     UnsignedRem(BVExprRef, BVExprRef),
     Sub(BVExprRef, BVExprRef),
     //
-    ArrayRead { array: ArrayExprRef, index: BVExprRef },
+    ArrayRead {
+        array: ArrayExprRef,
+        index: BVExprRef,
+    },
     // ternary op
-    Ite { cond: BVExprRef, tru: BVExprRef, fals: BVExprRef},
+    Ite {
+        cond: BVExprRef,
+        tru: BVExprRef,
+        fals: BVExprRef,
+    },
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 /// Represents a SMT array expression.
 pub enum ArrayExpr {
     // nullary
-    Symbol{ name : StringRef, index_width: WidthInt, data_width: WidthInt },
+    Symbol {
+        name: StringRef,
+        index_width: WidthInt,
+        data_width: WidthInt,
+    },
     // unary
-    Constant { e: BVExprRef, index_width: WidthInt },
+    Constant {
+        e: BVExprRef,
+        index_width: WidthInt,
+    },
     // binary
     Equal(ArrayExprRef, ArrayExprRef),
     // ternary
-    Store{ array: ArrayExprRef, index: BVExprRef, data: BVExprRef },
-    Ite { cond: BVExprRef, tru: ArrayExprRef, fals: ArrayExprRef },
+    Store {
+        array: ArrayExprRef,
+        index: BVExprRef,
+        data: BVExprRef,
+    },
+    Ite {
+        cond: BVExprRef,
+        tru: ArrayExprRef,
+        fals: ArrayExprRef,
+    },
 }
 
 /// Serialize Expression to custom format
-fn serialize_bv_expr<C: Context>(ctx: &C, expr: BVExpr) -> String {
-    match expr {
-        BVExpr::Symbol { name, .. } => ctx.get_string(name),
-        BVExpr::Literal { value, width } =>
-            if width <= 8 { format!("{width}'b{value:b}") } else { format!("{width}'x{value:x}") },
+fn serialize_bv_expr<C: Context>(ctx: &C, expr: &BVExpr) -> String {
+    match *expr {
+        BVExpr::Symbol { name, .. } => ctx.get(name).clone(),
+        BVExpr::Literal { value, width } => {
+            if width <= 8 {
+                format!("{width}'b{value:b}")
+            } else {
+                format!("{width}'x{value:x}")
+            }
+        }
         BVExpr::ZeroExt { .. } => format!(""),
         BVExpr::SignExt { .. } => format!(""),
         BVExpr::Slice { .. } => format!(""),
@@ -166,9 +218,8 @@ fn serialize_bv_expr<C: Context>(ctx: &C, expr: BVExpr) -> String {
 }
 
 fn serialize_bv_expr_ref<C: Context>(ctx: &C, reference: BVExprRef) -> String {
-    serialize_bv_expr(ctx, ctx.get_bv_expr(reference))
+    serialize_bv_expr(ctx, ctx.get(reference))
 }
-
 
 #[cfg(test)]
 mod tests {

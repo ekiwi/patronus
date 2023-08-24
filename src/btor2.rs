@@ -7,12 +7,9 @@ use pest::Parser;
 #[grammar = "btor2.pest"]
 struct Btor2Parser;
 
-
 pub fn parse(input: &str) {
     Btor2Parser::parse(Rule::btor2File, input).unwrap();
 }
-
-
 
 #[cfg(test)]
 mod tests {
