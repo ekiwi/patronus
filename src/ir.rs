@@ -2,6 +2,8 @@
 // released under BSD 3-Clause License
 // author: Kevin Laeufer <laeufer@berkeley.edu>
 
+use std::io::Write;
+
 /// This type restricts the maximum width that a bit-vector type is allowed to have in our IR.
 pub type WidthInt = u32;
 
@@ -174,51 +176,70 @@ pub enum ArrayExpr {
     },
 }
 
-/// Serialize Expression to custom format
-fn serialize_bv_expr<C: Context>(ctx: &C, expr: &BVExpr) -> String {
-    match *expr {
-        BVExpr::Symbol { name, .. } => ctx.get(name).clone(),
-        BVExpr::Literal { value, width } => {
-            if width <= 8 {
-                format!("{width}'b{value:b}")
-            } else {
-                format!("{width}'x{value:x}")
-            }
-        }
-        BVExpr::ZeroExt { .. } => format!(""),
-        BVExpr::SignExt { .. } => format!(""),
-        BVExpr::Slice { .. } => format!(""),
-        BVExpr::Not(_) => format!(""),
-        BVExpr::Negate(_) => format!(""),
-        BVExpr::ReduceOr(_) => format!(""),
-        BVExpr::ReduceAnd(_) => format!(""),
-        BVExpr::ReduceXor(_) => format!(""),
-        BVExpr::Equal(_, _) => format!(""),
-        BVExpr::Implies(_, _) => format!(""),
-        BVExpr::Greater(_, _) => format!(""),
-        BVExpr::GreaterEqual(_, _) => format!(""),
-        BVExpr::Concat(_, _) => format!(""),
-        BVExpr::And(_, _) => format!(""),
-        BVExpr::Or(_, _) => format!(""),
-        BVExpr::Xor(_, _) => format!(""),
-        BVExpr::ShiftLeft(_, _) => format!(""),
-        BVExpr::ArithmeticShiftRight(_, _) => format!(""),
-        BVExpr::ShiftRight(_, _) => format!(""),
-        BVExpr::Add(_, _) => format!(""),
-        BVExpr::Mul(_, _) => format!(""),
-        BVExpr::SignedDiv(_, _) => format!(""),
-        BVExpr::UnsignedDiv(_, _) => format!(""),
-        BVExpr::SignedMod(_, _) => format!(""),
-        BVExpr::SignedRem(_, _) => format!(""),
-        BVExpr::UnsignedRem(_, _) => format!(""),
-        BVExpr::Sub(_, _) => format!(""),
-        BVExpr::ArrayRead { .. } => format!(""),
-        BVExpr::Ite { .. } => format!(""),
+trait SerializeIrNode<N> {
+    fn serialize(&self, node: &N, writer: &mut impl (std::io::Write)) -> std::io::Result<()>;
+    fn serialize_to_str(&self, node: &N) -> String {
+        let mut buf = Vec::new();
+        self.serialize(node, &mut buf)
+            .expect("Failed to write to string!");
+        String::from_utf8(buf).expect("Failed to read string we wrote!")
     }
 }
 
-fn serialize_bv_expr_ref<C: Context>(ctx: &C, reference: BVExprRef) -> String {
-    serialize_bv_expr(ctx, ctx.get(reference))
+impl<C> SerializeIrNode<BVExpr> for C
+where
+    C: Context,
+{
+    fn serialize(&self, node: &BVExpr, writer: &mut impl (std::io::Write)) -> std::io::Result<()> {
+        match *node {
+            BVExpr::Symbol { name, .. } => write!(writer, "{}", self.get(name)),
+            BVExpr::Literal { value, width } => {
+                if width <= 8 {
+                    write!(writer, "{width}'b{value:b}")
+                } else {
+                    write!(writer, "{width}'x{value:x}")
+                }
+            }
+            BVExpr::ZeroExt { .. } => write!(writer, "TODO"),
+            BVExpr::SignExt { .. } => write!(writer, "TODO"),
+            BVExpr::Slice { .. } => write!(writer, "TODO"),
+            BVExpr::Not(_) => write!(writer, "TODO"),
+            BVExpr::Negate(_) => write!(writer, "TODO"),
+            BVExpr::ReduceOr(_) => write!(writer, "TODO"),
+            BVExpr::ReduceAnd(_) => write!(writer, "TODO"),
+            BVExpr::ReduceXor(_) => write!(writer, "TODO"),
+            BVExpr::Equal(_, _) => write!(writer, "TODO"),
+            BVExpr::Implies(_, _) => write!(writer, "TODO"),
+            BVExpr::Greater(_, _) => write!(writer, "TODO"),
+            BVExpr::GreaterEqual(_, _) => write!(writer, "TODO"),
+            BVExpr::Concat(_, _) => write!(writer, "TODO"),
+            BVExpr::And(_, _) => write!(writer, "TODO"),
+            BVExpr::Or(_, _) => write!(writer, "TODO"),
+            BVExpr::Xor(_, _) => write!(writer, "TODO"),
+            BVExpr::ShiftLeft(_, _) => write!(writer, "TODO"),
+            BVExpr::ArithmeticShiftRight(_, _) => write!(writer, "TODO"),
+            BVExpr::ShiftRight(_, _) => write!(writer, "TODO"),
+            BVExpr::Add(_, _) => write!(writer, "TODO"),
+            BVExpr::Mul(_, _) => write!(writer, "TODO"),
+            BVExpr::SignedDiv(_, _) => write!(writer, "TODO"),
+            BVExpr::UnsignedDiv(_, _) => write!(writer, "TODO"),
+            BVExpr::SignedMod(_, _) => write!(writer, "TODO"),
+            BVExpr::SignedRem(_, _) => write!(writer, "TODO"),
+            BVExpr::UnsignedRem(_, _) => write!(writer, "TODO"),
+            BVExpr::Sub(_, _) => write!(writer, "TODO"),
+            BVExpr::ArrayRead { .. } => write!(writer, "TODO"),
+            BVExpr::Ite { .. } => write!(writer, "TODO"),
+        }
+    }
+}
+
+impl<C> SerializeIrNode<BVExprRef> for C
+where
+    C: Context + SerializeIrNode<BVExpr>,
+{
+    fn serialize(&self, node: &BVExprRef, writer: &mut impl Write) -> std::io::Result<()> {
+        self.serialize(self.get(*node), writer)
+    }
 }
 
 #[cfg(test)]
@@ -240,6 +261,6 @@ mod tests {
     fn simple_serialization() {
         let mut ctx = BasicContext::default();
         let test_expr = ctx.bv_symbol("test", 3);
-        assert_eq!("test", serialize_bv_expr_ref(&ctx, test_expr));
+        assert_eq!("test", ctx.serialize_to_str(&test_expr));
     }
 }
