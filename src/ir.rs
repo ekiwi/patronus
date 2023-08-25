@@ -2,8 +2,6 @@
 // released under BSD 3-Clause License
 // author: Kevin Laeufer <laeufer@berkeley.edu>
 
-use std::io::Write;
-
 /// This type restricts the maximum width that a bit-vector type is allowed to have in our IR.
 pub type WidthInt = u32;
 
@@ -176,23 +174,28 @@ pub enum ArrayExpr {
     },
 }
 
-trait SerializeIrNode<N> {
-    fn serialize(&self, node: &N, writer: &mut impl (std::io::Write)) -> std::io::Result<()>;
-    fn serialize_to_str(&self, node: &N) -> String {
+trait SerializableIrNode {
+    fn serialize<C: Context>(
+        &self,
+        ctx: &C,
+        writer: &mut impl (std::io::Write),
+    ) -> std::io::Result<()>;
+    fn serialize_to_str<C: Context>(&self, ctx: &C) -> String {
         let mut buf = Vec::new();
-        self.serialize(node, &mut buf)
+        self.serialize(ctx, &mut buf)
             .expect("Failed to write to string!");
         String::from_utf8(buf).expect("Failed to read string we wrote!")
     }
 }
 
-impl<C> SerializeIrNode<BVExpr> for C
-where
-    C: Context,
-{
-    fn serialize(&self, node: &BVExpr, writer: &mut impl (std::io::Write)) -> std::io::Result<()> {
-        match *node {
-            BVExpr::Symbol { name, .. } => write!(writer, "{}", self.get(name)),
+impl SerializableIrNode for BVExpr {
+    fn serialize<C: Context>(
+        &self,
+        ctx: &C,
+        writer: &mut impl (std::io::Write),
+    ) -> std::io::Result<()> {
+        match *self {
+            BVExpr::Symbol { name, .. } => write!(writer, "{}", ctx.get(name)),
             BVExpr::Literal { value, width } => {
                 if width <= 8 {
                     write!(writer, "{width}'b{value:b}")
@@ -233,12 +236,13 @@ where
     }
 }
 
-impl<C> SerializeIrNode<BVExprRef> for C
-where
-    C: Context + SerializeIrNode<BVExpr>,
-{
-    fn serialize(&self, node: &BVExprRef, writer: &mut impl Write) -> std::io::Result<()> {
-        self.serialize(self.get(*node), writer)
+impl SerializableIrNode for BVExprRef {
+    fn serialize<C: Context>(
+        &self,
+        ctx: &C,
+        writer: &mut impl (std::io::Write),
+    ) -> std::io::Result<()> {
+        ctx.get(*self).serialize(ctx, writer)
     }
 }
 
@@ -261,6 +265,6 @@ mod tests {
     fn simple_serialization() {
         let mut ctx = BasicContext::default();
         let test_expr = ctx.bv_symbol("test", 3);
-        assert_eq!("test", ctx.serialize_to_str(&test_expr));
+        assert_eq!("test", test_expr.serialize_to_str(&ctx));
     }
 }
