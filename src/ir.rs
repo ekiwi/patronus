@@ -115,7 +115,9 @@ pub enum BVExpr {
     Equal(BVExprRef, BVExprRef),
     Implies(BVExprRef, BVExprRef),
     Greater(BVExprRef, BVExprRef),
+    GreaterSigned(BVExprRef, BVExprRef),
     GreaterEqual(BVExprRef, BVExprRef),
+    GreaterEqualSigned(BVExprRef, BVExprRef),
     Concat(BVExprRef, BVExprRef),
     // binary arithmetic
     And(BVExprRef, BVExprRef),
@@ -203,35 +205,206 @@ impl SerializableIrNode for BVExpr {
                     write!(writer, "{width}'x{value:x}")
                 }
             }
-            BVExpr::ZeroExt { .. } => write!(writer, "TODO"),
-            BVExpr::SignExt { .. } => write!(writer, "TODO"),
-            BVExpr::Slice { .. } => write!(writer, "TODO"),
-            BVExpr::Not(_) => write!(writer, "TODO"),
-            BVExpr::Negate(_) => write!(writer, "TODO"),
-            BVExpr::ReduceOr(_) => write!(writer, "TODO"),
-            BVExpr::ReduceAnd(_) => write!(writer, "TODO"),
-            BVExpr::ReduceXor(_) => write!(writer, "TODO"),
-            BVExpr::Equal(_, _) => write!(writer, "TODO"),
-            BVExpr::Implies(_, _) => write!(writer, "TODO"),
-            BVExpr::Greater(_, _) => write!(writer, "TODO"),
-            BVExpr::GreaterEqual(_, _) => write!(writer, "TODO"),
-            BVExpr::Concat(_, _) => write!(writer, "TODO"),
-            BVExpr::And(_, _) => write!(writer, "TODO"),
-            BVExpr::Or(_, _) => write!(writer, "TODO"),
-            BVExpr::Xor(_, _) => write!(writer, "TODO"),
-            BVExpr::ShiftLeft(_, _) => write!(writer, "TODO"),
-            BVExpr::ArithmeticShiftRight(_, _) => write!(writer, "TODO"),
-            BVExpr::ShiftRight(_, _) => write!(writer, "TODO"),
-            BVExpr::Add(_, _) => write!(writer, "TODO"),
-            BVExpr::Mul(_, _) => write!(writer, "TODO"),
-            BVExpr::SignedDiv(_, _) => write!(writer, "TODO"),
-            BVExpr::UnsignedDiv(_, _) => write!(writer, "TODO"),
-            BVExpr::SignedMod(_, _) => write!(writer, "TODO"),
-            BVExpr::SignedRem(_, _) => write!(writer, "TODO"),
-            BVExpr::UnsignedRem(_, _) => write!(writer, "TODO"),
-            BVExpr::Sub(_, _) => write!(writer, "TODO"),
-            BVExpr::ArrayRead { .. } => write!(writer, "TODO"),
-            BVExpr::Ite { .. } => write!(writer, "TODO"),
+            BVExpr::ZeroExt { e, by } => {
+                write!(writer, "zext(")?;
+                e.serialize(ctx, writer)?;
+                write!(writer, ", {by})")
+            }
+            BVExpr::SignExt { e, by } => {
+                write!(writer, "sext(")?;
+                e.serialize(ctx, writer)?;
+                write!(writer, ", {by})")
+            }
+            BVExpr::Slice { e, hi, lo } => {
+                e.serialize(ctx, writer)?;
+                if hi == lo {
+                    write!(writer, "[{hi}]")
+                } else {
+                    write!(writer, "[{hi}:{lo}]")
+                }
+            }
+            BVExpr::Not(e) => {
+                write!(writer, "not(")?;
+                e.serialize(ctx, writer)?;
+                write!(writer, ")")
+            }
+            BVExpr::Negate(e) => {
+                write!(writer, "neg(")?;
+                e.serialize(ctx, writer)?;
+                write!(writer, ")")
+            }
+            BVExpr::ReduceOr(e) => {
+                write!(writer, "redor(")?;
+                e.serialize(ctx, writer)?;
+                write!(writer, ")")
+            }
+            BVExpr::ReduceAnd(e) => {
+                write!(writer, "redand(")?;
+                e.serialize(ctx, writer)?;
+                write!(writer, ")")
+            }
+            BVExpr::ReduceXor(e) => {
+                write!(writer, "redxor(")?;
+                e.serialize(ctx, writer)?;
+                write!(writer, ")")
+            }
+            BVExpr::Equal(a, b) => {
+                write!(writer, "eq(")?;
+                a.serialize(ctx, writer)?;
+                write!(writer, ", ")?;
+                b.serialize(ctx, writer)?;
+                write!(writer, ")")
+            }
+            BVExpr::Implies(a, b) => {
+                write!(writer, "implies(")?;
+                a.serialize(ctx, writer)?;
+                write!(writer, ", ")?;
+                b.serialize(ctx, writer)?;
+                write!(writer, ")")
+            }
+            BVExpr::Greater(a, b) => {
+                write!(writer, "ugt(")?;
+                a.serialize(ctx, writer)?;
+                write!(writer, ", ")?;
+                b.serialize(ctx, writer)?;
+                write!(writer, ")")
+            }
+            BVExpr::GreaterSigned(a, b) => {
+                write!(writer, "sgt(")?;
+                a.serialize(ctx, writer)?;
+                write!(writer, ", ")?;
+                b.serialize(ctx, writer)?;
+                write!(writer, ")")
+            }
+            BVExpr::GreaterEqual(a, b) => {
+                write!(writer, "ugte(")?;
+                a.serialize(ctx, writer)?;
+                write!(writer, ", ")?;
+                b.serialize(ctx, writer)?;
+                write!(writer, ")")
+            }
+            BVExpr::GreaterEqualSigned(a, b) => {
+                write!(writer, "sgte(")?;
+                a.serialize(ctx, writer)?;
+                write!(writer, ", ")?;
+                b.serialize(ctx, writer)?;
+                write!(writer, ")")
+            }
+            BVExpr::Concat(a, b) => {
+                write!(writer, "concat(")?;
+                a.serialize(ctx, writer)?;
+                write!(writer, ", ")?;
+                b.serialize(ctx, writer)?;
+                write!(writer, ")")
+            }
+            BVExpr::And(a, b) => {
+                write!(writer, "and(")?;
+                a.serialize(ctx, writer)?;
+                write!(writer, ", ")?;
+                b.serialize(ctx, writer)?;
+                write!(writer, ")")
+            }
+            BVExpr::Or(a, b) => {
+                write!(writer, "or(")?;
+                a.serialize(ctx, writer)?;
+                write!(writer, ", ")?;
+                b.serialize(ctx, writer)?;
+                write!(writer, ")")
+            }
+            BVExpr::Xor(a, b) => {
+                write!(writer, "xor(")?;
+                a.serialize(ctx, writer)?;
+                write!(writer, ", ")?;
+                b.serialize(ctx, writer)?;
+                write!(writer, ")")
+            }
+            BVExpr::ShiftLeft(a, b) => {
+                write!(writer, "logical_shift_left(")?;
+                a.serialize(ctx, writer)?;
+                write!(writer, ", ")?;
+                b.serialize(ctx, writer)?;
+                write!(writer, ")")
+            }
+            BVExpr::ArithmeticShiftRight(a, b) => {
+                write!(writer, "arithmetic_shift_right(")?;
+                a.serialize(ctx, writer)?;
+                write!(writer, ", ")?;
+                b.serialize(ctx, writer)?;
+                write!(writer, ")")
+            }
+            BVExpr::ShiftRight(a, b) => {
+                write!(writer, "logical_shift_right(")?;
+                a.serialize(ctx, writer)?;
+                write!(writer, ", ")?;
+                b.serialize(ctx, writer)?;
+                write!(writer, ")")
+            }
+            BVExpr::Add(a, b) => {
+                write!(writer, "add(")?;
+                a.serialize(ctx, writer)?;
+                write!(writer, ", ")?;
+                b.serialize(ctx, writer)?;
+                write!(writer, ")")
+            }
+            BVExpr::Mul(a, b) => {
+                write!(writer, "mul(")?;
+                a.serialize(ctx, writer)?;
+                write!(writer, ", ")?;
+                b.serialize(ctx, writer)?;
+                write!(writer, ")")
+            }
+            BVExpr::SignedDiv(a, b) => {
+                write!(writer, "sdiv(")?;
+                a.serialize(ctx, writer)?;
+                write!(writer, ", ")?;
+                b.serialize(ctx, writer)?;
+                write!(writer, ")")
+            }
+            BVExpr::UnsignedDiv(a, b) => {
+                write!(writer, "udiv(")?;
+                a.serialize(ctx, writer)?;
+                write!(writer, ", ")?;
+                b.serialize(ctx, writer)?;
+                write!(writer, ")")
+            }
+            BVExpr::SignedMod(a, b) => {
+                write!(writer, "smod(")?;
+                a.serialize(ctx, writer)?;
+                write!(writer, ", ")?;
+                b.serialize(ctx, writer)?;
+                write!(writer, ")")
+            }
+            BVExpr::SignedRem(a, b) => {
+                write!(writer, "srem(")?;
+                a.serialize(ctx, writer)?;
+                write!(writer, ", ")?;
+                b.serialize(ctx, writer)?;
+                write!(writer, ")")
+            }
+            BVExpr::UnsignedRem(a, b) => {
+                write!(writer, "urem(")?;
+                a.serialize(ctx, writer)?;
+                write!(writer, ", ")?;
+                b.serialize(ctx, writer)?;
+                write!(writer, ")")
+            }
+            BVExpr::Sub(a, b) => {
+                write!(writer, "sub(")?;
+                a.serialize(ctx, writer)?;
+                write!(writer, ", ")?;
+                b.serialize(ctx, writer)?;
+                write!(writer, ")")
+            }
+            BVExpr::ArrayRead { .. } => write!(writer, "TODO: support array"),
+            BVExpr::Ite { cond, tru, fals } => {
+                write!(writer, "ite(")?;
+                cond.serialize(ctx, writer)?;
+                write!(writer, ", ")?;
+                tru.serialize(ctx, writer)?;
+                write!(writer, ", ")?;
+                fals.serialize(ctx, writer)?;
+                write!(writer, ")")
+            }
         }
     }
 }
