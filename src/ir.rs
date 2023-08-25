@@ -8,19 +8,20 @@ pub type WidthInt = u32;
 /// This restricts the maximum value that a bit-vector literal can carry.
 pub type BVLiteralInt = u64;
 
-/// Add and get items in a context
-pub trait ContextAccess<D, I>
-where
-    I: Clone + Copy,
-{
+/// Add an IR node to the context.
+pub trait AddNode<D, I: Clone + Copy> {
     /// Add a new value to the context obtaining a reference
     fn add(&mut self, val: D) -> I;
+}
+
+/// Lookup an IR node from the context
+pub trait GetNode<D: ?Sized, I: Clone + Copy> {
     /// Lookup the value by the reference obtained from a call to add
     fn get(&self, reference: I) -> &D;
 }
 
-/// IR Nodes are only valid with their context
-pub trait Context: ContextAccess<String, StringRef> + ContextAccess<BVExpr, BVExprRef> {
+/// Convenience methods to construct IR nodes.
+pub trait NodeConstruction: AddNode<String, StringRef> + AddNode<BVExpr, BVExprRef> {
     // helper functions to construct expressions
     fn bv_literal(&mut self, value: BVLiteralInt, width: WidthInt) -> BVExprRef {
         self.add(BVExpr::Literal { value, width })
@@ -34,44 +35,61 @@ pub trait Context: ContextAccess<String, StringRef> + ContextAccess<BVExpr, BVEx
     }
 }
 
-#[derive(Default)]
-/// simple implementation of a context
-struct BasicContext {
-    strings: Vec<String>,
-    bv_exprs: Vec<BVExpr>,
+type StringInternerU16 = string_interner::StringInterner<
+    string_interner::DefaultBackend<string_interner::symbol::SymbolU16>,
+>;
+
+/// The actual context implementation.
+struct Context {
+    strings: StringInternerU16,
+    bv_exprs: indexmap::IndexSet<BVExpr>,
 }
 
-impl ContextAccess<String, StringRef> for BasicContext {
+impl Default for Context {
+    fn default() -> Self {
+        Context {
+            strings: StringInternerU16::new(),
+            bv_exprs: indexmap::IndexSet::default(),
+        }
+    }
+}
+
+impl AddNode<String, StringRef> for Context {
     fn add(&mut self, value: String) -> StringRef {
-        let index = self.strings.len();
-        self.strings.push(value);
-        StringRef(index as u16)
-    }
-
-    fn get(&self, reference: StringRef) -> &String {
-        &self.strings[reference.0 as usize]
+        StringRef(self.strings.get_or_intern(value))
     }
 }
 
-impl ContextAccess<BVExpr, BVExprRef> for BasicContext {
+impl GetNode<str, StringRef> for Context {
+    fn get(&self, reference: StringRef) -> &str {
+        self.strings
+            .resolve(reference.0)
+            .expect("Invalid StringRef!")
+    }
+}
+
+impl AddNode<BVExpr, BVExprRef> for Context {
     fn add(&mut self, value: BVExpr) -> BVExprRef {
-        let index = self.bv_exprs.len();
-        self.bv_exprs.push(value);
+        let (index, _) = self.bv_exprs.insert_full(value);
         BVExprRef(index as u32)
     }
+}
 
+impl GetNode<BVExpr, BVExprRef> for Context {
     fn get(&self, reference: BVExprRef) -> &BVExpr {
-        &self.bv_exprs[reference.0 as usize]
+        self.bv_exprs
+            .get_index(reference.0 as usize)
+            .expect("Invalid BVExprRef!")
     }
 }
 
-impl Context for BasicContext {}
+impl NodeConstruction for Context {}
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub struct StringRef(u16);
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
+pub struct StringRef(string_interner::symbol::SymbolU16);
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
 pub struct BVExprRef(u32);
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
 pub struct ArrayExprRef(u32);
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -79,7 +97,7 @@ pub enum STMExpr {
     BitVec(BVExpr),
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
 /// Represents a SMT bit-vector expression.
 pub enum BVExpr {
     // nullary
@@ -176,13 +194,42 @@ pub enum ArrayExpr {
     },
 }
 
+pub enum SignalKind {
+    Node,
+    Output,
+}
+
+pub enum Signal {
+    BV {
+        name: StringRef,
+        kind: SignalKind,
+        expr: BVExprRef,
+    },
+}
+
+pub enum State {
+    BV {
+        name: StringRef,
+        width: WidthInt,
+        init: Option<BVExprRef>,
+        next: Option<BVExprRef>,
+    },
+}
+
+pub enum Input {
+    BV { name: StringRef, width: WidthInt },
+}
+
+pub struct TransitionSystem {
+    name: StringRef,
+    states: Vec<State>,
+    inputs: Vec<Input>,
+    signals: Vec<Signal>,
+}
+
 trait SerializableIrNode {
-    fn serialize<C: Context>(
-        &self,
-        ctx: &C,
-        writer: &mut impl (std::io::Write),
-    ) -> std::io::Result<()>;
-    fn serialize_to_str<C: Context>(&self, ctx: &C) -> String {
+    fn serialize(&self, ctx: &Context, writer: &mut impl (std::io::Write)) -> std::io::Result<()>;
+    fn serialize_to_str(&self, ctx: &Context) -> String {
         let mut buf = Vec::new();
         self.serialize(ctx, &mut buf)
             .expect("Failed to write to string!");
@@ -191,11 +238,7 @@ trait SerializableIrNode {
 }
 
 impl SerializableIrNode for BVExpr {
-    fn serialize<C: Context>(
-        &self,
-        ctx: &C,
-        writer: &mut impl (std::io::Write),
-    ) -> std::io::Result<()> {
+    fn serialize(&self, ctx: &Context, writer: &mut impl (std::io::Write)) -> std::io::Result<()> {
         match *self {
             BVExpr::Symbol { name, .. } => write!(writer, "{}", ctx.get(name)),
             BVExpr::Literal { value, width } => {
@@ -410,11 +453,7 @@ impl SerializableIrNode for BVExpr {
 }
 
 impl SerializableIrNode for BVExprRef {
-    fn serialize<C: Context>(
-        &self,
-        ctx: &C,
-        writer: &mut impl (std::io::Write),
-    ) -> std::io::Result<()> {
+    fn serialize(&self, ctx: &Context, writer: &mut impl (std::io::Write)) -> std::io::Result<()> {
         ctx.get(*self).serialize(ctx, writer)
     }
 }
@@ -436,7 +475,7 @@ mod tests {
 
     #[test]
     fn simple_serialization() {
-        let mut ctx = BasicContext::default();
+        let mut ctx = Context::default();
         let test_expr = ctx.bv_symbol("test", 3);
         assert_eq!("test", test_expr.serialize_to_str(&ctx));
     }

@@ -6,3 +6,5 @@ edition = "2021"
 [dependencies]
 pest = "2.6"
 pest_derive = "2.6"
+string-interner = "0.14.0"
+indexmap = "2.0.0"
