@@ -184,6 +184,191 @@ pub enum Expr {
     },
 }
 
+#[derive(Debug, PartialEq, Eq, Clone, Hash, Copy)]
+pub struct BVType(WidthInt);
+#[derive(Debug, PartialEq, Eq, Clone, Hash, Copy)]
+pub struct ArrayType {
+    index_width: WidthInt,
+    data_width: WidthInt,
+}
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
+pub enum Type {
+    BV(WidthInt),
+    Array(ArrayType),
+}
+
+#[derive(Debug, Clone)]
+pub struct TypeCheckError {
+    msg: String,
+}
+
+impl Type {
+    fn expect_bv(&self, msg: &str) -> std::result::Result<WidthInt, TypeCheckError> {
+        match self {
+            Type::BV(width) => Ok(width.clone()),
+            Type::Array(_) => Err(TypeCheckError {
+                msg: msg.to_owned(),
+            }),
+        }
+    }
+    fn expect_array(&self, msg: &str) -> std::result::Result<ArrayType, TypeCheckError> {
+        match self {
+            Type::BV(_) => Err(TypeCheckError {
+                msg: msg.to_owned(),
+            }),
+            Type::Array(tpe) => Ok(tpe.clone()),
+        }
+    }
+}
+
+trait TypeCheck {
+    fn type_check(
+        &self,
+        ctx: &impl GetNode<Expr, ExprRef>,
+    ) -> std::result::Result<Type, TypeCheckError>;
+}
+
+impl TypeCheck for Expr {
+    fn type_check(
+        &self,
+        ctx: &impl GetNode<Expr, ExprRef>,
+    ) -> std::result::Result<Type, TypeCheckError> {
+        match *self {
+            Expr::BVSymbol { name, width } => Ok(Type::BV(width)),
+            Expr::BVLiteral { value, width } => Ok(Type::BV(width)),
+            Expr::BVZeroExt { e, by } => Ok(Type::BV(
+                e.type_check(ctx)?
+                    .expect_bv("Zero extend only works on a bit-vector.")?
+                    + by,
+            )),
+            Expr::BVSignExt { e, by } => Ok(Type::BV(
+                e.type_check(ctx)?
+                    .expect_bv("Sign extend only works on a bit-vector.")?
+                    + by,
+            )),
+            Expr::BVSlice { e, hi, lo } => {
+                let e_width = e
+                    .type_check(ctx)?
+                    .expect_bv("Slicing only works on a bit-vector.")?;
+                if hi >= e_width {
+                    Err(TypeCheckError{msg: format!("Bit-slice upper index must be smaller than the width {e_width}. Not: {hi}")})
+                } else if hi < lo {
+                    Err(TypeCheckError{msg: format!("Bit-slice upper index must be larger or the same as the lower index. But {hi} < {lo}")})
+                } else {
+                    Ok(Type::BV(hi - lo + 1))
+                }
+            }
+            Expr::BVNot(_) => Err(TypeCheckError {
+                msg: format!("TODO"),
+            }),
+            Expr::BVNegate(_) => Err(TypeCheckError {
+                msg: format!("TODO"),
+            }),
+            Expr::BVReduceOr(_) => Err(TypeCheckError {
+                msg: format!("TODO"),
+            }),
+            Expr::BVReduceAnd(_) => Err(TypeCheckError {
+                msg: format!("TODO"),
+            }),
+            Expr::BVReduceXor(_) => Err(TypeCheckError {
+                msg: format!("TODO"),
+            }),
+            Expr::BVEqual(_, _) => Err(TypeCheckError {
+                msg: format!("TODO"),
+            }),
+            Expr::BVImplies(_, _) => Err(TypeCheckError {
+                msg: format!("TODO"),
+            }),
+            Expr::BVGreater(_, _) => Err(TypeCheckError {
+                msg: format!("TODO"),
+            }),
+            Expr::BVGreaterSigned(_, _) => Err(TypeCheckError {
+                msg: format!("TODO"),
+            }),
+            Expr::BVGreaterEqual(_, _) => Err(TypeCheckError {
+                msg: format!("TODO"),
+            }),
+            Expr::BVGreaterEqualSigned(_, _) => Err(TypeCheckError {
+                msg: format!("TODO"),
+            }),
+            Expr::BVConcat(_, _) => Err(TypeCheckError {
+                msg: format!("TODO"),
+            }),
+            Expr::BVAnd(_, _) => Err(TypeCheckError {
+                msg: format!("TODO"),
+            }),
+            Expr::BVOr(_, _) => Err(TypeCheckError {
+                msg: format!("TODO"),
+            }),
+            Expr::BVXor(_, _) => Err(TypeCheckError {
+                msg: format!("TODO"),
+            }),
+            Expr::BVShiftLeft(_, _) => Err(TypeCheckError {
+                msg: format!("TODO"),
+            }),
+            Expr::BVArithmeticShiftRight(_, _) => Err(TypeCheckError {
+                msg: format!("TODO"),
+            }),
+            Expr::BVShiftRight(_, _) => Err(TypeCheckError {
+                msg: format!("TODO"),
+            }),
+            Expr::BVAdd(_, _) => Err(TypeCheckError {
+                msg: format!("TODO"),
+            }),
+            Expr::BVMul(_, _) => Err(TypeCheckError {
+                msg: format!("TODO"),
+            }),
+            Expr::BVSignedDiv(_, _) => Err(TypeCheckError {
+                msg: format!("TODO"),
+            }),
+            Expr::BVUnsignedDiv(_, _) => Err(TypeCheckError {
+                msg: format!("TODO"),
+            }),
+            Expr::BVSignedMod(_, _) => Err(TypeCheckError {
+                msg: format!("TODO"),
+            }),
+            Expr::BVSignedRem(_, _) => Err(TypeCheckError {
+                msg: format!("TODO"),
+            }),
+            Expr::BVUnsignedRem(_, _) => Err(TypeCheckError {
+                msg: format!("TODO"),
+            }),
+            Expr::BVSub(_, _) => Err(TypeCheckError {
+                msg: format!("TODO"),
+            }),
+            Expr::BVArrayRead { .. } => Err(TypeCheckError {
+                msg: format!("TODO"),
+            }),
+            Expr::BVIte { .. } => Err(TypeCheckError {
+                msg: format!("TODO"),
+            }),
+            Expr::ArraySymbol { .. } => Err(TypeCheckError {
+                msg: format!("TODO"),
+            }),
+            Expr::ArrayConstant { .. } => Err(TypeCheckError {
+                msg: format!("TODO"),
+            }),
+            Expr::ArrayEqual(_, _) => Err(TypeCheckError {
+                msg: format!("TODO"),
+            }),
+            Expr::ArrayStore { .. } => Err(TypeCheckError {
+                msg: format!("TODO"),
+            }),
+            Expr::ArrayIte { .. } => Err(TypeCheckError {
+                msg: format!("TODO"),
+            }),
+        }
+    }
+}
+impl TypeCheck for ExprRef {
+    fn type_check(
+        &self,
+        ctx: &impl GetNode<Expr, ExprRef>,
+    ) -> std::result::Result<Type, TypeCheckError> {
+        ctx.get(*self).type_check(ctx)
+    }
+}
+
 pub enum SignalKind {
     Node,
     Output,
