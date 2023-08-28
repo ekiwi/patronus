@@ -203,25 +203,58 @@ pub struct TypeCheckError {
 }
 
 impl Type {
-    fn expect_bv(&self, msg: &str) -> std::result::Result<WidthInt, TypeCheckError> {
+    fn expect_bv(&self, op: &str) -> std::result::Result<WidthInt, TypeCheckError> {
         match self {
-            Type::BV(width) => Ok(width.clone()),
+            Type::BV(width) => Ok(*width),
             Type::Array(_) => Err(TypeCheckError {
-                msg: msg.to_owned(),
+                msg: format!("{op} only works on bit-vectors, not arrays."),
             }),
         }
     }
-    fn expect_array(&self, msg: &str) -> std::result::Result<ArrayType, TypeCheckError> {
+    fn expect_bv_of(
+        &self,
+        expected_width: WidthInt,
+        op: &str,
+    ) -> std::result::Result<(), TypeCheckError> {
+        match self {
+            Type::BV(width) if *width == expected_width => Ok(()),
+            other => Err(TypeCheckError {
+                msg: format!(
+                    "{op} only works on bit-vectors of size {expected_width}, not {other:?}."
+                ),
+            }),
+        }
+    }
+    fn expect_array(&self, op: &str) -> std::result::Result<ArrayType, TypeCheckError> {
         match self {
             Type::BV(_) => Err(TypeCheckError {
-                msg: msg.to_owned(),
+                msg: format!("{op} only works on arrays, not bit-vectors."),
             }),
-            Type::Array(tpe) => Ok(tpe.clone()),
+            Type::Array(tpe) => Ok(*tpe),
         }
     }
 }
 
-trait TypeCheck {
+fn expect_same_width_bvs(
+    ctx: &impl GetNode<Expr, ExprRef>,
+    op: &str,
+    a: ExprRef,
+    b: ExprRef,
+) -> std::result::Result<Type, TypeCheckError> {
+    let a_width = a.type_check(ctx)?.expect_bv(op)?;
+    let b_width = b.type_check(ctx)?.expect_bv(op)?;
+    if a_width == b_width {
+        Ok(Type::BV(a_width))
+    } else {
+        Err(TypeCheckError {
+            msg: format!(
+                "{op} requires two bit-vectors of the same width, not {a_width} and {b_width}"
+            ),
+        })
+    }
+}
+
+pub trait TypeCheck {
     fn type_check(
         &self,
         ctx: &impl GetNode<Expr, ExprRef>,
@@ -236,20 +269,14 @@ impl TypeCheck for Expr {
         match *self {
             Expr::BVSymbol { name, width } => Ok(Type::BV(width)),
             Expr::BVLiteral { value, width } => Ok(Type::BV(width)),
-            Expr::BVZeroExt { e, by } => Ok(Type::BV(
-                e.type_check(ctx)?
-                    .expect_bv("Zero extend only works on a bit-vector.")?
-                    + by,
-            )),
-            Expr::BVSignExt { e, by } => Ok(Type::BV(
-                e.type_check(ctx)?
-                    .expect_bv("Sign extend only works on a bit-vector.")?
-                    + by,
-            )),
+            Expr::BVZeroExt { e, by } => {
+                Ok(Type::BV(e.type_check(ctx)?.expect_bv("zero extend")? + by))
+            }
+            Expr::BVSignExt { e, by } => {
+                Ok(Type::BV(e.type_check(ctx)?.expect_bv("sign extend")? + by))
+            }
             Expr::BVSlice { e, hi, lo } => {
-                let e_width = e
-                    .type_check(ctx)?
-                    .expect_bv("Slicing only works on a bit-vector.")?;
+                let e_width = e.type_check(ctx)?.expect_bv("slicing")?;
                 if hi >= e_width {
                     Err(TypeCheckError{msg: format!("Bit-slice upper index must be smaller than the width {e_width}. Not: {hi}")})
                 } else if hi < lo {
@@ -258,97 +285,86 @@ impl TypeCheck for Expr {
                     Ok(Type::BV(hi - lo + 1))
                 }
             }
-            Expr::BVNot(_) => Err(TypeCheckError {
-                msg: format!("TODO"),
-            }),
-            Expr::BVNegate(_) => Err(TypeCheckError {
-                msg: format!("TODO"),
-            }),
-            Expr::BVReduceOr(_) => Err(TypeCheckError {
-                msg: format!("TODO"),
-            }),
-            Expr::BVReduceAnd(_) => Err(TypeCheckError {
-                msg: format!("TODO"),
-            }),
-            Expr::BVReduceXor(_) => Err(TypeCheckError {
-                msg: format!("TODO"),
-            }),
-            Expr::BVEqual(_, _) => Err(TypeCheckError {
-                msg: format!("TODO"),
-            }),
-            Expr::BVImplies(_, _) => Err(TypeCheckError {
-                msg: format!("TODO"),
-            }),
-            Expr::BVGreater(_, _) => Err(TypeCheckError {
-                msg: format!("TODO"),
-            }),
-            Expr::BVGreaterSigned(_, _) => Err(TypeCheckError {
-                msg: format!("TODO"),
-            }),
-            Expr::BVGreaterEqual(_, _) => Err(TypeCheckError {
-                msg: format!("TODO"),
-            }),
-            Expr::BVGreaterEqualSigned(_, _) => Err(TypeCheckError {
-                msg: format!("TODO"),
-            }),
-            Expr::BVConcat(_, _) => Err(TypeCheckError {
-                msg: format!("TODO"),
-            }),
-            Expr::BVAnd(_, _) => Err(TypeCheckError {
-                msg: format!("TODO"),
-            }),
-            Expr::BVOr(_, _) => Err(TypeCheckError {
-                msg: format!("TODO"),
-            }),
-            Expr::BVXor(_, _) => Err(TypeCheckError {
-                msg: format!("TODO"),
-            }),
-            Expr::BVShiftLeft(_, _) => Err(TypeCheckError {
-                msg: format!("TODO"),
-            }),
-            Expr::BVArithmeticShiftRight(_, _) => Err(TypeCheckError {
-                msg: format!("TODO"),
-            }),
-            Expr::BVShiftRight(_, _) => Err(TypeCheckError {
-                msg: format!("TODO"),
-            }),
-            Expr::BVAdd(_, _) => Err(TypeCheckError {
-                msg: format!("TODO"),
-            }),
-            Expr::BVMul(_, _) => Err(TypeCheckError {
-                msg: format!("TODO"),
-            }),
-            Expr::BVSignedDiv(_, _) => Err(TypeCheckError {
-                msg: format!("TODO"),
-            }),
-            Expr::BVUnsignedDiv(_, _) => Err(TypeCheckError {
-                msg: format!("TODO"),
-            }),
-            Expr::BVSignedMod(_, _) => Err(TypeCheckError {
-                msg: format!("TODO"),
-            }),
-            Expr::BVSignedRem(_, _) => Err(TypeCheckError {
-                msg: format!("TODO"),
-            }),
-            Expr::BVUnsignedRem(_, _) => Err(TypeCheckError {
-                msg: format!("TODO"),
-            }),
-            Expr::BVSub(_, _) => Err(TypeCheckError {
-                msg: format!("TODO"),
-            }),
-            Expr::BVArrayRead { .. } => Err(TypeCheckError {
-                msg: format!("TODO"),
-            }),
-            Expr::BVIte { .. } => Err(TypeCheckError {
-                msg: format!("TODO"),
-            }),
-            Expr::ArraySymbol { .. } => Err(TypeCheckError {
-                msg: format!("TODO"),
-            }),
-            Expr::ArrayConstant { .. } => Err(TypeCheckError {
-                msg: format!("TODO"),
-            }),
-            Expr::ArrayEqual(_, _) => Err(TypeCheckError {
+            Expr::BVNot(e) => {
+                e.type_check(ctx)?.expect_bv_of(1, "not")?;
+                Ok(Type::BV(1))
+            }
+            Expr::BVNegate(e) => Ok(Type::BV(e.type_check(ctx)?.expect_bv("negation")?)),
+            Expr::BVReduceOr(e) => {
+                e.type_check(ctx)?.expect_bv("or reduction")?;
+                Ok(Type::BV(1))
+            }
+            Expr::BVReduceAnd(e) => {
+                e.type_check(ctx)?.expect_bv("and reduction")?;
+                Ok(Type::BV(1))
+            }
+            Expr::BVReduceXor(e) => {
+                e.type_check(ctx)?.expect_bv("xor reduction")?;
+                Ok(Type::BV(1))
+            }
+            Expr::BVEqual(a, b) => expect_same_width_bvs(ctx, "bit-vector equality", a, b),
+            Expr::BVImplies(a, b) => {
+                a.type_check(ctx)?.expect_bv("implies")?;
+                b.type_check(ctx)?.expect_bv("implies")?;
+                Ok(Type::BV(1))
+            }
+            Expr::BVGreater(a, b) => expect_same_width_bvs(ctx, "greater", a, b),
+            Expr::BVGreaterSigned(a, b) => expect_same_width_bvs(ctx, "greater signed", a, b),
+            Expr::BVGreaterEqual(a, b) => expect_same_width_bvs(ctx, "greater or equals", a, b),
+            Expr::BVGreaterEqualSigned(a, b) => {
+                expect_same_width_bvs(ctx, "greater or equals signed", a, b)
+            }
+            Expr::BVConcat(a, b) => expect_same_width_bvs(ctx, "concatenation", a, b),
+            Expr::BVAnd(a, b) => expect_same_width_bvs(ctx, "and", a, b),
+            Expr::BVOr(a, b) => expect_same_width_bvs(ctx, "or", a, b),
+            Expr::BVXor(a, b) => expect_same_width_bvs(ctx, "xor", a, b),
+            Expr::BVShiftLeft(a, b) => expect_same_width_bvs(ctx, "shift left", a, b),
+            Expr::BVArithmeticShiftRight(a, b) => {
+                expect_same_width_bvs(ctx, "arithmetic shift right", a, b)
+            }
+            Expr::BVShiftRight(a, b) => expect_same_width_bvs(ctx, "shift right", a, b),
+            Expr::BVAdd(a, b) => expect_same_width_bvs(ctx, "add", a, b),
+            Expr::BVMul(a, b) => expect_same_width_bvs(ctx, "mul", a, b),
+            Expr::BVSignedDiv(a, b) => expect_same_width_bvs(ctx, "signed div", a, b),
+            Expr::BVUnsignedDiv(a, b) => expect_same_width_bvs(ctx, "unsigned div", a, b),
+            Expr::BVSignedMod(a, b) => expect_same_width_bvs(ctx, "signed mod", a, b),
+            Expr::BVSignedRem(a, b) => expect_same_width_bvs(ctx, "signed rem", a, b),
+            Expr::BVUnsignedRem(a, b) => expect_same_width_bvs(ctx, "unsigned rem", a, b),
+            Expr::BVSub(a, b) => expect_same_width_bvs(ctx, "subtraction", a, b),
+            Expr::BVArrayRead { array, index } => {
+                let array_tpe = array.type_check(ctx)?.expect_array("array read")?;
+                let index_width = index.type_check(ctx)?.expect_bv("array read index")?;
+                if array_tpe.index_width != index_width {
+                    Err(TypeCheckError {
+                        msg: format!(
+                            "Underlying array requires index width {0} not {index_width}",
+                            array_tpe.index_width
+                        ),
+                    })
+                } else {
+                    Ok(Type::BV(array_tpe.data_width))
+                }
+            }
+            Expr::BVIte { cond, tru, fals } => {
+                tru.type_check(ctx)?.expect_bv_of(1, "ite condition")?;
+                expect_same_width_bvs(ctx, "ite branches", tru, fals)
+            }
+            Expr::ArraySymbol {
+                name,
+                index_width,
+                data_width,
+            } => Ok(Type::Array(ArrayType {
+                index_width,
+                data_width,
+            })),
+            Expr::ArrayConstant { e, index_width } => {
+                let data_width = e.type_check(ctx)?.expect_bv("array constant")?;
+                Ok(Type::Array(ArrayType {
+                    index_width,
+                    data_width,
+                }))
+            }
+            Expr::ArrayEqual(a, b) => Err(TypeCheckError {
                 msg: format!("TODO"),
             }),
             Expr::ArrayStore { .. } => Err(TypeCheckError {
