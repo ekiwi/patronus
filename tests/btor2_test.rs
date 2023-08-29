@@ -22,5 +22,5 @@ const COUNT_2: &str = r#"
 #[test]
 fn parse_count2() {
     let mut ctx = Context::default();
-    btor2::parse(&mut ctx, COUNT_2.as_bytes());
+    btor2::parse_str(&mut ctx, COUNT_2);
 }

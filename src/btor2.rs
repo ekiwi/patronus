@@ -3,13 +3,30 @@
 // author: Kevin Laeufer <laeufer@berkeley.edu>
 
 use crate::ir::*;
+use codespan_reporting::term;
 use smallvec::SmallVec;
 
-pub fn parse(ctx: &mut Context, input: impl std::io::BufRead) -> Option<TransitionSystem> {
-    match parse_private(ctx, input) {
+pub fn parse_str(ctx: &mut Context, input: &str) -> Option<TransitionSystem> {
+    match parse_private(ctx, input.as_bytes()) {
         Ok(sys) => sys,
         Err(errors) => {
-            report_errors(errors);
+            report_errors(errors, "str", input);
+            None
+        }
+    }
+}
+
+pub fn parse_file(ctx: &mut Context, path: &std::path::Path) -> Option<TransitionSystem> {
+    let f = std::fs::File::open(path).expect("Failed to open btor file!");
+    let reader = std::io::BufReader::new(f);
+    match parse_private(ctx, reader) {
+        Ok(sys) => sys,
+        Err(errors) => {
+            report_errors(
+                errors,
+                path.file_name().unwrap().to_str().unwrap(),
+                &std::fs::read_to_string(path).unwrap(),
+            );
             None
         }
     }
@@ -18,14 +35,14 @@ pub fn parse(ctx: &mut Context, input: impl std::io::BufRead) -> Option<Transiti
 fn parse_private(
     ctx: &mut Context,
     input: impl std::io::BufRead,
-) -> std::result::Result<Option<TransitionSystem>, Errors> {
+) -> Result<Option<TransitionSystem>, Errors> {
     let mut sys: Option<TransitionSystem> = None;
     let mut errors = Errors::new();
     let mut offset: usize = 0;
     for line_res in input.lines() {
         let line = line_res.expect("failed to read line");
         parse_line(ctx, &mut sys, &mut errors, &line, offset);
-        offset += line.len();
+        offset += line.len() + 1; // TODO: this assumes that the line terminates with a single character
     }
     if errors.is_empty() {
         Ok(sys)
@@ -95,24 +112,48 @@ fn tokenize_line(line: &str) -> LineTokens {
 #[derive(Debug)]
 struct ParserError {
     msg: String,
+    explain: String, // displayed next to offending token
     start: usize,
     end: usize,
 }
 
 type Errors = Vec<ParserError>;
 
-fn report_errors(errors: Errors) {
-    panic!(
-        "TODO: report details on {} errors encountered while parsing!",
-        errors.len()
-    )
+fn report_errors(errors: Errors, name: &str, source: &str) {
+    let report_file = codespan_reporting::files::SimpleFile::new(name, source);
+    for err in errors.into_iter() {
+        report_error(err, &report_file);
+    }
 }
 
-fn add_error(errors: &mut Errors, offset: usize, line: &str, token: &str, msg: String) {
+fn report_error<'a>(error: ParserError, file: &codespan_reporting::files::SimpleFile<&str, &str>) {
+    let diagnostic = codespan_reporting::diagnostic::Diagnostic::error()
+        .with_message(error.msg)
+        .with_labels(vec![codespan_reporting::diagnostic::Label::primary(
+            (),
+            error.start..error.end,
+        )
+        .with_message(error.explain)]);
+    let writer = codespan_reporting::term::termcolor::StandardStream::stderr(
+        codespan_reporting::term::termcolor::ColorChoice::Auto,
+    );
+    let config = codespan_reporting::term::Config::default();
+    term::emit(&mut writer.lock(), &config, file, &diagnostic).unwrap();
+}
+
+fn add_error(
+    errors: &mut Errors,
+    offset: usize,
+    line: &str,
+    token: &str,
+    msg: String,
+    explain: String,
+) {
     let start = (token.as_ptr() as usize) - (line.as_ptr() as usize);
     let end = start + token.len();
     let e = ParserError {
         msg,
+        explain,
         start: start + offset,
         end: end + offset,
     };
@@ -131,8 +172,6 @@ fn parse_line(
     offset: usize,
 ) {
     let cont = tokenize_line(line);
-    println!("LALALALALALALAL {:?} from {:?}", cont, line);
-
     // TODO: deal with comments
     if cont.tokens.is_empty() {
         // early exit if there are no tokens on this line
@@ -148,6 +187,7 @@ fn parse_line(
                 line,
                 cont.tokens[0],
                 "Expected valid non-negative integer ID.".to_owned(),
+                "here".to_owned(),
             );
             return; // give up
         }
@@ -163,6 +203,7 @@ fn parse_line(
                 line,
                 cont.tokens[0],
                 "No operation after ID.".to_owned(),
+                "".to_owned(),
             );
             return; // give up
         }
@@ -221,5 +262,6 @@ mod tests {
         parse_private(&mut ctx, "-1".as_bytes()).expect_err("invalid id");
         parse_private(&mut ctx, "0".as_bytes()).expect_err("missing op");
         parse_private(&mut ctx, "0 ".as_bytes()).expect_err("missing op");
+        parse_str(&mut ctx, "a\n0\nnot_an_id");
     }
 }
