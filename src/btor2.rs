@@ -156,7 +156,7 @@ fn str_offset(needle: &str, haystack: &str) -> usize {
     offset
 }
 
-fn add_error(ctx: &mut ParseLineCtx, token: &str, msg: String) {
+fn add_error(ctx: &mut ParseLineCtx, token: &str, msg: String) -> ParseLineResult {
     let explain = "".to_owned(); // TODO: how do we best utilize both msg and explain?
     let start = str_offset(token, ctx.line);
     let end = start + token.len();
@@ -167,6 +167,7 @@ fn add_error(ctx: &mut ParseLineCtx, token: &str, msg: String) {
         end: end + ctx.offset,
     };
     ctx.errors.push(e);
+    Err(())
 }
 
 fn to_id(token: &str) -> Option<u32> {
@@ -211,7 +212,15 @@ lazy_static! {
         std::collections::HashSet::from(OTHER_OPS);
 }
 
-fn require_at_least_n_tokens(ctx: &mut ParseLineCtx, op: &str, tokens: &[&str], n: usize) -> bool {
+/// Indicated success or failure. Errors and data is not returned, but rather added to the context.
+type ParseLineResult = std::result::Result<(), ()>;
+
+fn require_at_least_n_tokens(
+    ctx: &mut ParseLineCtx,
+    op: &str,
+    tokens: &[&str],
+    n: usize,
+) -> ParseLineResult {
     if tokens.len() < n {
         let start = str_offset(op, ctx.line);
         let last_token = tokens.last().unwrap();
@@ -223,14 +232,13 @@ fn require_at_least_n_tokens(ctx: &mut ParseLineCtx, op: &str, tokens: &[&str], 
                 "{op} requires at least {n} tokens, only {} provided",
                 tokens.len()
             ),
-        );
-        false
+        )
     } else {
-        true
+        Ok(())
     }
 }
 
-fn invalid_op_error(ctx: &mut ParseLineCtx, op: &str) {
+fn invalid_op_error(ctx: &mut ParseLineCtx, op: &str) -> ParseLineResult {
     let all_ops = UNARY_OPS
         .iter()
         .chain(BINARY_OPS.iter())
@@ -254,24 +262,27 @@ fn invalid_op_error(ctx: &mut ParseLineCtx, op: &str) {
     )
 }
 
-fn parse_line(ctx: &mut Context, sys: &mut Option<TransitionSystem>, mut parse_ctx: ParseLineCtx) {
+fn parse_line(
+    ctx: &mut Context,
+    sys: &mut Option<TransitionSystem>,
+    mut parse_ctx: ParseLineCtx,
+) -> ParseLineResult {
     let cont = tokenize_line(parse_ctx.line);
     let tokens = cont.tokens;
     // TODO: deal with comments
     if tokens.is_empty() {
         // early exit if there are no tokens on this line
-        return;
+        return Ok(());
     }
 
     // the first token should be an ID
     let line_id = match to_id(tokens[0]) {
         None => {
-            add_error(
+            return add_error(
                 &mut parse_ctx,
                 tokens[0],
                 "Expected valid non-negative integer ID.".to_owned(),
             );
-            return; // give up
         }
         Some(id) => id,
     };
@@ -279,34 +290,44 @@ fn parse_line(ctx: &mut Context, sys: &mut Option<TransitionSystem>, mut parse_c
     // make sure that there is a second token following the id
     let op: &str = match tokens.get(1) {
         None => {
-            add_error(
+            return add_error(
                 &mut parse_ctx,
                 tokens[0],
                 "No operation after ID.".to_owned(),
             );
-            return; // give up
         }
         Some(op) => op,
     };
 
     // check op
     if UNARY_OPS_SET.contains(op) {
-        if !require_at_least_n_tokens(&mut parse_ctx, op, &tokens, 4) {
-            return; // fail!
-        }
-    } else if BINARY_OPS_SET.contains(op) {
-        if !require_at_least_n_tokens(&mut parse_ctx, op, &tokens, 5) {
-            return; // fail!
-        }
-    } else {
-        match op {
-            other => {
-                if OTHER_OPS_SET.contains(other) {
-                    panic!("TODO: implement support for {other} operation")
-                } else {
-                    invalid_op_error(&mut parse_ctx, op);
-                    return; // give up
+        require_at_least_n_tokens(&mut parse_ctx, op, &tokens, 4)?;
+        todo!("handle unary op")
+    }
+    if BINARY_OPS_SET.contains(op) {
+        require_at_least_n_tokens(&mut parse_ctx, op, &tokens, 5)?;
+        todo!("handle binary op")
+    }
+    match op {
+        "sort" => {
+            require_at_least_n_tokens(&mut parse_ctx, op, &tokens, 3)?;
+            match tokens[2] {
+                "bitvec" => todo!("bitvec sort"),
+                "array" => todo!("array sort"),
+                other => {
+                    return add_error(
+                        &mut parse_ctx,
+                        tokens[2],
+                        format!("Expected `bitvec` or `array`. Not `{other}`."),
+                    )
                 }
+            }
+        }
+        other => {
+            if OTHER_OPS_SET.contains(other) {
+                panic!("TODO: implement support for {other} operation")
+            } else {
+                return invalid_op_error(&mut parse_ctx, op);
             }
         }
     }
