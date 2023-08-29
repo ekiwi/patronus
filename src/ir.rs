@@ -254,6 +254,23 @@ fn expect_same_width_bvs(
     }
 }
 
+fn expect_same_size_arrays(
+    ctx: &impl GetNode<Expr, ExprRef>,
+    op: &str,
+    a: ExprRef,
+    b: ExprRef,
+) -> std::result::Result<Type, TypeCheckError> {
+    let a_tpe = a.type_check(ctx)?.expect_array(op)?;
+    let b_tpe = b.type_check(ctx)?.expect_array(op)?;
+    if a_tpe == b_tpe {
+        Ok(Type::Array(a_tpe))
+    } else {
+        Err(TypeCheckError {
+            msg: format!("{op} requires two arrays of the same type, not {a_tpe:?} and {b_tpe:?}"),
+        })
+    }
+}
+
 pub trait TypeCheck {
     fn type_check(
         &self,
@@ -302,19 +319,36 @@ impl TypeCheck for Expr {
                 e.type_check(ctx)?.expect_bv("xor reduction")?;
                 Ok(Type::BV(1))
             }
-            Expr::BVEqual(a, b) => expect_same_width_bvs(ctx, "bit-vector equality", a, b),
+            Expr::BVEqual(a, b) => {
+                expect_same_width_bvs(ctx, "bit-vector equality", a, b)?;
+                Ok(Type::BV(1))
+            }
             Expr::BVImplies(a, b) => {
                 a.type_check(ctx)?.expect_bv("implies")?;
                 b.type_check(ctx)?.expect_bv("implies")?;
                 Ok(Type::BV(1))
             }
-            Expr::BVGreater(a, b) => expect_same_width_bvs(ctx, "greater", a, b),
-            Expr::BVGreaterSigned(a, b) => expect_same_width_bvs(ctx, "greater signed", a, b),
-            Expr::BVGreaterEqual(a, b) => expect_same_width_bvs(ctx, "greater or equals", a, b),
-            Expr::BVGreaterEqualSigned(a, b) => {
-                expect_same_width_bvs(ctx, "greater or equals signed", a, b)
+            Expr::BVGreater(a, b) => {
+                expect_same_width_bvs(ctx, "greater", a, b)?;
+                Ok(Type::BV(1))
             }
-            Expr::BVConcat(a, b) => expect_same_width_bvs(ctx, "concatenation", a, b),
+            Expr::BVGreaterSigned(a, b) => {
+                expect_same_width_bvs(ctx, "greater signed", a, b)?;
+                Ok(Type::BV(1))
+            }
+            Expr::BVGreaterEqual(a, b) => {
+                expect_same_width_bvs(ctx, "greater or equals", a, b)?;
+                Ok(Type::BV(1))
+            }
+            Expr::BVGreaterEqualSigned(a, b) => {
+                expect_same_width_bvs(ctx, "greater or equals signed", a, b)?;
+                Ok(Type::BV(1))
+            }
+            Expr::BVConcat(a, b) => {
+                let a_width = a.type_check(ctx)?.expect_bv("concat")?;
+                let b_width = b.type_check(ctx)?.expect_bv("concat")?;
+                Ok(Type::BV(a_width + b_width))
+            }
             Expr::BVAnd(a, b) => expect_same_width_bvs(ctx, "and", a, b),
             Expr::BVOr(a, b) => expect_same_width_bvs(ctx, "or", a, b),
             Expr::BVXor(a, b) => expect_same_width_bvs(ctx, "xor", a, b),
@@ -364,15 +398,23 @@ impl TypeCheck for Expr {
                     data_width,
                 }))
             }
-            Expr::ArrayEqual(a, b) => Err(TypeCheckError {
-                msg: format!("TODO"),
-            }),
-            Expr::ArrayStore { .. } => Err(TypeCheckError {
-                msg: format!("TODO"),
-            }),
-            Expr::ArrayIte { .. } => Err(TypeCheckError {
-                msg: format!("TODO"),
-            }),
+            Expr::ArrayEqual(a, b) => {
+                expect_same_size_arrays(ctx, "array equals", a, b)?;
+                Ok(Type::BV(1))
+            }
+            Expr::ArrayStore { array, index, data } => {
+                let tpe = array.type_check(ctx)?.expect_array("array store")?;
+                index
+                    .type_check(ctx)?
+                    .expect_bv_of(tpe.index_width, "array store index")?;
+                data.type_check(ctx)?
+                    .expect_bv_of(tpe.data_width, "array store data")?;
+                Ok(Type::Array(tpe))
+            }
+            Expr::ArrayIte { cond, tru, fals } => {
+                tru.type_check(ctx)?.expect_bv_of(1, "ite condition")?;
+                expect_same_size_arrays(ctx, "ite branches", tru, fals)
+            }
         }
     }
 }
