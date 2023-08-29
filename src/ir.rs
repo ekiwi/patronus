@@ -60,6 +60,12 @@ impl AddNode<String, StringRef> for Context {
     }
 }
 
+impl AddNode<&str, StringRef> for Context {
+    fn add(&mut self, value: &str) -> StringRef {
+        self.add(value.to_owned())
+    }
+}
+
 impl GetNode<str, StringRef> for Context {
     fn get(&self, reference: StringRef) -> &str {
         self.strings
@@ -284,8 +290,8 @@ impl TypeCheck for Expr {
         ctx: &impl GetNode<Expr, ExprRef>,
     ) -> std::result::Result<Type, TypeCheckError> {
         match *self {
-            Expr::BVSymbol { name, width } => Ok(Type::BV(width)),
-            Expr::BVLiteral { value, width } => Ok(Type::BV(width)),
+            Expr::BVSymbol { name: _, width } => Ok(Type::BV(width)),
+            Expr::BVLiteral { value: _, width } => Ok(Type::BV(width)),
             Expr::BVZeroExt { e, by } => {
                 Ok(Type::BV(e.type_check(ctx)?.expect_bv("zero extend")? + by))
             }
@@ -380,11 +386,11 @@ impl TypeCheck for Expr {
                 }
             }
             Expr::BVIte { cond, tru, fals } => {
-                tru.type_check(ctx)?.expect_bv_of(1, "ite condition")?;
+                cond.type_check(ctx)?.expect_bv_of(1, "ite condition")?;
                 expect_same_width_bvs(ctx, "ite branches", tru, fals)
             }
             Expr::ArraySymbol {
-                name,
+                name: _,
                 index_width,
                 data_width,
             } => Ok(Type::Array(ArrayType {
@@ -412,7 +418,7 @@ impl TypeCheck for Expr {
                 Ok(Type::Array(tpe))
             }
             Expr::ArrayIte { cond, tru, fals } => {
-                tru.type_check(ctx)?.expect_bv_of(1, "ite condition")?;
+                cond.type_check(ctx)?.expect_bv_of(1, "ite condition")?;
                 expect_same_size_arrays(ctx, "ite branches", tru, fals)
             }
         }
@@ -734,6 +740,27 @@ mod tests {
         assert_eq!(std::mem::size_of::<ArrayType>(), 2 * 4);
         // Type could be a bit-vector or an array type (4 bytes for the tag!)
         assert_eq!(std::mem::size_of::<Type>(), 2 * 4 + 4);
+    }
+
+    #[test]
+    fn reference_ids() {
+        let mut ctx = Context::default();
+        let str_id0 = ctx.add("a");
+        let id0 = ctx.add(Expr::BVSymbol {
+            name: str_id0,
+            width: 1,
+        });
+        assert_eq!(id0.0, 0, "ids start at zero (for now)");
+        let id0_b = ctx.add(Expr::BVSymbol {
+            name: str_id0,
+            width: 1,
+        });
+        assert_eq!(id0.0, id0_b.0, "ids should be interned!");
+        let id1 = ctx.add(Expr::BVSymbol {
+            name: str_id0,
+            width: 2,
+        });
+        assert_eq!(id0.0 + 1, id1.0, "ids should increment!");
     }
 
     #[test]

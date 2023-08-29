@@ -8,7 +8,7 @@ use pest::Parser;
 struct Btor2Parser;
 
 pub fn parse(input: &str) {
-    Btor2Parser::parse(Rule::btor2File, input).unwrap();
+    Btor2Parser::parse(Rule::btor2File, input).unwrap_or_else(|e| panic!("{}", e));
 }
 
 #[cfg(test)]
