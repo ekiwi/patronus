@@ -3,6 +3,7 @@
 // author: Kevin Laeufer <laeufer@berkeley.edu>
 
 use patron::btor2;
+use patron::ir::Context;
 
 const COUNT_2: &str = r#"
 1 sort bitvec 3
@@ -20,5 +21,6 @@ const COUNT_2: &str = r#"
 
 #[test]
 fn parse_count2() {
-    btor2::parse(COUNT_2);
+    let mut ctx = Context::default();
+    btor2::parse(&mut ctx, COUNT_2.as_bytes());
 }

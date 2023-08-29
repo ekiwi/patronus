@@ -40,7 +40,7 @@ type StringInternerU16 = string_interner::StringInterner<
 >;
 
 /// The actual context implementation.
-struct Context {
+pub struct Context {
     strings: StringInternerU16,
     exprs: indexmap::IndexSet<Expr>,
 }
@@ -433,28 +433,43 @@ impl TypeCheck for ExprRef {
     }
 }
 
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub enum SignalKind {
     Node,
     Output,
 }
 
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub struct Signal {
     name: StringRef,
     kind: SignalKind,
     expr: ExprRef,
 }
 
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub struct State {
     symbol: ExprRef,
     init: Option<ExprRef>,
     next: Option<ExprRef>,
 }
 
+#[derive(Debug, PartialEq, Eq)]
 pub struct TransitionSystem {
     name: StringRef,
     states: Vec<State>,
     inputs: Vec<ExprRef>,
     signals: Vec<Signal>,
+}
+
+impl TransitionSystem {
+    pub fn new(name: StringRef) -> Self {
+        TransitionSystem {
+            name,
+            states: Vec::default(),
+            inputs: Vec::default(),
+            signals: Vec::default(),
+        }
+    }
 }
 
 trait SerializableIrNode {
