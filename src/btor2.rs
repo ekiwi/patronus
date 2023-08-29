@@ -8,7 +8,7 @@ use fuzzy_matcher::FuzzyMatcher;
 use smallvec::SmallVec;
 
 pub fn parse_str(ctx: &mut Context, input: &str) -> Option<TransitionSystem> {
-    match parse_private(ctx, input.as_bytes()) {
+    match Parser::new(ctx).parse(input.as_bytes()) {
         Ok(sys) => sys,
         Err(errors) => {
             report_errors(errors, "str", input);
@@ -20,7 +20,7 @@ pub fn parse_str(ctx: &mut Context, input: &str) -> Option<TransitionSystem> {
 pub fn parse_file(ctx: &mut Context, path: &std::path::Path) -> Option<TransitionSystem> {
     let f = std::fs::File::open(path).expect("Failed to open btor file!");
     let reader = std::io::BufReader::new(f);
-    match parse_private(ctx, reader) {
+    match Parser::new(ctx).parse(reader) {
         Ok(sys) => sys,
         Err(errors) => {
             report_errors(
@@ -33,27 +33,159 @@ pub fn parse_file(ctx: &mut Context, path: &std::path::Path) -> Option<Transitio
     }
 }
 
-fn parse_private(
-    ctx: &mut Context,
-    input: impl std::io::BufRead,
-) -> Result<Option<TransitionSystem>, Errors> {
-    let mut sys: Option<TransitionSystem> = None;
-    let mut errors = Errors::new();
-    let mut offset: usize = 0;
-    for line_res in input.lines() {
-        let line = line_res.expect("failed to read line");
-        let line_ctx = ParseLineCtx {
-            errors: &mut errors,
-            offset,
-            line: &line,
-        };
-        parse_line(ctx, &mut sys, line_ctx);
-        offset += line.len() + 1; // TODO: this assumes that the line terminates with a single character
+struct Parser<'a> {
+    ctx: &'a mut Context,
+    sys: Option<TransitionSystem>,
+    errors: Errors,
+    offset: usize,
+}
+
+impl<'a> Parser<'a> {
+    fn new(ctx: &'a mut Context) -> Self {
+        Parser {
+            ctx,
+            sys: None,
+            errors: Errors::new(),
+            offset: 0,
+        }
     }
-    if errors.is_empty() {
-        Ok(sys)
-    } else {
-        Err(errors)
+
+    fn parse(&mut self, input: impl std::io::BufRead) -> Result<Option<TransitionSystem>, Errors> {
+        for line_res in input.lines() {
+            let line = line_res.expect("failed to read line");
+            let _ignore_errors = self.parse_line(&line);
+            self.offset += line.len() + 1; // TODO: this assumes that the line terminates with a single character
+        }
+        if self.errors.is_empty() {
+            Ok(std::mem::replace(&mut self.sys, None))
+        } else {
+            Err(std::mem::replace(&mut self.errors, Errors::new()))
+        }
+    }
+
+    fn parse_line(&mut self, line: &str) -> ParseLineResult {
+        let cont = tokenize_line(line);
+        let tokens = cont.tokens;
+        // TODO: deal with comments
+        if tokens.is_empty() {
+            // early exit if there are no tokens on this line
+            return Ok(());
+        }
+
+        // the first token should be an ID
+        let line_id = match to_id(tokens[0]) {
+            None => {
+                return self.add_error(
+                    line,
+                    tokens[0],
+                    "Expected valid non-negative integer ID.".to_owned(),
+                );
+            }
+            Some(id) => id,
+        };
+
+        // make sure that there is a second token following the id
+        let op: &str = match tokens.get(1) {
+            None => {
+                return self.add_error(line, tokens[0], "No operation after ID.".to_owned());
+            }
+            Some(op) => op,
+        };
+
+        // check op
+        if UNARY_OPS_SET.contains(op) {
+            self.require_at_least_n_tokens(line, op, &tokens, 4)?;
+            todo!("handle unary op")
+        }
+        if BINARY_OPS_SET.contains(op) {
+            self.require_at_least_n_tokens(line, op, &tokens, 5)?;
+            todo!("handle binary op")
+        }
+        match op {
+            "sort" => {
+                self.require_at_least_n_tokens(line, op, &tokens, 3)?;
+                match tokens[2] {
+                    "bitvec" => todo!("bitvec sort"),
+                    "array" => todo!("array sort"),
+                    other => {
+                        return self.add_error(
+                            line,
+                            tokens[2],
+                            format!("Expected `bitvec` or `array`. Not `{other}`."),
+                        )
+                    }
+                }
+            }
+            other => {
+                if OTHER_OPS_SET.contains(other) {
+                    panic!("TODO: implement support for {other} operation")
+                } else {
+                    return self.invalid_op_error(line, op);
+                }
+            }
+        }
+    }
+
+    fn add_error(&mut self, line: &str, token: &str, msg: String) -> ParseLineResult {
+        let explain = "".to_owned(); // TODO: how do we best utilize both msg and explain?
+        let start = str_offset(token, line);
+        let end = start + token.len();
+        let e = ParserError {
+            msg,
+            explain,
+            start: start + self.offset,
+            end: end + self.offset,
+        };
+        self.errors.push(e);
+        Err(())
+    }
+
+    fn require_at_least_n_tokens(
+        &mut self,
+        line: &str,
+        op: &str,
+        tokens: &[&str],
+        n: usize,
+    ) -> ParseLineResult {
+        if tokens.len() < n {
+            let start = str_offset(op, line);
+            let last_token = tokens.last().unwrap();
+            let end = str_offset(last_token, line) + last_token.len();
+            self.add_error(
+                line,
+                &line[start..end],
+                format!(
+                    "{op} requires at least {n} tokens, only {} provided",
+                    tokens.len()
+                ),
+            )
+        } else {
+            Ok(())
+        }
+    }
+
+    fn invalid_op_error(&mut self, line: &str, op: &str) -> ParseLineResult {
+        let all_ops = UNARY_OPS
+            .iter()
+            .chain(BINARY_OPS.iter())
+            .chain(OTHER_OPS.iter());
+        let matcher = fuzzy_matcher::skim::SkimMatcherV2::default();
+        let mut matches: Vec<(&&str, i64)> = all_ops
+            .flat_map(|other| matcher.fuzzy_match(other, op).map(|s| (other, s)))
+            .collect();
+        matches.sort_by_key(|(_, s)| -(*s));
+        let n_matches = std::cmp::min(matches.len(), 5);
+        let suggestions = matches
+            .iter()
+            .take(n_matches)
+            .map(|(n, _)| **n)
+            .collect::<Vec<&str>>()
+            .join(", ");
+        self.add_error(
+            line,
+            op,
+            format!("Invalid op {op}. Did you mean: {suggestions}?"),
+        )
     }
 }
 
@@ -139,12 +271,6 @@ fn report_error<'a>(error: ParserError, file: &codespan_reporting::files::Simple
     term::emit(&mut writer.lock(), &config, file, &diagnostic).unwrap();
 }
 
-struct ParseLineCtx<'a> {
-    errors: &'a mut Errors,
-    offset: usize,
-    line: &'a str,
-}
-
 fn str_offset(needle: &str, haystack: &str) -> usize {
     let offset = (needle.as_ptr() as usize) - (haystack.as_ptr() as usize);
     assert!(
@@ -154,20 +280,6 @@ fn str_offset(needle: &str, haystack: &str) -> usize {
         haystack
     );
     offset
-}
-
-fn add_error(ctx: &mut ParseLineCtx, token: &str, msg: String) -> ParseLineResult {
-    let explain = "".to_owned(); // TODO: how do we best utilize both msg and explain?
-    let start = str_offset(token, ctx.line);
-    let end = start + token.len();
-    let e = ParserError {
-        msg,
-        explain,
-        start: start + ctx.offset,
-        end: end + ctx.offset,
-    };
-    ctx.errors.push(e);
-    Err(())
 }
 
 fn to_id(token: &str) -> Option<u32> {
@@ -215,124 +327,6 @@ lazy_static! {
 /// Indicated success or failure. Errors and data is not returned, but rather added to the context.
 type ParseLineResult = std::result::Result<(), ()>;
 
-fn require_at_least_n_tokens(
-    ctx: &mut ParseLineCtx,
-    op: &str,
-    tokens: &[&str],
-    n: usize,
-) -> ParseLineResult {
-    if tokens.len() < n {
-        let start = str_offset(op, ctx.line);
-        let last_token = tokens.last().unwrap();
-        let end = str_offset(last_token, ctx.line) + last_token.len();
-        add_error(
-            ctx,
-            &ctx.line[start..end],
-            format!(
-                "{op} requires at least {n} tokens, only {} provided",
-                tokens.len()
-            ),
-        )
-    } else {
-        Ok(())
-    }
-}
-
-fn invalid_op_error(ctx: &mut ParseLineCtx, op: &str) -> ParseLineResult {
-    let all_ops = UNARY_OPS
-        .iter()
-        .chain(BINARY_OPS.iter())
-        .chain(OTHER_OPS.iter());
-    let matcher = fuzzy_matcher::skim::SkimMatcherV2::default();
-    let mut matches: Vec<(&&str, i64)> = all_ops
-        .flat_map(|other| matcher.fuzzy_match(other, op).map(|s| (other, s)))
-        .collect();
-    matches.sort_by_key(|(_, s)| -(*s));
-    let n_matches = std::cmp::min(matches.len(), 5);
-    let suggestions = matches
-        .iter()
-        .take(n_matches)
-        .map(|(n, _)| **n)
-        .collect::<Vec<&str>>()
-        .join(", ");
-    add_error(
-        ctx,
-        op,
-        format!("Invalid op {op}. Did you mean: {suggestions}?"),
-    )
-}
-
-fn parse_line(
-    ctx: &mut Context,
-    sys: &mut Option<TransitionSystem>,
-    mut parse_ctx: ParseLineCtx,
-) -> ParseLineResult {
-    let cont = tokenize_line(parse_ctx.line);
-    let tokens = cont.tokens;
-    // TODO: deal with comments
-    if tokens.is_empty() {
-        // early exit if there are no tokens on this line
-        return Ok(());
-    }
-
-    // the first token should be an ID
-    let line_id = match to_id(tokens[0]) {
-        None => {
-            return add_error(
-                &mut parse_ctx,
-                tokens[0],
-                "Expected valid non-negative integer ID.".to_owned(),
-            );
-        }
-        Some(id) => id,
-    };
-
-    // make sure that there is a second token following the id
-    let op: &str = match tokens.get(1) {
-        None => {
-            return add_error(
-                &mut parse_ctx,
-                tokens[0],
-                "No operation after ID.".to_owned(),
-            );
-        }
-        Some(op) => op,
-    };
-
-    // check op
-    if UNARY_OPS_SET.contains(op) {
-        require_at_least_n_tokens(&mut parse_ctx, op, &tokens, 4)?;
-        todo!("handle unary op")
-    }
-    if BINARY_OPS_SET.contains(op) {
-        require_at_least_n_tokens(&mut parse_ctx, op, &tokens, 5)?;
-        todo!("handle binary op")
-    }
-    match op {
-        "sort" => {
-            require_at_least_n_tokens(&mut parse_ctx, op, &tokens, 3)?;
-            match tokens[2] {
-                "bitvec" => todo!("bitvec sort"),
-                "array" => todo!("array sort"),
-                other => {
-                    return add_error(
-                        &mut parse_ctx,
-                        tokens[2],
-                        format!("Expected `bitvec` or `array`. Not `{other}`."),
-                    )
-                }
-            }
-        }
-        other => {
-            if OTHER_OPS_SET.contains(other) {
-                panic!("TODO: implement support for {other} operation")
-            } else {
-                return invalid_op_error(&mut parse_ctx, op);
-            }
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -370,17 +364,19 @@ mod tests {
         assert_eq!(unicode_res.comment.unwrap(), "○123");
     }
 
+    fn parse_private(code: &str) -> Result<Option<TransitionSystem>, Errors> {
+        let mut ctx = Context::default();
+        Parser::new(&mut ctx).parse(code.as_bytes())
+    }
+
     #[test]
     fn parse_failures() {
-        let mut ctx = Context::default();
-        parse_private(&mut ctx, "".as_bytes()).expect("parsing an empty line should be fine");
-        parse_private(&mut ctx, "   ".as_bytes())
-            .expect("parsing an line with just whitespace should be fine");
-        parse_private(&mut ctx, "  ; test bla  ".as_bytes())
-            .expect("parsing an line with a comment should be fine");
-        parse_private(&mut ctx, "not_an_id".as_bytes()).expect_err("invalid id");
-        parse_private(&mut ctx, "-1".as_bytes()).expect_err("invalid id");
-        parse_private(&mut ctx, "0".as_bytes()).expect_err("missing op");
-        parse_private(&mut ctx, "0 ".as_bytes()).expect_err("missing op");
+        parse_private("").expect("parsing an empty line should be fine");
+        parse_private("   ").expect("parsing an line with just whitespace should be fine");
+        parse_private("  ; test bla  ").expect("parsing an line with a comment should be fine");
+        parse_private("not_an_id").expect_err("invalid id");
+        parse_private("-1").expect_err("invalid id");
+        parse_private("0").expect_err("missing op");
+        parse_private("0 ").expect_err("missing op");
     }
 }
