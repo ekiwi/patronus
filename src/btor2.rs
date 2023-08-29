@@ -4,6 +4,7 @@
 
 use crate::ir::*;
 use codespan_reporting::term;
+use fuzzy_matcher::FuzzyMatcher;
 use smallvec::SmallVec;
 
 pub fn parse_str(ctx: &mut Context, input: &str) -> Option<TransitionSystem> {
@@ -41,7 +42,12 @@ fn parse_private(
     let mut offset: usize = 0;
     for line_res in input.lines() {
         let line = line_res.expect("failed to read line");
-        parse_line(ctx, &mut sys, &mut errors, &line, offset);
+        let line_ctx = ParseLineCtx {
+            errors: &mut errors,
+            offset,
+            line: &line,
+        };
+        parse_line(ctx, &mut sys, line_ctx);
         offset += line.len() + 1; // TODO: this assumes that the line terminates with a single character
     }
     if errors.is_empty() {
@@ -50,14 +56,6 @@ fn parse_private(
         Err(errors)
     }
 }
-
-const UNARY_OPS: [&str; 7] = ["not", "inc", "dec", "neg", "redand", "redor", "redxor"];
-const BINARY_OPS: [&str; 38] = [
-    "iff", "implies", "sgt", "ugt", "sgte", "ugte", "slt", "ult", "slte", "ulte", "and", "nand",
-    "nor", "or", "xnor", "xor", "rol", "ror", "sll", "sra", "srl", "add", "mul", "sdiv", "udiv",
-    "smod", "srem", "urem", "sub", "saddo", "uaddo", "sdivo", "udivo", "smulo", "umulo", "ssubo",
-    "usubo", "concat",
-];
 
 // Line Tokenizer
 #[derive(Default, Debug)]
@@ -141,53 +139,137 @@ fn report_error<'a>(error: ParserError, file: &codespan_reporting::files::Simple
     term::emit(&mut writer.lock(), &config, file, &diagnostic).unwrap();
 }
 
-fn add_error(
-    errors: &mut Errors,
+struct ParseLineCtx<'a> {
+    errors: &'a mut Errors,
     offset: usize,
-    line: &str,
-    token: &str,
-    msg: String,
-    explain: String,
-) {
-    let start = (token.as_ptr() as usize) - (line.as_ptr() as usize);
+    line: &'a str,
+}
+
+fn str_offset(needle: &str, haystack: &str) -> usize {
+    let offset = (needle.as_ptr() as usize) - (haystack.as_ptr() as usize);
+    assert!(
+        offset < haystack.len(),
+        "{} is not fully contained in {}",
+        needle,
+        haystack
+    );
+    offset
+}
+
+fn add_error(ctx: &mut ParseLineCtx, token: &str, msg: String) {
+    let explain = "".to_owned(); // TODO: how do we best utilize both msg and explain?
+    let start = str_offset(token, ctx.line);
     let end = start + token.len();
     let e = ParserError {
         msg,
         explain,
-        start: start + offset,
-        end: end + offset,
+        start: start + ctx.offset,
+        end: end + ctx.offset,
     };
-    errors.push(e);
+    ctx.errors.push(e);
 }
 
 fn to_id(token: &str) -> Option<u32> {
     token.parse::<u32>().ok()
 }
 
-fn parse_line(
-    ctx: &mut Context,
-    sys: &mut Option<TransitionSystem>,
-    errors: &mut Errors,
-    line: &str,
-    offset: usize,
-) {
-    let cont = tokenize_line(line);
+const UNARY_OPS: [&str; 7] = ["not", "inc", "dec", "neg", "redand", "redor", "redxor"];
+const BINARY_OPS: [&str; 40] = [
+    "iff", "implies", "sgt", "ugt", "sgte", "ugte", "slt", "ult", "slte", "ulte", "and", "nand",
+    "nor", "or", "xnor", "xor", "rol", "ror", "sll", "sra", "srl", "add", "mul", "sdiv", "udiv",
+    "smod", "srem", "urem", "sub", "saddo", "uaddo", "sdivo", "udivo", "smulo", "umulo", "ssubo",
+    "usubo", "concat", "eq", "neq",
+];
+const OTHER_OPS: [&str; 19] = [
+    "sort",
+    "input",
+    "output",
+    "bad",
+    "constraint",
+    "fair",
+    "state",
+    "next",
+    "init",
+    "const",
+    "constd",
+    "consth",
+    "zero",
+    "one",
+    "ones",
+    "slice",
+    "read",
+    "write",
+    "ite",
+];
+
+lazy_static! {
+    static ref UNARY_OPS_SET: std::collections::HashSet<&'static str> =
+        std::collections::HashSet::from(UNARY_OPS);
+    static ref BINARY_OPS_SET: std::collections::HashSet<&'static str> =
+        std::collections::HashSet::from(BINARY_OPS);
+    static ref OTHER_OPS_SET: std::collections::HashSet<&'static str> =
+        std::collections::HashSet::from(OTHER_OPS);
+}
+
+fn require_at_least_n_tokens(ctx: &mut ParseLineCtx, op: &str, tokens: &[&str], n: usize) -> bool {
+    if tokens.len() < n {
+        let start = str_offset(op, ctx.line);
+        let last_token = tokens.last().unwrap();
+        let end = str_offset(last_token, ctx.line) + last_token.len();
+        add_error(
+            ctx,
+            &ctx.line[start..end],
+            format!(
+                "{op} requires at least {n} tokens, only {} provided",
+                tokens.len()
+            ),
+        );
+        false
+    } else {
+        true
+    }
+}
+
+fn invalid_op_error(ctx: &mut ParseLineCtx, op: &str) {
+    let all_ops = UNARY_OPS
+        .iter()
+        .chain(BINARY_OPS.iter())
+        .chain(OTHER_OPS.iter());
+    let matcher = fuzzy_matcher::skim::SkimMatcherV2::default();
+    let mut matches: Vec<(&&str, i64)> = all_ops
+        .flat_map(|other| matcher.fuzzy_match(other, op).map(|s| (other, s)))
+        .collect();
+    matches.sort_by_key(|(_, s)| -(*s));
+    let n_matches = std::cmp::min(matches.len(), 5);
+    let suggestions = matches
+        .iter()
+        .take(n_matches)
+        .map(|(n, _)| **n)
+        .collect::<Vec<&str>>()
+        .join(", ");
+    add_error(
+        ctx,
+        op,
+        format!("Invalid op {op}. Did you mean: {suggestions}?"),
+    )
+}
+
+fn parse_line(ctx: &mut Context, sys: &mut Option<TransitionSystem>, mut parse_ctx: ParseLineCtx) {
+    let cont = tokenize_line(parse_ctx.line);
+    let tokens = cont.tokens;
     // TODO: deal with comments
-    if cont.tokens.is_empty() {
+    if tokens.is_empty() {
         // early exit if there are no tokens on this line
         return;
     }
 
     // the first token should be an ID
-    let line_id = match to_id(cont.tokens[0]) {
+    let line_id = match to_id(tokens[0]) {
         None => {
             add_error(
-                errors,
-                offset,
-                line,
-                cont.tokens[0],
+                &mut parse_ctx,
+                tokens[0],
                 "Expected valid non-negative integer ID.".to_owned(),
-                "here".to_owned(),
             );
             return; // give up
         }
@@ -195,22 +277,39 @@ fn parse_line(
     };
 
     // make sure that there is a second token following the id
-    let op: &str = match cont.tokens.get(1) {
+    let op: &str = match tokens.get(1) {
         None => {
             add_error(
-                errors,
-                offset,
-                line,
-                cont.tokens[0],
+                &mut parse_ctx,
+                tokens[0],
                 "No operation after ID.".to_owned(),
-                "".to_owned(),
             );
             return; // give up
         }
         Some(op) => op,
     };
 
-    //
+    // check op
+    if UNARY_OPS_SET.contains(op) {
+        if !require_at_least_n_tokens(&mut parse_ctx, op, &tokens, 4) {
+            return; // fail!
+        }
+    } else if BINARY_OPS_SET.contains(op) {
+        if !require_at_least_n_tokens(&mut parse_ctx, op, &tokens, 5) {
+            return; // fail!
+        }
+    } else {
+        match op {
+            other => {
+                if OTHER_OPS_SET.contains(other) {
+                    panic!("TODO: implement support for {other} operation")
+                } else {
+                    invalid_op_error(&mut parse_ctx, op);
+                    return; // give up
+                }
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -262,6 +361,5 @@ mod tests {
         parse_private(&mut ctx, "-1".as_bytes()).expect_err("invalid id");
         parse_private(&mut ctx, "0".as_bytes()).expect_err("missing op");
         parse_private(&mut ctx, "0 ".as_bytes()).expect_err("missing op");
-        parse_str(&mut ctx, "a\n0\nnot_an_id");
     }
 }
