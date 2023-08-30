@@ -42,7 +42,7 @@ struct Parser<'a> {
     /// maps file id to type
     type_map: HashMap<LineId, Type>,
     /// maps file id to state in the Transition System
-    state_map: HashMap<LineId, usize>,
+    state_map: HashMap<LineId, StateRef>,
     /// maps file id to signal in the Transition System
     signal_map: HashMap<LineId, SignalRef>,
 }
@@ -81,7 +81,7 @@ impl<'a> Parser<'a> {
 
     fn parse_line(&mut self, line: &str) -> ParseLineResult {
         let cont = tokenize_line(line);
-        let tokens = cont.tokens;
+        let tokens = &cont.tokens;
         // TODO: deal with comments
         if tokens.is_empty() {
             // early exit if there are no tokens on this line
@@ -101,18 +101,29 @@ impl<'a> Parser<'a> {
 
         // check op
         if UNARY_OPS_SET.contains(op) {
-            self.require_at_least_n_tokens(line, op, &tokens, 4)?;
+            self.require_at_least_n_tokens(line, &tokens, 4)?;
             todo!("handle unary op")
         }
         if BINARY_OPS_SET.contains(op) {
-            self.require_at_least_n_tokens(line, op, &tokens, 5)?;
+            self.require_at_least_n_tokens(line, &tokens, 5)?;
             todo!("handle binary op")
         }
-        match op {
-            "sort" => self.parse_sort(line, &tokens, op, line_id),
+        self.require_at_least_n_tokens(line, &tokens, 3)?;
+        let expr: Option<ExprRef> = match op {
+            "sort" => {
+                self.parse_sort(line, &tokens, line_id)?;
+                None
+            }
             "const" | "constd" | "consth" | "zero" | "one" => {
-                let e = self.parse_format(line, &tokens, op)?;
-                self.add_signal(line_id, e)
+                Some(self.parse_format(line, &tokens, op)?)
+            }
+            "state" => {
+                self.parse_state(&line, &cont, line_id)?;
+                None
+            }
+            "init" => {
+                self.parse_state_init(&line, &cont)?;
+                None
             }
             other => {
                 if OTHER_OPS_SET.contains(other) {
@@ -121,12 +132,90 @@ impl<'a> Parser<'a> {
                     return self.invalid_op_error(line, op);
                 }
             }
+        };
+        if let Some(e) = expr {
+            self.add_signal(line_id, e)?;
+        }
+        Ok(())
+    }
+
+    fn check_expr_type(
+        &mut self,
+        actual: ExprRef,
+        expected: &Type,
+        line: &str,
+        token: &str,
+        msg: &str,
+    ) -> ParseLineResult {
+        let actual_tpe = match actual.type_check(self.ctx) {
+            Ok(tpe) => tpe,
+            Err(e) => {
+                return self.add_error(line, token, e.get_msg().to_string());
+            }
+        };
+        self.check_type(&actual_tpe, expected, line, token, msg)
+    }
+
+    fn check_type(
+        &mut self,
+        actual: &Type,
+        expected: &Type,
+        line: &str,
+        token: &str,
+        msg: &str,
+    ) -> ParseLineResult {
+        if actual == expected {
+            Ok(())
+        } else {
+            self.add_error(line, token, format!("{msg}: {actual} != {expected}"))
         }
     }
 
     fn add_signal(&mut self, line_id: LineId, expr: ExprRef) -> ParseLineResult {
         let signal_ref = self.sys.add_signal(expr, SignalKind::Node);
         self.signal_map.insert(line_id, signal_ref);
+        Ok(())
+    }
+
+    fn get_label_name(&mut self, cont: &LineTokens, default: &str) -> StringRef {
+        let base_str: &str = cont.tokens.get(3).unwrap_or(&default);
+        // TODO: look into comment for better names
+        self.ctx.add_unique_str(base_str)
+    }
+
+    fn parse_state(&mut self, line: &str, cont: &LineTokens, line_id: LineId) -> ParseLineResult {
+        let tpe = self.get_tpe_from_id(line, cont.tokens[2])?;
+        let name = self.get_label_name(cont, "state");
+        let sym = Expr::symbol(name, tpe);
+        let sym_ref = self.ctx.add(sym);
+        let state_ref = self.sys.add_state(self.ctx, sym_ref);
+        self.state_map.insert(line_id, state_ref);
+        Ok(())
+    }
+
+    fn parse_state_init(&mut self, line: &str, cont: &LineTokens) -> ParseLineResult {
+        self.require_at_least_n_tokens(line, &cont.tokens, 5)?;
+        let tpe = self.get_tpe_from_id(line, cont.tokens[2])?;
+        let state_ref = self.get_state_from_id(line, cont.tokens[3])?;
+        let state_sym = self.sys.get(state_ref).symbol;
+        let state_tpe = state_sym.type_check(self.ctx).unwrap();
+        let state_name = state_sym.get_symbol_name(self.ctx).unwrap().to_string();
+        let expr = self.get_expr_from_signal_id(line, cont.tokens[4])?;
+        self.check_expr_type(
+            expr,
+            &tpe,
+            line,
+            cont.tokens[4],
+            &format!("[{state_name}.init] Expressions has mismatched type"),
+        )?;
+        self.check_type(
+            &state_tpe,
+            &tpe,
+            line,
+            cont.tokens[4],
+            &format!("[{state_name}.init] Expression type does not match state type."),
+        )?;
+        todo!("actually add init to state");
         Ok(())
     }
 
@@ -221,23 +310,52 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_sort(
-        &mut self,
-        line: &str,
-        tokens: &[&str],
-        op: &str,
-        line_id: LineId,
-    ) -> ParseLineResult {
-        self.require_at_least_n_tokens(line, op, &tokens, 3)?;
+    fn get_state_from_id(&mut self, line: &str, token: &str) -> ParseLineResult<StateRef> {
+        let state_id = self.parse_line_id(line, token)?;
+        match self.state_map.get(&state_id) {
+            None => {
+                let _ = self.add_error(
+                    line,
+                    token,
+                    format!("ID `{state_id}` does not point to a valid state!"),
+                );
+                Err(())
+            }
+            Some(state) => Ok(state.clone()),
+        }
+    }
+
+    fn get_expr_from_signal_id(&mut self, line: &str, token: &str) -> ParseLineResult<ExprRef> {
+        let signal = self.get_signal_from_id(line, token)?;
+        Ok(self.sys.get(signal).expr)
+    }
+
+    fn get_signal_from_id(&mut self, line: &str, token: &str) -> ParseLineResult<SignalRef> {
+        let signal_id = self.parse_line_id(line, token)?;
+        match self.signal_map.get(&signal_id) {
+            None => {
+                let _ = self.add_error(
+                    line,
+                    token,
+                    format!("ID `{signal_id}` does not point to a valid signal!"),
+                );
+                Err(())
+            }
+            Some(signal) => Ok(signal.clone()),
+        }
+    }
+
+    fn parse_sort(&mut self, line: &str, tokens: &[&str], line_id: LineId) -> ParseLineResult {
+        self.require_at_least_n_tokens(line, &tokens, 3)?;
         match tokens[2] {
             "bitvec" => {
-                self.require_at_least_n_tokens(line, op, &tokens, 4)?;
+                self.require_at_least_n_tokens(line, &tokens, 4)?;
                 let width = self.parse_width_int(line, tokens[3], "bit-vector width")?;
                 self.type_map.insert(line_id, Type::BV(width));
                 Ok(())
             }
             "array" => {
-                self.require_at_least_n_tokens(line, op, &tokens, 5)?;
+                self.require_at_least_n_tokens(line, &tokens, 5)?;
                 let index_width = self.parse_width_int(line, tokens[3], "array index width")?;
                 let data_width = self.parse_width_int(line, tokens[4], "array data width")?;
                 self.type_map.insert(
@@ -299,11 +417,11 @@ impl<'a> Parser<'a> {
     fn require_at_least_n_tokens(
         &mut self,
         line: &str,
-        op: &str,
         tokens: &[&str],
         n: usize,
     ) -> ParseLineResult {
         if tokens.len() < n {
+            let op = tokens[1];
             let start = str_offset(op, line);
             let last_token = tokens.last().unwrap();
             let end = str_offset(last_token, line) + last_token.len();

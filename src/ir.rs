@@ -2,6 +2,8 @@
 // released under BSD 3-Clause License
 // author: Kevin Laeufer <laeufer@berkeley.edu>
 
+use std::fmt::{Display, Formatter};
+
 /// This type restricts the maximum width that a bit-vector type is allowed to have in our IR.
 pub type WidthInt = u32;
 
@@ -21,7 +23,7 @@ pub trait GetNode<D: ?Sized, I: Clone + Copy> {
 }
 
 /// Convenience methods to construct IR nodes.
-pub trait NodeConstruction: AddNode<String, StringRef> + AddNode<Expr, ExprRef> {
+pub trait ExprNodeConstruction: AddNode<String, StringRef> + AddNode<Expr, ExprRef> {
     // helper functions to construct expressions
     fn bv_literal(&mut self, value: BVLiteralInt, width: WidthInt) -> ExprRef {
         self.add(Expr::BVLiteral { value, width })
@@ -72,6 +74,23 @@ impl Default for Context {
     }
 }
 
+impl Context {
+    /// ensures that the value is unique (by appending a number if necessary) and then adds it to the store
+    pub fn add_unique_str(&mut self, value: &str) -> StringRef {
+        let mut name: String = value.to_string();
+        let mut count: usize = 0;
+        while self.is_interned(&value) {
+            name = format!("{value}_{count}");
+            count += 1;
+        }
+        self.add(name)
+    }
+
+    fn is_interned(&self, value: &str) -> bool {
+        self.strings.get(value).is_some()
+    }
+}
+
 impl AddNode<String, StringRef> for Context {
     fn add(&mut self, value: String) -> StringRef {
         StringRef(self.strings.get_or_intern(value))
@@ -107,7 +126,7 @@ impl GetNode<Expr, ExprRef> for Context {
     }
 }
 
-impl NodeConstruction for Context {}
+impl ExprNodeConstruction for Context {}
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
 pub struct StringRef(string_interner::symbol::SymbolU16);
@@ -208,6 +227,22 @@ pub enum Expr {
     },
 }
 
+impl Expr {
+    pub fn symbol(name: StringRef, tpe: Type) -> Expr {
+        match tpe {
+            Type::BV(width) => Expr::BVSymbol { name, width },
+            Type::Array(ArrayType {
+                data_width,
+                index_width,
+            }) => Expr::ArraySymbol {
+                name,
+                data_width,
+                index_width,
+            },
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Eq, Clone, Hash, Copy)]
 pub struct BVType(WidthInt);
 #[derive(Debug, PartialEq, Eq, Clone, Hash, Copy)]
@@ -221,9 +256,27 @@ pub enum Type {
     Array(ArrayType),
 }
 
+impl Display for Type {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match *self {
+            Type::BV(width) => write!(f, "bv<{width}>"),
+            Type::Array(ArrayType {
+                index_width,
+                data_width,
+            }) => write!(f, "bv<{index_width}> -> bv<{data_width}>"),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct TypeCheckError {
     msg: String,
+}
+
+impl TypeCheckError {
+    pub fn get_msg(&self) -> &str {
+        &self.msg
+    }
 }
 
 impl Type {
@@ -459,18 +512,21 @@ pub enum SignalKind {
 
 #[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub struct Signal {
-    expr: ExprRef,
-    kind: SignalKind,
+    pub name: Option<String>,
+    pub expr: ExprRef,
+    pub kind: SignalKind,
 }
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
 pub struct SignalRef(usize);
 
 #[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub struct State {
-    symbol: ExprRef,
-    init: Option<ExprRef>,
-    next: Option<ExprRef>,
+    pub symbol: ExprRef,
+    pub init: Option<ExprRef>,
+    pub next: Option<ExprRef>,
 }
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
+pub struct StateRef(usize);
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct TransitionSystem {
@@ -492,8 +548,35 @@ impl TransitionSystem {
 
     pub fn add_signal(&mut self, expr: ExprRef, kind: SignalKind) -> SignalRef {
         let id = self.signals.len();
-        self.signals.push(Signal { expr, kind });
+        self.signals.push(Signal {
+            name: None,
+            expr,
+            kind,
+        });
         SignalRef(id)
+    }
+
+    pub fn add_state(&mut self, ctx: &impl GetNode<Expr, ExprRef>, symbol: ExprRef) -> StateRef {
+        assert!(symbol.is_symbol(ctx));
+        let id = self.states.len();
+        self.states.push(State {
+            symbol,
+            init: None,
+            next: None,
+        });
+        StateRef(id)
+    }
+}
+
+impl GetNode<Signal, SignalRef> for TransitionSystem {
+    fn get(&self, reference: SignalRef) -> &Signal {
+        &self.signals[reference.0]
+    }
+}
+
+impl GetNode<State, StateRef> for TransitionSystem {
+    fn get(&self, reference: StateRef) -> &State {
+        &self.states[reference.0]
     }
 }
 
@@ -760,6 +843,47 @@ impl SerializableIrNode for Expr {
 impl SerializableIrNode for ExprRef {
     fn serialize(&self, ctx: &Context, writer: &mut impl (std::io::Write)) -> std::io::Result<()> {
         ctx.get(*self).serialize(ctx, writer)
+    }
+}
+
+pub trait ExprIntrospection {
+    fn is_symbol(&self, ctx: &impl GetNode<Expr, ExprRef>) -> bool;
+    fn get_symbol_name<'a>(
+        &self,
+        ctx: &'a (impl GetNode<Expr, ExprRef> + GetNode<str, StringRef>),
+    ) -> Option<&'a str>;
+}
+
+impl ExprIntrospection for Expr {
+    fn is_symbol(&self, _ctx: &impl GetNode<Expr, ExprRef>) -> bool {
+        match self {
+            Expr::BVSymbol { .. } => true,
+            Expr::ArraySymbol { .. } => true,
+            _ => false,
+        }
+    }
+
+    fn get_symbol_name<'a>(
+        &self,
+        ctx: &'a (impl GetNode<Expr, ExprRef> + GetNode<str, StringRef>),
+    ) -> Option<&'a str> {
+        match self {
+            Expr::BVSymbol { name, .. } => Some(ctx.get(*name)),
+            Expr::ArraySymbol { name, .. } => Some(ctx.get(*name)),
+            _ => None,
+        }
+    }
+}
+
+impl ExprIntrospection for ExprRef {
+    fn is_symbol(&self, ctx: &impl GetNode<Expr, ExprRef>) -> bool {
+        ctx.get(*self).is_symbol(ctx)
+    }
+    fn get_symbol_name<'a>(
+        &self,
+        ctx: &'a (impl GetNode<Expr, ExprRef> + GetNode<str, StringRef>),
+    ) -> Option<&'a str> {
+        ctx.get(*self).get_symbol_name(ctx)
     }
 }
 
