@@ -75,7 +75,7 @@ impl<'a> Parser<'a> {
                 TransitionSystem::new(self.ctx.add("")),
             ))
         } else {
-            Err(std::mem::replace(&mut self.errors, Errors::new()))
+            Err(std::mem::take(&mut self.errors))
         }
     }
 
@@ -101,28 +101,28 @@ impl<'a> Parser<'a> {
 
         // check op
         if UNARY_OPS_SET.contains(op) {
-            self.require_at_least_n_tokens(line, &tokens, 4)?;
+            self.require_at_least_n_tokens(line, tokens, 4)?;
             todo!("handle unary op")
         }
         if BINARY_OPS_SET.contains(op) {
-            self.require_at_least_n_tokens(line, &tokens, 5)?;
+            self.require_at_least_n_tokens(line, tokens, 5)?;
             todo!("handle binary op")
         }
-        self.require_at_least_n_tokens(line, &tokens, 3)?;
+        self.require_at_least_n_tokens(line, tokens, 3)?;
         let expr: Option<ExprRef> = match op {
             "sort" => {
-                self.parse_sort(line, &tokens, line_id)?;
+                self.parse_sort(line, tokens, line_id)?;
                 None
             }
             "const" | "constd" | "consth" | "zero" | "one" => {
-                Some(self.parse_format(line, &tokens, op)?)
+                Some(self.parse_format(line, tokens, op)?)
             }
             "state" => {
-                self.parse_state(&line, &cont, line_id)?;
+                self.parse_state(line, &cont, line_id)?;
                 None
             }
             "init" => {
-                self.parse_state_init(&line, &cont)?;
+                self.parse_state_init(line, &cont)?;
                 None
             }
             other => {
@@ -321,7 +321,7 @@ impl<'a> Parser<'a> {
                 );
                 Err(())
             }
-            Some(state) => Ok(state.clone()),
+            Some(state) => Ok(*state),
         }
     }
 
@@ -341,21 +341,21 @@ impl<'a> Parser<'a> {
                 );
                 Err(())
             }
-            Some(signal) => Ok(signal.clone()),
+            Some(signal) => Ok(*signal),
         }
     }
 
     fn parse_sort(&mut self, line: &str, tokens: &[&str], line_id: LineId) -> ParseLineResult {
-        self.require_at_least_n_tokens(line, &tokens, 3)?;
+        self.require_at_least_n_tokens(line, tokens, 3)?;
         match tokens[2] {
             "bitvec" => {
-                self.require_at_least_n_tokens(line, &tokens, 4)?;
+                self.require_at_least_n_tokens(line, tokens, 4)?;
                 let width = self.parse_width_int(line, tokens[3], "bit-vector width")?;
                 self.type_map.insert(line_id, Type::BV(width));
                 Ok(())
             }
             "array" => {
-                self.require_at_least_n_tokens(line, &tokens, 5)?;
+                self.require_at_least_n_tokens(line, tokens, 5)?;
                 let index_width = self.parse_width_int(line, tokens[3], "array index width")?;
                 let data_width = self.parse_width_int(line, tokens[4], "array data width")?;
                 self.type_map.insert(
@@ -368,7 +368,7 @@ impl<'a> Parser<'a> {
                 Ok(())
             }
             other => {
-                return self.add_error(
+                self.add_error(
                     line,
                     tokens[2],
                     format!("Expected `bitvec` or `array`. Not `{other}`."),
@@ -634,7 +634,7 @@ mod tests {
         assert_eq!(unicode_res.comment.unwrap(), "○123");
     }
 
-    fn parse_private(code: &str) -> Result<Option<TransitionSystem>, Errors> {
+    fn parse_private(code: &str) -> Result<TransitionSystem, Errors> {
         let mut ctx = Context::default();
         Parser::new(&mut ctx).parse(code.as_bytes())
     }

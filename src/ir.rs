@@ -38,8 +38,8 @@ pub trait ExprNodeConstruction: AddNode<String, StringRef> + AddNode<Expr, ExprR
     fn bv_lit(&mut self, value: BVLiteralInt, width: WidthInt) -> ExprRef {
         assert!(bv_value_fits_width(value, width));
         self.add(Expr::BVLiteral {
-            value: value,
-            width: width,
+            value,
+            width,
         })
     }
     fn zero(&mut self, width: WidthInt) -> ExprRef {
@@ -79,7 +79,7 @@ impl Context {
     pub fn add_unique_str(&mut self, value: &str) -> StringRef {
         let mut name: String = value.to_string();
         let mut count: usize = 0;
-        while self.is_interned(&value) {
+        while self.is_interned(value) {
             name = format!("{value}_{count}");
             count += 1;
         }
