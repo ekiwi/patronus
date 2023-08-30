@@ -367,13 +367,11 @@ impl<'a> Parser<'a> {
                 );
                 Ok(())
             }
-            other => {
-                self.add_error(
-                    line,
-                    tokens[2],
-                    format!("Expected `bitvec` or `array`. Not `{other}`."),
-                )
-            }
+            other => self.add_error(
+                line,
+                tokens[2],
+                format!("Expected `bitvec` or `array`. Not `{other}`."),
+            ),
         }
     }
 
@@ -530,7 +528,7 @@ fn report_errors(errors: Errors, name: &str, source: &str) {
     }
 }
 
-fn report_error<'a>(error: ParserError, file: &codespan_reporting::files::SimpleFile<&str, &str>) {
+fn report_error(error: ParserError, file: &codespan_reporting::files::SimpleFile<&str, &str>) {
     let diagnostic = codespan_reporting::diagnostic::Diagnostic::error()
         .with_message(error.msg)
         .with_labels(vec![codespan_reporting::diagnostic::Label::primary(

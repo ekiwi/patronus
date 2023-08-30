@@ -37,10 +37,7 @@ pub trait ExprNodeConstruction: AddNode<String, StringRef> + AddNode<Expr, ExprR
     }
     fn bv_lit(&mut self, value: BVLiteralInt, width: WidthInt) -> ExprRef {
         assert!(bv_value_fits_width(value, width));
-        self.add(Expr::BVLiteral {
-            value,
-            width,
-        })
+        self.add(Expr::BVLiteral { value, width })
     }
     fn zero(&mut self, width: WidthInt) -> ExprRef {
         self.bv_lit(0, width)
@@ -856,11 +853,7 @@ pub trait ExprIntrospection {
 
 impl ExprIntrospection for Expr {
     fn is_symbol(&self, _ctx: &impl GetNode<Expr, ExprRef>) -> bool {
-        match self {
-            Expr::BVSymbol { .. } => true,
-            Expr::ArraySymbol { .. } => true,
-            _ => false,
-        }
+        matches!(self, Expr::BVSymbol { .. } | Expr::ArraySymbol { .. })
     }
 
     fn get_symbol_name<'a>(
