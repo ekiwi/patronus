@@ -3,13 +3,13 @@
 // author: Kevin Laeufer <laeufer@berkeley.edu>
 
 use crate::ir::*;
-use codespan_reporting::term;
 use fuzzy_matcher::FuzzyMatcher;
 use smallvec::SmallVec;
+use std::collections::HashMap;
 
 pub fn parse_str(ctx: &mut Context, input: &str) -> Option<TransitionSystem> {
     match Parser::new(ctx).parse(input.as_bytes()) {
-        Ok(sys) => sys,
+        Ok(sys) => Some(sys),
         Err(errors) => {
             report_errors(errors, "str", input);
             None
@@ -21,7 +21,7 @@ pub fn parse_file(ctx: &mut Context, path: &std::path::Path) -> Option<Transitio
     let f = std::fs::File::open(path).expect("Failed to open btor file!");
     let reader = std::io::BufReader::new(f);
     match Parser::new(ctx).parse(reader) {
-        Ok(sys) => sys,
+        Ok(sys) => Some(sys),
         Err(errors) => {
             report_errors(
                 errors,
@@ -35,29 +35,45 @@ pub fn parse_file(ctx: &mut Context, path: &std::path::Path) -> Option<Transitio
 
 struct Parser<'a> {
     ctx: &'a mut Context,
-    sys: Option<TransitionSystem>,
+    sys: TransitionSystem,
     errors: Errors,
+    /// offset of the current line inside the file
     offset: usize,
+    /// maps file id to type
+    type_map: HashMap<LineId, Type>,
+    /// maps file id to state in the Transition System
+    state_map: HashMap<LineId, usize>,
+    /// maps file id to signal in the Transition System
+    signal_map: HashMap<LineId, SignalRef>,
 }
+
+type LineId = u32;
 
 impl<'a> Parser<'a> {
     fn new(ctx: &'a mut Context) -> Self {
+        let empty_str = ctx.add("");
         Parser {
             ctx,
-            sys: None,
+            sys: TransitionSystem::new(empty_str),
             errors: Errors::new(),
             offset: 0,
+            type_map: HashMap::new(),
+            state_map: HashMap::new(),
+            signal_map: HashMap::new(),
         }
     }
 
-    fn parse(&mut self, input: impl std::io::BufRead) -> Result<Option<TransitionSystem>, Errors> {
+    fn parse(&mut self, input: impl std::io::BufRead) -> Result<TransitionSystem, Errors> {
         for line_res in input.lines() {
             let line = line_res.expect("failed to read line");
             let _ignore_errors = self.parse_line(&line);
             self.offset += line.len() + 1; // TODO: this assumes that the line terminates with a single character
         }
         if self.errors.is_empty() {
-            Ok(std::mem::replace(&mut self.sys, None))
+            Ok(std::mem::replace(
+                &mut self.sys,
+                TransitionSystem::new(self.ctx.add("")),
+            ))
         } else {
             Err(std::mem::replace(&mut self.errors, Errors::new()))
         }
@@ -73,16 +89,7 @@ impl<'a> Parser<'a> {
         }
 
         // the first token should be an ID
-        let line_id = match to_id(tokens[0]) {
-            None => {
-                return self.add_error(
-                    line,
-                    tokens[0],
-                    "Expected valid non-negative integer ID.".to_owned(),
-                );
-            }
-            Some(id) => id,
-        };
+        let line_id = self.parse_line_id(line, tokens[0])?;
 
         // make sure that there is a second token following the id
         let op: &str = match tokens.get(1) {
@@ -102,19 +109,10 @@ impl<'a> Parser<'a> {
             todo!("handle binary op")
         }
         match op {
-            "sort" => {
-                self.require_at_least_n_tokens(line, op, &tokens, 3)?;
-                match tokens[2] {
-                    "bitvec" => todo!("bitvec sort"),
-                    "array" => todo!("array sort"),
-                    other => {
-                        return self.add_error(
-                            line,
-                            tokens[2],
-                            format!("Expected `bitvec` or `array`. Not `{other}`."),
-                        )
-                    }
-                }
+            "sort" => self.parse_sort(line, &tokens, op, line_id),
+            "const" | "constd" | "consth" | "zero" | "one" => {
+                let e = self.parse_format(line, &tokens, op)?;
+                self.add_signal(line_id, e)
             }
             other => {
                 if OTHER_OPS_SET.contains(other) {
@@ -122,6 +120,164 @@ impl<'a> Parser<'a> {
                 } else {
                     return self.invalid_op_error(line, op);
                 }
+            }
+        }
+    }
+
+    fn add_signal(&mut self, line_id: LineId, expr: ExprRef) -> ParseLineResult {
+        let signal_ref = self.sys.add_signal(expr, SignalKind::Node);
+        self.signal_map.insert(line_id, signal_ref);
+        Ok(())
+    }
+
+    fn parse_line_id(&mut self, line: &str, token: &str) -> ParseLineResult<LineId> {
+        match token.parse::<LineId>().ok() {
+            None => {
+                let _ = self.add_error(
+                    line,
+                    token,
+                    "Expected valid non-negative integer ID.".to_owned(),
+                );
+                Err(())
+            }
+            Some(id) => Ok(id),
+        }
+    }
+
+    fn parse_format(&mut self, line: &str, tokens: &[&str], op: &str) -> ParseLineResult<ExprRef> {
+        // derive width from type
+        let width = self.get_bv_width(line, tokens[2])?;
+
+        match op {
+            "zero" => Ok(self.ctx.zero(width)),
+            "one" => Ok(self.ctx.one(width)),
+            "const" => self.parse_bv_lit_str(line, tokens[3], 2, width),
+            "constd" => self.parse_bv_lit_str(line, tokens[3], 10, width),
+            "consth" => self.parse_bv_lit_str(line, tokens[3], 16, width),
+            other => panic!("Did not expect {other} as a possible format op!"),
+        }
+    }
+
+    fn parse_bv_lit_str(
+        &mut self,
+        line: &str,
+        token: &str,
+        base: u32,
+        width: WidthInt,
+    ) -> ParseLineResult<ExprRef> {
+        match BVLiteralInt::from_str_radix(token, base) {
+            Ok(val) => {
+                if bv_value_fits_width(val, width) {
+                    Ok(self.ctx.bv_lit(val, width))
+                } else {
+                    let _ = self.add_error(
+                        line,
+                        token,
+                        format!("Value {val} does not fit into a bit-vector of width {width}"),
+                    );
+                    Err(())
+                }
+            }
+            Err(_) => {
+                let _ = self.add_error(
+                    line,
+                    token,
+                    format!("Failed to parse as an integer of base {base}"),
+                );
+                Err(())
+            }
+        }
+    }
+
+    fn get_bv_width(&mut self, line: &str, token: &str) -> ParseLineResult<WidthInt> {
+        let tpe = self.get_tpe_from_id(line, token)?;
+        match tpe {
+            Type::BV(width) => Ok(width),
+            Type::Array(tpe) => {
+                let _ = self.add_error(
+                    line,
+                    token,
+                    format!(
+                        "Points to an array type `{tpe:?}`, but a bit-vector type is required!"
+                    ),
+                );
+                Err(())
+            }
+        }
+    }
+
+    fn get_tpe_from_id(&mut self, line: &str, token: &str) -> ParseLineResult<Type> {
+        let tpe_id = self.parse_line_id(line, token)?;
+        match self.type_map.get(&tpe_id) {
+            None => {
+                let _ = self.add_error(
+                    line,
+                    token,
+                    format!("ID `{tpe_id}` does not point to a valid type!"),
+                );
+                Err(())
+            }
+            Some(tpe) => Ok(tpe.clone()),
+        }
+    }
+
+    fn parse_sort(
+        &mut self,
+        line: &str,
+        tokens: &[&str],
+        op: &str,
+        line_id: LineId,
+    ) -> ParseLineResult {
+        self.require_at_least_n_tokens(line, op, &tokens, 3)?;
+        match tokens[2] {
+            "bitvec" => {
+                self.require_at_least_n_tokens(line, op, &tokens, 4)?;
+                let width = self.parse_width_int(line, tokens[3], "bit-vector width")?;
+                self.type_map.insert(line_id, Type::BV(width));
+                Ok(())
+            }
+            "array" => {
+                self.require_at_least_n_tokens(line, op, &tokens, 5)?;
+                let index_width = self.parse_width_int(line, tokens[3], "array index width")?;
+                let data_width = self.parse_width_int(line, tokens[4], "array data width")?;
+                self.type_map.insert(
+                    line_id,
+                    Type::Array(ArrayType {
+                        index_width,
+                        data_width,
+                    }),
+                );
+                Ok(())
+            }
+            other => {
+                return self.add_error(
+                    line,
+                    tokens[2],
+                    format!("Expected `bitvec` or `array`. Not `{other}`."),
+                )
+            }
+        }
+    }
+
+    fn parse_width_int(
+        &mut self,
+        line: &str,
+        token: &str,
+        kind: &str,
+    ) -> ParseLineResult<WidthInt> {
+        match token.parse::<WidthInt>() {
+            Ok(width) => Ok(width),
+            Err(_) => {
+                let _ = self.add_error(
+                    line,
+                    token,
+                    format!(
+                        "Not a valid {kind}. An integer between {} and {} is required!",
+                        WidthInt::MAX,
+                        WidthInt::MIN
+                    ),
+                );
+                Err(())
             }
         }
     }
@@ -268,7 +424,7 @@ fn report_error<'a>(error: ParserError, file: &codespan_reporting::files::Simple
         codespan_reporting::term::termcolor::ColorChoice::Auto,
     );
     let config = codespan_reporting::term::Config::default();
-    term::emit(&mut writer.lock(), &config, file, &diagnostic).unwrap();
+    codespan_reporting::term::emit(&mut writer.lock(), &config, file, &diagnostic).unwrap();
 }
 
 fn str_offset(needle: &str, haystack: &str) -> usize {
@@ -280,10 +436,6 @@ fn str_offset(needle: &str, haystack: &str) -> usize {
         haystack
     );
     offset
-}
-
-fn to_id(token: &str) -> Option<u32> {
-    token.parse::<u32>().ok()
 }
 
 const UNARY_OPS: [&str; 7] = ["not", "inc", "dec", "neg", "redand", "redor", "redxor"];
@@ -325,7 +477,7 @@ lazy_static! {
 }
 
 /// Indicated success or failure. Errors and data is not returned, but rather added to the context.
-type ParseLineResult = std::result::Result<(), ()>;
+type ParseLineResult<T = ()> = std::result::Result<T, ()>;
 
 #[cfg(test)]
 mod tests {

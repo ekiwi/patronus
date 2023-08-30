@@ -33,6 +33,24 @@ pub trait NodeConstruction: AddNode<String, StringRef> + AddNode<Expr, ExprRef> 
             width,
         })
     }
+    fn bv_lit(&mut self, value: BVLiteralInt, width: WidthInt) -> ExprRef {
+        assert!(bv_value_fits_width(value, width));
+        self.add(Expr::BVLiteral {
+            value: value,
+            width: width,
+        })
+    }
+    fn zero(&mut self, width: WidthInt) -> ExprRef {
+        self.bv_lit(0, width)
+    }
+    fn one(&mut self, width: WidthInt) -> ExprRef {
+        self.bv_lit(1, width)
+    }
+}
+
+pub fn bv_value_fits_width(value: BVLiteralInt, width: WidthInt) -> bool {
+    let bits_required = BVLiteralInt::BITS - value.leading_zeros();
+    width >= bits_required
 }
 
 type StringInternerU16 = string_interner::StringInterner<
@@ -194,8 +212,8 @@ pub enum Expr {
 pub struct BVType(WidthInt);
 #[derive(Debug, PartialEq, Eq, Clone, Hash, Copy)]
 pub struct ArrayType {
-    index_width: WidthInt,
-    data_width: WidthInt,
+    pub index_width: WidthInt,
+    pub data_width: WidthInt,
 }
 #[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub enum Type {
@@ -441,10 +459,11 @@ pub enum SignalKind {
 
 #[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub struct Signal {
-    name: StringRef,
-    kind: SignalKind,
     expr: ExprRef,
+    kind: SignalKind,
 }
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
+pub struct SignalRef(usize);
 
 #[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub struct State {
@@ -469,6 +488,12 @@ impl TransitionSystem {
             inputs: Vec::default(),
             signals: Vec::default(),
         }
+    }
+
+    pub fn add_signal(&mut self, expr: ExprRef, kind: SignalKind) -> SignalRef {
+        let id = self.signals.len();
+        self.signals.push(Signal { expr, kind });
+        SignalRef(id)
     }
 }
 
