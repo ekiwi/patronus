@@ -100,36 +100,34 @@ impl<'a> Parser<'a> {
         };
 
         // check op
-        if UNARY_OPS_SET.contains(op) {
-            self.require_at_least_n_tokens(line, tokens, 4)?;
-            todo!("handle unary op")
-        }
-        if BINARY_OPS_SET.contains(op) {
-            self.require_at_least_n_tokens(line, tokens, 5)?;
-            todo!("handle binary op")
-        }
-        self.require_at_least_n_tokens(line, tokens, 3)?;
-        let expr: Option<ExprRef> = match op {
-            "sort" => {
-                self.parse_sort(line, tokens, line_id)?;
-                None
-            }
-            "const" | "constd" | "consth" | "zero" | "one" => {
-                Some(self.parse_format(line, tokens, op)?)
-            }
-            "state" => {
-                self.parse_state(line, &cont, line_id)?;
-                None
-            }
-            "init" => {
-                self.parse_state_init(line, &cont)?;
-                None
-            }
-            other => {
-                if OTHER_OPS_SET.contains(other) {
-                    panic!("TODO: implement support for {other} operation")
-                } else {
-                    return self.invalid_op_error(line, op);
+        let expr: Option<ExprRef> = if UNARY_OPS_SET.contains(op) {
+            Some(self.parse_unary_op(line, tokens)?)
+        } else if BINARY_OPS_SET.contains(op) {
+            Some(self.parse_bin_op(line, tokens)?)
+        } else {
+            self.require_at_least_n_tokens(line, tokens, 3)?;
+            match op {
+                "sort" => {
+                    self.parse_sort(line, tokens, line_id)?;
+                    None
+                }
+                "const" | "constd" | "consth" | "zero" | "one" => {
+                    Some(self.parse_format(line, tokens, op)?)
+                }
+                "state" => {
+                    self.parse_state(line, &cont, line_id)?;
+                    None
+                }
+                "init" => {
+                    self.parse_state_init(line, &cont)?;
+                    None
+                }
+                other => {
+                    if OTHER_OPS_SET.contains(other) {
+                        panic!("TODO: implement support for {other} operation")
+                    } else {
+                        return self.invalid_op_error(line, op);
+                    }
                 }
             }
         };
@@ -181,6 +179,16 @@ impl<'a> Parser<'a> {
         let base_str: &str = cont.tokens.get(3).unwrap_or(&default);
         // TODO: look into comment for better names
         self.ctx.add_unique_str(base_str)
+    }
+
+    fn parse_unary_op(&mut self, line: &str, tokens: &[&str]) -> ParseLineResult<ExprRef> {
+        self.require_at_least_n_tokens(line, tokens, 4)?;
+        todo!("handle unary op")
+    }
+
+    fn parse_bin_op(&mut self, line: &str, tokens: &[&str]) -> ParseLineResult<ExprRef> {
+        self.require_at_least_n_tokens(line, tokens, 5)?;
+        todo!("handle binary op")
     }
 
     fn parse_state(&mut self, line: &str, cont: &LineTokens, line_id: LineId) -> ParseLineResult {
