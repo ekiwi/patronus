@@ -215,7 +215,8 @@ impl<'a> Parser<'a> {
             cont.tokens[4],
             &format!("[{state_name}.init] Expression type does not match state type."),
         )?;
-        todo!("actually add init to state");
+        self.sys
+            .modify_state(state_ref, |state| state.init = Some(expr));
         Ok(())
     }
 
