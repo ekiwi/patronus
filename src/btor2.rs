@@ -51,7 +51,7 @@ type LineId = u32;
 
 impl<'a> Parser<'a> {
     fn new(ctx: &'a mut Context) -> Self {
-        let empty_str = ctx.add("");
+        let empty_str = ctx.add_node("");
         Parser {
             ctx,
             sys: TransitionSystem::new(empty_str),
@@ -72,7 +72,7 @@ impl<'a> Parser<'a> {
         if self.errors.is_empty() {
             Ok(std::mem::replace(
                 &mut self.sys,
-                TransitionSystem::new(self.ctx.add("")),
+                TransitionSystem::new(self.ctx.add_node("")),
             ))
         } else {
             Err(std::mem::take(&mut self.errors))
@@ -137,21 +137,15 @@ impl<'a> Parser<'a> {
         Ok(())
     }
 
-    fn check_expr_type(
-        &mut self,
-        actual: ExprRef,
-        expected: &Type,
-        line: &str,
-        token: &str,
-        msg: &str,
-    ) -> ParseLineResult {
-        let actual_tpe = match actual.type_check(self.ctx) {
-            Ok(tpe) => tpe,
+    fn check_expr_type(&mut self, expr: ExprRef, line: &str) -> ParseLineResult<ExprRef> {
+        match expr.type_check(self.ctx) {
+            Ok(_) => Ok(expr),
             Err(e) => {
-                return self.add_error(line, token, e.get_msg().to_string());
+                let _ =
+                    self.add_error(line, line, format!("Failed to type check: {}", e.get_msg()));
+                Err(())
             }
-        };
-        self.check_type(&actual_tpe, expected, line, token, msg)
+        }
     }
 
     fn check_type(
@@ -189,9 +183,9 @@ impl<'a> Parser<'a> {
     fn parse_bin_op(&mut self, line: &str, tokens: &[&str]) -> ParseLineResult<ExprRef> {
         self.require_at_least_n_tokens(line, tokens, 5)?;
         let tpe = self.get_tpe_from_id(line, tokens[2])?;
-        let a = self.get_signal_from_id(line, tokens[3])?;
-        let b = self.get_signal_from_id(line, tokens[4])?;
-        let e = match tokens[1] {
+        let a = self.get_expr_from_signal_id(line, tokens[3])?;
+        let b = self.get_expr_from_signal_id(line, tokens[4])?;
+        let e: ExprRef = match tokens[1] {
             "iff" => {
                 self.check_type(
                     &tpe,
@@ -201,62 +195,80 @@ impl<'a> Parser<'a> {
                     "iff always returns bool",
                 )?;
                 self.check_type(
-                    &tpe,
+                    &a.get_type(self.ctx),
                     &Type::BOOL,
                     line,
-                    tokens[2],
-                    "iff always returns bool",
+                    tokens[3],
+                    "iff expects a boolean argument",
                 )?;
+                self.check_type(
+                    &b.get_type(self.ctx),
+                    &Type::BOOL,
+                    line,
+                    tokens[4],
+                    "iff expects a boolean argument",
+                )?;
+                self.ctx.bv_equal(a, b)
             }
-            "implies" => {}
-            "sgt" => {}
-            "ugt" => {}
-            "sgte" => {}
-            "ugte" => {}
-            "slt" => {}
-            "ult" => {}
-            "slte" => {}
-            "ulte" => {}
-            "and" => {}
-            "nand" => {}
-            "nor" => {}
-            "or" => {}
-            "xnor" => {}
-            "xor" => {}
-            "rol" => {}
-            "ror" => {}
-            "sll" => {}
-            "sra" => {}
-            "srl" => {}
-            "add" => {}
-            "mul" => {}
-            "sdiv" => {}
-            "udiv" => {}
-            "smod" => {}
-            "srem" => {}
-            "urem" => {}
-            "sub" => {}
-            "saddo" => {}
-            "uaddo" => {}
-            "sdivo" => {}
-            "udivo" => {}
-            "smulo" => {}
-            "umulo" => {}
-            "ssubo" => {}
-            "usubo" => {}
-            "concat" => {}
-            "eq" => {}
-            "neq" => {}
+            "implies" => self.ctx.implies(a, b),
+            "sgt" => self.ctx.greater_signed(a, b),
+            "ugt" => self.ctx.greater(a, b),
+            "sgte" => self.ctx.greater_or_equal_signed(a, b),
+            "ugte" => self.ctx.greater_or_equal(a, b),
+            "slt" => self.ctx.greater_signed(b, a),
+            "ult" => self.ctx.greater(b, a),
+            "slte" => self.ctx.greater_or_equal_signed(b, a),
+            "ulte" => self.ctx.greater_or_equal(b, a),
+            "and" => self.ctx.and(a, b),
+            "nand" => {
+                let inner = self.ctx.and(a, b);
+                self.check_expr_type(inner, line)?;
+                self.ctx.not(inner)
+            }
+            "nor" => {
+                let inner = self.ctx.or(a, b);
+                self.check_expr_type(inner, line)?;
+                self.ctx.not(inner)
+            }
+            "or" => self.ctx.or(a, b),
+            "xnor" => {
+                let inner = self.ctx.xor(a, b);
+                self.check_expr_type(inner, line)?;
+                self.ctx.not(inner)
+            }
+            "xor" => self.ctx.xor(a, b),
+            "rol" | "ror" => todo!("Add support for bit rotates."),
+            "sll" => self.ctx.shift_left(a, b),
+            "sra" => self.ctx.arithmetic_shift_right(a, b),
+            "srl" => self.ctx.shift_right(a, b),
+            "add" => self.ctx.add(a, b),
+            "mul" => self.ctx.mul(a, b),
+            "sdiv" => self.ctx.signed_div(a, b),
+            "udiv" => self.ctx.div(a, b),
+            "smod" => self.ctx.signed_mod(a, b),
+            "srem" => self.ctx.signed_remainder(a, b),
+            "urem" => self.ctx.remainder(a, b),
+            "sub" => self.ctx.sub(a, b),
+            "saddo" | "uaddo" | "sdivo" | "udivo" | "smulo" | "umulo" | "ssubo" | "usubo" => {
+                todo!("Add support for overflow operators")
+            }
+            "concat" => self.ctx.concat(a, b),
+            "eq" => self.ctx.bv_equal(a, b),
+            "neq" => {
+                let inner = self.ctx.bv_equal(a, b);
+                self.check_expr_type(inner, line)?;
+                self.ctx.not(inner)
+            }
             other => panic!("unexpected binary op: {other}"),
         };
-        todo!("handle binary op")
+        self.check_expr_type(e, line)
     }
 
     fn parse_state(&mut self, line: &str, cont: &LineTokens, line_id: LineId) -> ParseLineResult {
         let tpe = self.get_tpe_from_id(line, cont.tokens[2])?;
         let name = self.get_label_name(cont, "state");
         let sym = Expr::symbol(name, tpe);
-        let sym_ref = self.ctx.add(sym);
+        let sym_ref = self.ctx.add_node(sym);
         let state_ref = self.sys.add_state(self.ctx, sym_ref);
         self.state_map.insert(line_id, state_ref);
         Ok(())
@@ -270,8 +282,8 @@ impl<'a> Parser<'a> {
         let state_tpe = state_sym.type_check(self.ctx).unwrap();
         let state_name = state_sym.get_symbol_name(self.ctx).unwrap().to_string();
         let expr = self.get_expr_from_signal_id(line, cont.tokens[4])?;
-        self.check_expr_type(
-            expr,
+        self.check_type(
+            &expr.get_type(self.ctx),
             &tpe,
             line,
             cont.tokens[4],

@@ -2,6 +2,7 @@
 // released under BSD 3-Clause License
 // author: Kevin Laeufer <laeufer@berkeley.edu>
 
+use crate::ir::TypeCheck;
 use std::num::NonZeroU32;
 
 /// This type restricts the maximum width that a bit-vector type is allowed to have in our IR.
@@ -13,7 +14,7 @@ pub type BVLiteralInt = u64;
 /// Add an IR node to the context.
 pub trait AddNode<D, I: Clone + Copy> {
     /// Add a new value to the context obtaining a reference
-    fn add(&mut self, val: D) -> I;
+    fn add_node(&mut self, val: D) -> I;
 }
 
 /// Lookup an IR node from the context
@@ -23,27 +24,102 @@ pub trait GetNode<D: ?Sized, I: Clone + Copy> {
 }
 
 /// Convenience methods to construct IR nodes.
-pub trait ExprNodeConstruction: AddNode<String, StringRef> + AddNode<Expr, ExprRef> {
+pub trait ExprNodeConstruction:
+    AddNode<String, StringRef> + AddNode<Expr, ExprRef> + GetNode<Expr, ExprRef> + Sized
+{
     // helper functions to construct expressions
     fn bv_literal(&mut self, value: BVLiteralInt, width: WidthInt) -> ExprRef {
-        self.add(Expr::BVLiteral { value, width })
+        self.add_node(Expr::BVLiteral { value, width })
     }
     fn bv_symbol(&mut self, name: &str, width: WidthInt) -> ExprRef {
-        let name_ref = self.add(name.to_string());
-        self.add(Expr::BVSymbol {
+        let name_ref = self.add_node(name.to_string());
+        self.add_node(Expr::BVSymbol {
             name: name_ref,
             width,
         })
     }
     fn bv_lit(&mut self, value: BVLiteralInt, width: WidthInt) -> ExprRef {
         assert!(bv_value_fits_width(value, width));
-        self.add(Expr::BVLiteral { value, width })
+        self.add_node(Expr::BVLiteral { value, width })
     }
     fn zero(&mut self, width: WidthInt) -> ExprRef {
         self.bv_lit(0, width)
     }
     fn one(&mut self, width: WidthInt) -> ExprRef {
         self.bv_lit(1, width)
+    }
+    fn bv_equal(&mut self, a: ExprRef, b: ExprRef) -> ExprRef {
+        self.add_node(Expr::BVEqual(a, b))
+    }
+    fn implies(&mut self, a: ExprRef, b: ExprRef) -> ExprRef {
+        self.add_node(Expr::BVImplies(a, b))
+    }
+    fn greater_signed(&mut self, a: ExprRef, b: ExprRef) -> ExprRef {
+        self.add_node(Expr::BVGreaterSigned(a, b))
+    }
+
+    fn greater(&mut self, a: ExprRef, b: ExprRef) -> ExprRef {
+        self.add_node(Expr::BVGreaterSigned(a, b))
+    }
+    fn greater_or_equal_signed(&mut self, a: ExprRef, b: ExprRef) -> ExprRef {
+        self.add_node(Expr::BVGreaterEqualSigned(a, b))
+    }
+
+    fn greater_or_equal(&mut self, a: ExprRef, b: ExprRef) -> ExprRef {
+        self.add_node(Expr::BVGreaterEqual(a, b))
+    }
+    fn not(&mut self, e: ExprRef) -> ExprRef {
+        self.add_node(Expr::BVNot(e, e.get_bv_type(self).unwrap()))
+    }
+    fn and(&mut self, a: ExprRef, b: ExprRef) -> ExprRef {
+        self.add_node(Expr::BVAnd(a, b, b.get_bv_type(self).unwrap()))
+    }
+    fn or(&mut self, a: ExprRef, b: ExprRef) -> ExprRef {
+        self.add_node(Expr::BVOr(a, b, b.get_bv_type(self).unwrap()))
+    }
+    fn xor(&mut self, a: ExprRef, b: ExprRef) -> ExprRef {
+        self.add_node(Expr::BVXor(a, b, b.get_bv_type(self).unwrap()))
+    }
+    fn shift_left(&mut self, a: ExprRef, b: ExprRef) -> ExprRef {
+        self.add_node(Expr::BVShiftLeft(a, b, b.get_bv_type(self).unwrap()))
+    }
+    fn arithmetic_shift_right(&mut self, a: ExprRef, b: ExprRef) -> ExprRef {
+        self.add_node(Expr::BVArithmeticShiftRight(
+            a,
+            b,
+            b.get_bv_type(self).unwrap(),
+        ))
+    }
+    fn shift_right(&mut self, a: ExprRef, b: ExprRef) -> ExprRef {
+        self.add_node(Expr::BVShiftRight(a, b, b.get_bv_type(self).unwrap()))
+    }
+    fn add(&mut self, a: ExprRef, b: ExprRef) -> ExprRef {
+        self.add_node(Expr::BVAdd(a, b, b.get_bv_type(self).unwrap()))
+    }
+    fn sub(&mut self, a: ExprRef, b: ExprRef) -> ExprRef {
+        self.add_node(Expr::BVSub(a, b, b.get_bv_type(self).unwrap()))
+    }
+    fn mul(&mut self, a: ExprRef, b: ExprRef) -> ExprRef {
+        self.add_node(Expr::BVMul(a, b, b.get_bv_type(self).unwrap()))
+    }
+    fn div(&mut self, a: ExprRef, b: ExprRef) -> ExprRef {
+        self.add_node(Expr::BVUnsignedDiv(a, b, b.get_bv_type(self).unwrap()))
+    }
+    fn signed_div(&mut self, a: ExprRef, b: ExprRef) -> ExprRef {
+        self.add_node(Expr::BVSignedDiv(a, b, b.get_bv_type(self).unwrap()))
+    }
+    fn signed_mod(&mut self, a: ExprRef, b: ExprRef) -> ExprRef {
+        self.add_node(Expr::BVSignedMod(a, b, b.get_bv_type(self).unwrap()))
+    }
+    fn signed_remainder(&mut self, a: ExprRef, b: ExprRef) -> ExprRef {
+        self.add_node(Expr::BVSignedRem(a, b, b.get_bv_type(self).unwrap()))
+    }
+    fn remainder(&mut self, a: ExprRef, b: ExprRef) -> ExprRef {
+        self.add_node(Expr::BVUnsignedRem(a, b, b.get_bv_type(self).unwrap()))
+    }
+    fn concat(&mut self, a: ExprRef, b: ExprRef) -> ExprRef {
+        let width = a.get_bv_type(self).unwrap() + b.get_bv_type(self).unwrap();
+        self.add_node(Expr::BVConcat(a, b, width))
     }
 }
 
@@ -80,7 +156,7 @@ impl Context {
             name = format!("{value}_{count}");
             count += 1;
         }
-        self.add(name)
+        self.add_node(name)
     }
 
     fn is_interned(&self, value: &str) -> bool {
@@ -89,14 +165,14 @@ impl Context {
 }
 
 impl AddNode<String, StringRef> for Context {
-    fn add(&mut self, value: String) -> StringRef {
+    fn add_node(&mut self, value: String) -> StringRef {
         StringRef(self.strings.get_or_intern(value))
     }
 }
 
 impl AddNode<&str, StringRef> for Context {
-    fn add(&mut self, value: &str) -> StringRef {
-        self.add(value.to_owned())
+    fn add_node(&mut self, value: &str) -> StringRef {
+        self.add_node(value.to_owned())
     }
 }
 
@@ -109,7 +185,7 @@ impl GetNode<str, StringRef> for Context {
 }
 
 impl AddNode<Expr, ExprRef> for Context {
-    fn add(&mut self, value: Expr) -> ExprRef {
+    fn add_node(&mut self, value: Expr) -> ExprRef {
         let (index, _) = self.exprs.insert_full(value);
         ExprRef(NonZeroU32::new((index + 1) as u32).unwrap())
     }
@@ -336,18 +412,18 @@ mod tests {
     #[test]
     fn reference_ids() {
         let mut ctx = Context::default();
-        let str_id0 = ctx.add("a");
-        let id0 = ctx.add(Expr::BVSymbol {
+        let str_id0 = ctx.add_node("a");
+        let id0 = ctx.add_node(Expr::BVSymbol {
             name: str_id0,
             width: 1,
         });
         assert_eq!(id0.0.get(), 1, "ids start at one (for now)");
-        let id0_b = ctx.add(Expr::BVSymbol {
+        let id0_b = ctx.add_node(Expr::BVSymbol {
             name: str_id0,
             width: 1,
         });
         assert_eq!(id0.0, id0_b.0, "ids should be interned!");
-        let id1 = ctx.add(Expr::BVSymbol {
+        let id1 = ctx.add_node(Expr::BVSymbol {
             name: str_id0,
             width: 2,
         });
