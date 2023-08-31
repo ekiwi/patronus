@@ -116,10 +116,7 @@ impl<'a> Parser<'a> {
                     Some(self.parse_format(line, tokens, op)?)
                 }
                 "ones" => Some(self.parse_ones(line, tokens)?),
-                "state" => {
-                    self.parse_state(line, &cont, line_id)?;
-                    None
-                }
+                "state" => Some(self.parse_state(line, &cont, line_id)?),
                 "init" | "next" => {
                     self.parse_state_init_or_next(line, &cont, op == "init")?;
                     None
@@ -270,14 +267,18 @@ impl<'a> Parser<'a> {
         self.check_expr_type(e, line)
     }
 
-    fn parse_state(&mut self, line: &str, cont: &LineTokens, line_id: LineId) -> ParseLineResult {
+    fn parse_state(
+        &mut self,
+        line: &str,
+        cont: &LineTokens,
+        line_id: LineId,
+    ) -> ParseLineResult<ExprRef> {
         let tpe = self.get_tpe_from_id(line, cont.tokens[2])?;
         let name = self.get_label_name(cont, "state");
-        let sym = Expr::symbol(name, tpe);
-        let sym_ref = self.ctx.add_node(sym);
-        let state_ref = self.sys.add_state(self.ctx, sym_ref);
+        let sym = self.ctx.symbol(name, tpe);
+        let state_ref = self.sys.add_state(self.ctx, sym);
         self.state_map.insert(line_id, state_ref);
-        Ok(())
+        Ok(sym)
     }
 
     fn parse_state_init_or_next(

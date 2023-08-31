@@ -35,6 +35,9 @@ pub trait ExprNodeConstruction:
             width,
         })
     }
+    fn symbol(&mut self, name: StringRef, tpe: Type) -> ExprRef {
+        self.add_node(Expr::symbol(name, tpe))
+    }
     fn bv_lit(&mut self, value: BVLiteralInt, width: WidthInt) -> ExprRef {
         assert!(bv_value_fits_width(value, width));
         self.add_node(Expr::BVLiteral { value, width })
