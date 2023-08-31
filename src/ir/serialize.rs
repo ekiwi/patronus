@@ -2,7 +2,7 @@
 // released under BSD 3-Clause License
 // author: Kevin Laeufer <laeufer@berkeley.edu>
 
-use super::{Context, Expr, ExprNodeConstruction, ExprRef, GetNode};
+use super::{Context, Expr, ExprRef, GetNode};
 
 trait SerializableIrNode {
     fn serialize(&self, ctx: &Context, writer: &mut impl (std::io::Write)) -> std::io::Result<()>;
@@ -274,6 +274,7 @@ impl SerializableIrNode for ExprRef {
 
 #[cfg(test)]
 mod tests {
+    use super::super::ExprNodeConstruction;
     use super::*;
 
     #[test]
