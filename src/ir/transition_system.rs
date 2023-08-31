@@ -69,7 +69,7 @@ impl TransitionSystem {
 
     pub fn modify_state<F>(&mut self, reference: StateRef, modify: F)
     where
-        F: FnOnce(&mut State) -> (),
+        F: FnOnce(&mut State),
     {
         modify(self.states.get_mut(reference.0).unwrap())
     }
