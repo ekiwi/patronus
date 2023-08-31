@@ -52,10 +52,9 @@ type LineId = u32;
 
 impl<'a> Parser<'a> {
     fn new(ctx: &'a mut Context) -> Self {
-        let empty_str = ctx.add_node("");
         Parser {
             ctx,
-            sys: TransitionSystem::new(empty_str),
+            sys: TransitionSystem::new("".to_string()),
             errors: Errors::new(),
             offset: 0,
             type_map: HashMap::new(),
@@ -73,7 +72,7 @@ impl<'a> Parser<'a> {
         if self.errors.is_empty() {
             Ok(std::mem::replace(
                 &mut self.sys,
-                TransitionSystem::new(self.ctx.add_node("")),
+                TransitionSystem::new("".to_string()),
             ))
         } else {
             Err(std::mem::take(&mut self.errors))

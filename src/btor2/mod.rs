@@ -1,6 +1,8 @@
 // Copyright 2023 The Regents of the University of California
 // released under BSD 3-Clause License
 // author: Kevin Laeufer <laeufer@berkeley.edu>
-mod parser;
+mod parse;
+mod serialize;
 
-pub use parser::{parse_file, parse_str};
+pub use parse::{parse_file, parse_str};
+pub use serialize::{serialize, serialize_to_str};

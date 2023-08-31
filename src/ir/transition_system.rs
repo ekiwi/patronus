@@ -2,7 +2,7 @@
 // released under BSD 3-Clause License
 // author: Kevin Laeufer <laeufer@berkeley.edu>
 
-use super::{Expr, ExprIntrospection, ExprRef, GetNode, StringRef};
+use super::{Expr, ExprIntrospection, ExprRef, GetNode};
 
 #[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub enum SignalKind {
@@ -48,14 +48,14 @@ pub struct StateRef(usize);
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct TransitionSystem {
-    name: StringRef,
+    pub name: String,
     states: Vec<State>,
     inputs: Vec<ExprRef>,
     signals: Vec<Signal>,
 }
 
 impl TransitionSystem {
-    pub fn new(name: StringRef) -> Self {
+    pub fn new(name: String) -> Self {
         TransitionSystem {
             name,
             states: Vec::default(),
