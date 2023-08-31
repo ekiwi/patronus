@@ -249,7 +249,6 @@ impl Expr {
 
 pub trait ExprIntrospection {
     fn is_symbol(&self, ctx: &impl GetNode<Expr, ExprRef>) -> bool;
-    fn get_type(&self, ctx: &impl GetNode<Expr, ExprRef>) -> Type;
     fn get_symbol_name<'a>(
         &self,
         ctx: &'a (impl GetNode<Expr, ExprRef> + GetNode<str, StringRef>),
@@ -259,10 +258,6 @@ pub trait ExprIntrospection {
 impl ExprIntrospection for Expr {
     fn is_symbol(&self, _ctx: &impl GetNode<Expr, ExprRef>) -> bool {
         matches!(self, Expr::BVSymbol { .. } | Expr::ArraySymbol { .. })
-    }
-
-    fn get_type(&self, ctx: &impl GetNode<Expr, ExprRef>) -> Type {
-        todo!()
     }
 
     fn get_symbol_name<'a>(
@@ -280,10 +275,6 @@ impl ExprIntrospection for Expr {
 impl ExprIntrospection for ExprRef {
     fn is_symbol(&self, ctx: &impl GetNode<Expr, ExprRef>) -> bool {
         ctx.get(*self).is_symbol(ctx)
-    }
-
-    fn get_type(&self, ctx: &impl GetNode<Expr, ExprRef>) -> Type {
-        ctx.get(*self).get_type(ctx)
     }
 
     fn get_symbol_name<'a>(
@@ -350,7 +341,7 @@ mod tests {
             name: str_id0,
             width: 1,
         });
-        assert_eq!(id0.0.get(), 0, "ids start at one (for now)");
+        assert_eq!(id0.0.get(), 1, "ids start at one (for now)");
         let id0_b = ctx.add(Expr::BVSymbol {
             name: str_id0,
             width: 1,

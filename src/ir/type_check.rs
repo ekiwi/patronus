@@ -3,6 +3,7 @@
 // author: Kevin Laeufer <laeufer@berkeley.edu>
 
 use super::{ArrayType, Expr, ExprRef, GetNode, Type, WidthInt};
+use crate::ir::ExprIntrospection;
 
 #[derive(Debug, Clone)]
 pub struct TypeCheckError {
@@ -89,6 +90,22 @@ pub trait TypeCheck {
         &self,
         ctx: &impl GetNode<Expr, ExprRef>,
     ) -> std::result::Result<Type, TypeCheckError>;
+    /// gets type as fast as possible without performing any checks
+    fn get_type(&self, ctx: &impl GetNode<Expr, ExprRef>) -> Type;
+    fn get_bv_type(&self, ctx: &impl GetNode<Expr, ExprRef>) -> Option<WidthInt> {
+        if let Type::BV(width) = self.get_type(ctx) {
+            Some(width)
+        } else {
+            None
+        }
+    }
+    fn get_array_type(&self, ctx: &impl GetNode<Expr, ExprRef>) -> Option<ArrayType> {
+        if let Type::Array(tpe) = self.get_type(ctx) {
+            Some(tpe)
+        } else {
+            None
+        }
+    }
 }
 
 impl TypeCheck for Expr {
@@ -238,6 +255,85 @@ impl TypeCheck for Expr {
             }
         }
     }
+
+    fn get_type(&self, ctx: &impl GetNode<Expr, ExprRef>) -> Type {
+        match *self {
+            Expr::BVSymbol { name: _, width } => Type::BV(width),
+            Expr::BVLiteral { value: _, width } => Type::BV(width),
+            Expr::BVZeroExt { e: _, by: _, width } => Type::BV(width),
+            Expr::BVSignExt { e: _, by: _, width } => Type::BV(width),
+            Expr::BVSlice { e: _, hi, lo } => Type::BV(hi - lo + 1),
+            Expr::BVNot(_, width) => Type::BV(width),
+            Expr::BVNegate(_, width) => Type::BV(width),
+            Expr::BVReduceOr(_, width) => Type::BV(width),
+            Expr::BVReduceAnd(_, width) => Type::BV(width),
+            Expr::BVReduceXor(_, width) => Type::BV(width),
+            Expr::BVEqual(_, _, width) => Type::BV(width),
+            Expr::BVImplies(_, _, width) => Type::BV(width),
+            Expr::BVGreater(_, _, width) => Type::BV(width),
+            Expr::BVGreaterSigned(_, _, width) => Type::BV(width),
+            Expr::BVGreaterEqual(_, _, width) => Type::BV(width),
+            Expr::BVGreaterEqualSigned(_, _, width) => Type::BV(width),
+            Expr::BVConcat(_, _, width) => Type::BV(width),
+            Expr::BVAnd(_, _, width) => Type::BV(width),
+            Expr::BVOr(_, _, width) => Type::BV(width),
+            Expr::BVXor(_, _, width) => Type::BV(width),
+            Expr::BVShiftLeft(_, _, width) => Type::BV(width),
+            Expr::BVArithmeticShiftRight(_, _, width) => Type::BV(width),
+            Expr::BVShiftRight(_, _, width) => Type::BV(width),
+            Expr::BVAdd(_, _, width) => Type::BV(width),
+            Expr::BVMul(_, _, width) => Type::BV(width),
+            Expr::BVSignedDiv(_, _, width) => Type::BV(width),
+            Expr::BVUnsignedDiv(_, _, width) => Type::BV(width),
+            Expr::BVSignedMod(_, _, width) => Type::BV(width),
+            Expr::BVSignedRem(_, _, width) => Type::BV(width),
+            Expr::BVUnsignedRem(_, _, width) => Type::BV(width),
+            Expr::BVSub(_, _, width) => Type::BV(width),
+            Expr::BVArrayRead {
+                array: _,
+                index: _,
+                width,
+            } => Type::BV(width),
+            Expr::BVIte {
+                cond: _,
+                tru: _,
+                fals,
+            } => {
+                // Here we need to recourse because adding a `width` field to BVIte
+                // would have blown up the size of `Expr`.
+                // We assume that the `fals` branch is less likely to be a nested ITE.
+                fals.get_type(ctx)
+            }
+            Expr::ArraySymbol {
+                name: _,
+                index_width,
+                data_width,
+            } => Type::Array(ArrayType {
+                index_width,
+                data_width,
+            }),
+            Expr::ArrayConstant {
+                e: _,
+                index_width,
+                data_width,
+            } => Type::Array(ArrayType {
+                index_width,
+                data_width,
+            }),
+            Expr::ArrayEqual(_, _) => Type::BV(1),
+            Expr::ArrayStore { array, .. } => array.get_type(ctx),
+            Expr::ArrayIte {
+                cond: _,
+                tru: _,
+                fals,
+            } => {
+                // Here we need to recourse because adding a `width` field to BVIte
+                // would have blown up the size of `Expr`.
+                // We assume that the `fals` branch is less likely to be a nested ITE.
+                fals.get_type(ctx)
+            }
+        }
+    }
 }
 impl TypeCheck for ExprRef {
     fn type_check(
@@ -245,5 +341,9 @@ impl TypeCheck for ExprRef {
         ctx: &impl GetNode<Expr, ExprRef>,
     ) -> std::result::Result<Type, TypeCheckError> {
         ctx.get(*self).type_check(ctx)
+    }
+
+    fn get_type(&self, ctx: &impl GetNode<Expr, ExprRef>) -> Type {
+        ctx.get(*self).get_type(ctx)
     }
 }
