@@ -195,14 +195,14 @@ impl<'a> Parser<'a> {
             "iff" => {
                 self.check_type(
                     &tpe,
-                    Type::Bool(),
+                    &Type::BOOL,
                     line,
                     tokens[2],
                     "iff always returns bool",
                 )?;
                 self.check_type(
                     &tpe,
-                    Type::Bool(),
+                    &Type::BOOL,
                     line,
                     tokens[2],
                     "iff always returns bool",

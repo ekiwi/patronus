@@ -288,11 +288,8 @@ pub enum Type {
     Array(ArrayType),
 }
 
-const BOOL_TYPE: Type = Type::BV(1);
 impl Type {
-    pub fn Bool() -> &'static Type {
-        &BOOL_TYPE
-    }
+    pub const BOOL: Type = Type::BV(1);
 }
 
 impl std::fmt::Display for Type {
