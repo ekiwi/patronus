@@ -53,57 +53,57 @@ impl SerializableIrNode for Expr {
                 e.serialize(ctx, writer)?;
                 write!(writer, ")")
             }
-            Expr::BVReduceOr(e, _) => {
+            Expr::BVReduceOr(e) => {
                 write!(writer, "redor(")?;
                 e.serialize(ctx, writer)?;
                 write!(writer, ")")
             }
-            Expr::BVReduceAnd(e, _) => {
+            Expr::BVReduceAnd(e) => {
                 write!(writer, "redand(")?;
                 e.serialize(ctx, writer)?;
                 write!(writer, ")")
             }
-            Expr::BVReduceXor(e, _) => {
+            Expr::BVReduceXor(e) => {
                 write!(writer, "redxor(")?;
                 e.serialize(ctx, writer)?;
                 write!(writer, ")")
             }
-            Expr::BVEqual(a, b, _) => {
+            Expr::BVEqual(a, b) => {
                 write!(writer, "eq(")?;
                 a.serialize(ctx, writer)?;
                 write!(writer, ", ")?;
                 b.serialize(ctx, writer)?;
                 write!(writer, ")")
             }
-            Expr::BVImplies(a, b, _) => {
+            Expr::BVImplies(a, b) => {
                 write!(writer, "implies(")?;
                 a.serialize(ctx, writer)?;
                 write!(writer, ", ")?;
                 b.serialize(ctx, writer)?;
                 write!(writer, ")")
             }
-            Expr::BVGreater(a, b, _) => {
+            Expr::BVGreater(a, b) => {
                 write!(writer, "ugt(")?;
                 a.serialize(ctx, writer)?;
                 write!(writer, ", ")?;
                 b.serialize(ctx, writer)?;
                 write!(writer, ")")
             }
-            Expr::BVGreaterSigned(a, b, _) => {
+            Expr::BVGreaterSigned(a, b) => {
                 write!(writer, "sgt(")?;
                 a.serialize(ctx, writer)?;
                 write!(writer, ", ")?;
                 b.serialize(ctx, writer)?;
                 write!(writer, ")")
             }
-            Expr::BVGreaterEqual(a, b, _) => {
+            Expr::BVGreaterEqual(a, b) => {
                 write!(writer, "ugte(")?;
                 a.serialize(ctx, writer)?;
                 write!(writer, ", ")?;
                 b.serialize(ctx, writer)?;
                 write!(writer, ")")
             }
-            Expr::BVGreaterEqualSigned(a, b, _) => {
+            Expr::BVGreaterEqualSigned(a, b) => {
                 write!(writer, "sgte(")?;
                 a.serialize(ctx, writer)?;
                 write!(writer, ", ")?;
