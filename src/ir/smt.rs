@@ -28,9 +28,6 @@ pub trait ExprNodeConstruction:
     AddNode<String, StringRef> + AddNode<Expr, ExprRef> + GetNode<Expr, ExprRef> + Sized
 {
     // helper functions to construct expressions
-    fn bv_literal(&mut self, value: BVLiteralInt, width: WidthInt) -> ExprRef {
-        self.add_node(Expr::BVLiteral { value, width })
-    }
     fn bv_symbol(&mut self, name: &str, width: WidthInt) -> ExprRef {
         let name_ref = self.add_node(name.to_string());
         self.add_node(Expr::BVSymbol {

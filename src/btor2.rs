@@ -114,6 +114,7 @@ impl<'a> Parser<'a> {
                 "const" | "constd" | "consth" | "zero" | "one" => {
                     Some(self.parse_format(line, tokens, op)?)
                 }
+                "ones" => Some(self.parse_ones(line, tokens)?),
                 "state" => {
                     self.parse_state(line, &cont, line_id)?;
                     None
@@ -323,6 +324,21 @@ impl<'a> Parser<'a> {
                 Err(())
             }
             Some(id) => Ok(id),
+        }
+    }
+
+    fn parse_ones(&mut self, line: &str, tokens: &[&str]) -> ParseLineResult<ExprRef> {
+        // derive width from type
+        let width = self.get_bv_width(line, tokens[2])?;
+        if width > BVLiteralInt::BITS {
+            todo!("Add support for literals of size: {width}")
+        } else {
+            let value = if width == BVLiteralInt::BITS {
+                BVLiteralInt::MAX
+            } else {
+                ((1 as BVLiteralInt) << width) - 1
+            };
+            Ok(self.ctx.bv_lit(value, width))
         }
     }
 
