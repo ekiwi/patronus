@@ -99,10 +99,10 @@ impl TypeCheck for Expr {
         match *self {
             Expr::BVSymbol { name: _, width } => Ok(Type::BV(width)),
             Expr::BVLiteral { value: _, width } => Ok(Type::BV(width)),
-            Expr::BVZeroExt { e, by } => {
+            Expr::BVZeroExt { e, by, width } => {
                 Ok(Type::BV(e.type_check(ctx)?.expect_bv("zero extend")? + by))
             }
-            Expr::BVSignExt { e, by } => {
+            Expr::BVSignExt { e, by, width } => {
                 Ok(Type::BV(e.type_check(ctx)?.expect_bv("sign extend")? + by))
             }
             Expr::BVSlice { e, hi, lo } => {
@@ -115,70 +115,74 @@ impl TypeCheck for Expr {
                     Ok(Type::BV(hi - lo + 1))
                 }
             }
-            Expr::BVNot(e) => {
+            Expr::BVNot(e, width) => {
                 e.type_check(ctx)?.expect_bv_of(1, "not")?;
                 Ok(Type::BV(1))
             }
-            Expr::BVNegate(e) => Ok(Type::BV(e.type_check(ctx)?.expect_bv("negation")?)),
-            Expr::BVReduceOr(e) => {
+            Expr::BVNegate(e, width) => Ok(Type::BV(e.type_check(ctx)?.expect_bv("negation")?)),
+            Expr::BVReduceOr(e, width) => {
                 e.type_check(ctx)?.expect_bv("or reduction")?;
                 Ok(Type::BV(1))
             }
-            Expr::BVReduceAnd(e) => {
+            Expr::BVReduceAnd(e, width) => {
                 e.type_check(ctx)?.expect_bv("and reduction")?;
                 Ok(Type::BV(1))
             }
-            Expr::BVReduceXor(e) => {
+            Expr::BVReduceXor(e, width) => {
                 e.type_check(ctx)?.expect_bv("xor reduction")?;
                 Ok(Type::BV(1))
             }
-            Expr::BVEqual(a, b) => {
+            Expr::BVEqual(a, b, width) => {
                 expect_same_width_bvs(ctx, "bit-vector equality", a, b)?;
                 Ok(Type::BV(1))
             }
-            Expr::BVImplies(a, b) => {
+            Expr::BVImplies(a, b, width) => {
                 a.type_check(ctx)?.expect_bv("implies")?;
                 b.type_check(ctx)?.expect_bv("implies")?;
                 Ok(Type::BV(1))
             }
-            Expr::BVGreater(a, b) => {
+            Expr::BVGreater(a, b, width) => {
                 expect_same_width_bvs(ctx, "greater", a, b)?;
                 Ok(Type::BV(1))
             }
-            Expr::BVGreaterSigned(a, b) => {
+            Expr::BVGreaterSigned(a, b, width) => {
                 expect_same_width_bvs(ctx, "greater signed", a, b)?;
                 Ok(Type::BV(1))
             }
-            Expr::BVGreaterEqual(a, b) => {
+            Expr::BVGreaterEqual(a, b, width) => {
                 expect_same_width_bvs(ctx, "greater or equals", a, b)?;
                 Ok(Type::BV(1))
             }
-            Expr::BVGreaterEqualSigned(a, b) => {
+            Expr::BVGreaterEqualSigned(a, b, width) => {
                 expect_same_width_bvs(ctx, "greater or equals signed", a, b)?;
                 Ok(Type::BV(1))
             }
-            Expr::BVConcat(a, b) => {
+            Expr::BVConcat(a, b, width) => {
                 let a_width = a.type_check(ctx)?.expect_bv("concat")?;
                 let b_width = b.type_check(ctx)?.expect_bv("concat")?;
                 Ok(Type::BV(a_width + b_width))
             }
-            Expr::BVAnd(a, b) => expect_same_width_bvs(ctx, "and", a, b),
-            Expr::BVOr(a, b) => expect_same_width_bvs(ctx, "or", a, b),
-            Expr::BVXor(a, b) => expect_same_width_bvs(ctx, "xor", a, b),
-            Expr::BVShiftLeft(a, b) => expect_same_width_bvs(ctx, "shift left", a, b),
-            Expr::BVArithmeticShiftRight(a, b) => {
+            Expr::BVAnd(a, b, width) => expect_same_width_bvs(ctx, "and", a, b),
+            Expr::BVOr(a, b, width) => expect_same_width_bvs(ctx, "or", a, b),
+            Expr::BVXor(a, b, width) => expect_same_width_bvs(ctx, "xor", a, b),
+            Expr::BVShiftLeft(a, b, width) => expect_same_width_bvs(ctx, "shift left", a, b),
+            Expr::BVArithmeticShiftRight(a, b, width) => {
                 expect_same_width_bvs(ctx, "arithmetic shift right", a, b)
             }
-            Expr::BVShiftRight(a, b) => expect_same_width_bvs(ctx, "shift right", a, b),
-            Expr::BVAdd(a, b) => expect_same_width_bvs(ctx, "add", a, b),
-            Expr::BVMul(a, b) => expect_same_width_bvs(ctx, "mul", a, b),
-            Expr::BVSignedDiv(a, b) => expect_same_width_bvs(ctx, "signed div", a, b),
-            Expr::BVUnsignedDiv(a, b) => expect_same_width_bvs(ctx, "unsigned div", a, b),
-            Expr::BVSignedMod(a, b) => expect_same_width_bvs(ctx, "signed mod", a, b),
-            Expr::BVSignedRem(a, b) => expect_same_width_bvs(ctx, "signed rem", a, b),
-            Expr::BVUnsignedRem(a, b) => expect_same_width_bvs(ctx, "unsigned rem", a, b),
-            Expr::BVSub(a, b) => expect_same_width_bvs(ctx, "subtraction", a, b),
-            Expr::BVArrayRead { array, index } => {
+            Expr::BVShiftRight(a, b, width) => expect_same_width_bvs(ctx, "shift right", a, b),
+            Expr::BVAdd(a, b, width) => expect_same_width_bvs(ctx, "add", a, b),
+            Expr::BVMul(a, b, width) => expect_same_width_bvs(ctx, "mul", a, b),
+            Expr::BVSignedDiv(a, b, width) => expect_same_width_bvs(ctx, "signed div", a, b),
+            Expr::BVUnsignedDiv(a, b, width) => expect_same_width_bvs(ctx, "unsigned div", a, b),
+            Expr::BVSignedMod(a, b, width) => expect_same_width_bvs(ctx, "signed mod", a, b),
+            Expr::BVSignedRem(a, b, width) => expect_same_width_bvs(ctx, "signed rem", a, b),
+            Expr::BVUnsignedRem(a, b, width) => expect_same_width_bvs(ctx, "unsigned rem", a, b),
+            Expr::BVSub(a, b, width) => expect_same_width_bvs(ctx, "subtraction", a, b),
+            Expr::BVArrayRead {
+                array,
+                index,
+                width,
+            } => {
                 let array_tpe = array.type_check(ctx)?.expect_array("array read")?;
                 let index_width = index.type_check(ctx)?.expect_bv("array read index")?;
                 if array_tpe.index_width != index_width {
@@ -204,7 +208,11 @@ impl TypeCheck for Expr {
                 index_width,
                 data_width,
             })),
-            Expr::ArrayConstant { e, index_width } => {
+            Expr::ArrayConstant {
+                e,
+                index_width,
+                data_width,
+            } => {
                 let data_width = e.type_check(ctx)?.expect_bv("array constant")?;
                 Ok(Type::Array(ArrayType {
                     index_width,

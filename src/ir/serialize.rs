@@ -2,7 +2,7 @@
 // released under BSD 3-Clause License
 // author: Kevin Laeufer <laeufer@berkeley.edu>
 
-use super::{Context, Expr, ExprRef, GetNode};
+use super::{Context, Expr, ExprNodeConstruction, ExprRef, GetNode};
 
 trait SerializableIrNode {
     fn serialize(&self, ctx: &Context, writer: &mut impl (std::io::Write)) -> std::io::Result<()>;
@@ -25,17 +25,17 @@ impl SerializableIrNode for Expr {
                     write!(writer, "{width}'x{value:x}")
                 }
             }
-            Expr::BVZeroExt { e, by } => {
+            Expr::BVZeroExt { e, by, .. } => {
                 write!(writer, "zext(")?;
                 e.serialize(ctx, writer)?;
                 write!(writer, ", {by})")
             }
-            Expr::BVSignExt { e, by } => {
+            Expr::BVSignExt { e, by, .. } => {
                 write!(writer, "sext(")?;
                 e.serialize(ctx, writer)?;
                 write!(writer, ", {by})")
             }
-            Expr::BVSlice { e, hi, lo } => {
+            Expr::BVSlice { e, hi, lo, .. } => {
                 e.serialize(ctx, writer)?;
                 if hi == lo {
                     write!(writer, "[{hi}]")
@@ -43,185 +43,187 @@ impl SerializableIrNode for Expr {
                     write!(writer, "[{hi}:{lo}]")
                 }
             }
-            Expr::BVNot(e) => {
+            Expr::BVNot(e, _) => {
                 write!(writer, "not(")?;
                 e.serialize(ctx, writer)?;
                 write!(writer, ")")
             }
-            Expr::BVNegate(e) => {
+            Expr::BVNegate(e, _) => {
                 write!(writer, "neg(")?;
                 e.serialize(ctx, writer)?;
                 write!(writer, ")")
             }
-            Expr::BVReduceOr(e) => {
+            Expr::BVReduceOr(e, _) => {
                 write!(writer, "redor(")?;
                 e.serialize(ctx, writer)?;
                 write!(writer, ")")
             }
-            Expr::BVReduceAnd(e) => {
+            Expr::BVReduceAnd(e, _) => {
                 write!(writer, "redand(")?;
                 e.serialize(ctx, writer)?;
                 write!(writer, ")")
             }
-            Expr::BVReduceXor(e) => {
+            Expr::BVReduceXor(e, _) => {
                 write!(writer, "redxor(")?;
                 e.serialize(ctx, writer)?;
                 write!(writer, ")")
             }
-            Expr::BVEqual(a, b) => {
+            Expr::BVEqual(a, b, _) => {
                 write!(writer, "eq(")?;
                 a.serialize(ctx, writer)?;
                 write!(writer, ", ")?;
                 b.serialize(ctx, writer)?;
                 write!(writer, ")")
             }
-            Expr::BVImplies(a, b) => {
+            Expr::BVImplies(a, b, _) => {
                 write!(writer, "implies(")?;
                 a.serialize(ctx, writer)?;
                 write!(writer, ", ")?;
                 b.serialize(ctx, writer)?;
                 write!(writer, ")")
             }
-            Expr::BVGreater(a, b) => {
+            Expr::BVGreater(a, b, _) => {
                 write!(writer, "ugt(")?;
                 a.serialize(ctx, writer)?;
                 write!(writer, ", ")?;
                 b.serialize(ctx, writer)?;
                 write!(writer, ")")
             }
-            Expr::BVGreaterSigned(a, b) => {
+            Expr::BVGreaterSigned(a, b, _) => {
                 write!(writer, "sgt(")?;
                 a.serialize(ctx, writer)?;
                 write!(writer, ", ")?;
                 b.serialize(ctx, writer)?;
                 write!(writer, ")")
             }
-            Expr::BVGreaterEqual(a, b) => {
+            Expr::BVGreaterEqual(a, b, _) => {
                 write!(writer, "ugte(")?;
                 a.serialize(ctx, writer)?;
                 write!(writer, ", ")?;
                 b.serialize(ctx, writer)?;
                 write!(writer, ")")
             }
-            Expr::BVGreaterEqualSigned(a, b) => {
+            Expr::BVGreaterEqualSigned(a, b, _) => {
                 write!(writer, "sgte(")?;
                 a.serialize(ctx, writer)?;
                 write!(writer, ", ")?;
                 b.serialize(ctx, writer)?;
                 write!(writer, ")")
             }
-            Expr::BVConcat(a, b) => {
+            Expr::BVConcat(a, b, _) => {
                 write!(writer, "concat(")?;
                 a.serialize(ctx, writer)?;
                 write!(writer, ", ")?;
                 b.serialize(ctx, writer)?;
                 write!(writer, ")")
             }
-            Expr::BVAnd(a, b) => {
+            Expr::BVAnd(a, b, _) => {
                 write!(writer, "and(")?;
                 a.serialize(ctx, writer)?;
                 write!(writer, ", ")?;
                 b.serialize(ctx, writer)?;
                 write!(writer, ")")
             }
-            Expr::BVOr(a, b) => {
+            Expr::BVOr(a, b, _) => {
                 write!(writer, "or(")?;
                 a.serialize(ctx, writer)?;
                 write!(writer, ", ")?;
                 b.serialize(ctx, writer)?;
                 write!(writer, ")")
             }
-            Expr::BVXor(a, b) => {
+            Expr::BVXor(a, b, _) => {
                 write!(writer, "xor(")?;
                 a.serialize(ctx, writer)?;
                 write!(writer, ", ")?;
                 b.serialize(ctx, writer)?;
                 write!(writer, ")")
             }
-            Expr::BVShiftLeft(a, b) => {
+            Expr::BVShiftLeft(a, b, _) => {
                 write!(writer, "logical_shift_left(")?;
                 a.serialize(ctx, writer)?;
                 write!(writer, ", ")?;
                 b.serialize(ctx, writer)?;
                 write!(writer, ")")
             }
-            Expr::BVArithmeticShiftRight(a, b) => {
+            Expr::BVArithmeticShiftRight(a, b, _) => {
                 write!(writer, "arithmetic_shift_right(")?;
                 a.serialize(ctx, writer)?;
                 write!(writer, ", ")?;
                 b.serialize(ctx, writer)?;
                 write!(writer, ")")
             }
-            Expr::BVShiftRight(a, b) => {
+            Expr::BVShiftRight(a, b, _) => {
                 write!(writer, "logical_shift_right(")?;
                 a.serialize(ctx, writer)?;
                 write!(writer, ", ")?;
                 b.serialize(ctx, writer)?;
                 write!(writer, ")")
             }
-            Expr::BVAdd(a, b) => {
+            Expr::BVAdd(a, b, _) => {
                 write!(writer, "add(")?;
                 a.serialize(ctx, writer)?;
                 write!(writer, ", ")?;
                 b.serialize(ctx, writer)?;
                 write!(writer, ")")
             }
-            Expr::BVMul(a, b) => {
+            Expr::BVMul(a, b, _) => {
                 write!(writer, "mul(")?;
                 a.serialize(ctx, writer)?;
                 write!(writer, ", ")?;
                 b.serialize(ctx, writer)?;
                 write!(writer, ")")
             }
-            Expr::BVSignedDiv(a, b) => {
+            Expr::BVSignedDiv(a, b, _) => {
                 write!(writer, "sdiv(")?;
                 a.serialize(ctx, writer)?;
                 write!(writer, ", ")?;
                 b.serialize(ctx, writer)?;
                 write!(writer, ")")
             }
-            Expr::BVUnsignedDiv(a, b) => {
+            Expr::BVUnsignedDiv(a, b, _) => {
                 write!(writer, "udiv(")?;
                 a.serialize(ctx, writer)?;
                 write!(writer, ", ")?;
                 b.serialize(ctx, writer)?;
                 write!(writer, ")")
             }
-            Expr::BVSignedMod(a, b) => {
+            Expr::BVSignedMod(a, b, _) => {
                 write!(writer, "smod(")?;
                 a.serialize(ctx, writer)?;
                 write!(writer, ", ")?;
                 b.serialize(ctx, writer)?;
                 write!(writer, ")")
             }
-            Expr::BVSignedRem(a, b) => {
+            Expr::BVSignedRem(a, b, _) => {
                 write!(writer, "srem(")?;
                 a.serialize(ctx, writer)?;
                 write!(writer, ", ")?;
                 b.serialize(ctx, writer)?;
                 write!(writer, ")")
             }
-            Expr::BVUnsignedRem(a, b) => {
+            Expr::BVUnsignedRem(a, b, _) => {
                 write!(writer, "urem(")?;
                 a.serialize(ctx, writer)?;
                 write!(writer, ", ")?;
                 b.serialize(ctx, writer)?;
                 write!(writer, ")")
             }
-            Expr::BVSub(a, b) => {
+            Expr::BVSub(a, b, _) => {
                 write!(writer, "sub(")?;
                 a.serialize(ctx, writer)?;
                 write!(writer, ", ")?;
                 b.serialize(ctx, writer)?;
                 write!(writer, ")")
             }
-            Expr::BVArrayRead { array, index } => {
+            Expr::BVArrayRead { array, index, .. } => {
                 array.serialize(ctx, writer)?;
                 write!(writer, "[")?;
                 index.serialize(ctx, writer)?;
                 write!(writer, "]")
             }
-            Expr::BVIte { cond, tru, fals } => {
+            Expr::BVIte {
+                cond, tru, fals, ..
+            } => {
                 write!(writer, "ite(")?;
                 cond.serialize(ctx, writer)?;
                 write!(writer, ", ")?;
@@ -231,7 +233,7 @@ impl SerializableIrNode for Expr {
                 write!(writer, ")")
             }
             Expr::ArraySymbol { name, .. } => write!(writer, "{}", ctx.get(name)),
-            Expr::ArrayConstant { e, index_width } => {
+            Expr::ArrayConstant { e, index_width, .. } => {
                 write!(writer, "([")?;
                 e.serialize(ctx, writer)?;
                 write!(writer, "] x 2^{index_width})")

@@ -2,6 +2,8 @@
 // released under BSD 3-Clause License
 // author: Kevin Laeufer <laeufer@berkeley.edu>
 
+use std::num::NonZeroU32;
+
 /// This type restricts the maximum width that a bit-vector type is allowed to have in our IR.
 pub type WidthInt = u32;
 
@@ -109,14 +111,14 @@ impl GetNode<str, StringRef> for Context {
 impl AddNode<Expr, ExprRef> for Context {
     fn add(&mut self, value: Expr) -> ExprRef {
         let (index, _) = self.exprs.insert_full(value);
-        ExprRef(index as u32)
+        ExprRef(NonZeroU32::new((index + 1) as u32).unwrap())
     }
 }
 
 impl GetNode<Expr, ExprRef> for Context {
     fn get(&self, reference: ExprRef) -> &Expr {
         self.exprs
-            .get_index(reference.0 as usize)
+            .get_index((reference.0.get() as usize) - 1)
             .expect("Invalid ExprRef!")
     }
 }
@@ -126,7 +128,7 @@ impl ExprNodeConstruction for Context {}
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
 pub struct StringRef(string_interner::symbol::SymbolU16);
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
-pub struct ExprRef(u32);
+pub struct ExprRef(NonZeroU32);
 
 #[derive(Debug, PartialEq, Eq, Clone, Hash)]
 /// Represents a SMT bit-vector or array expression.
@@ -146,54 +148,60 @@ pub enum Expr {
     BVZeroExt {
         e: ExprRef,
         by: WidthInt,
+        width: WidthInt,
     },
     BVSignExt {
         e: ExprRef,
         by: WidthInt,
+        width: WidthInt,
     },
     BVSlice {
         e: ExprRef,
         hi: WidthInt,
         lo: WidthInt,
+        // no `width` since it is easy to calculate from `hi` and `lo` without looking at `e`
     },
-    BVNot(ExprRef),
-    BVNegate(ExprRef),
-    BVReduceOr(ExprRef),
-    BVReduceAnd(ExprRef),
-    BVReduceXor(ExprRef),
+    BVNot(ExprRef, WidthInt),
+    BVNegate(ExprRef, WidthInt),
+    BVReduceOr(ExprRef, WidthInt),
+    BVReduceAnd(ExprRef, WidthInt),
+    BVReduceXor(ExprRef, WidthInt),
     // binary operations
-    BVEqual(ExprRef, ExprRef),
-    BVImplies(ExprRef, ExprRef),
-    BVGreater(ExprRef, ExprRef),
-    BVGreaterSigned(ExprRef, ExprRef),
-    BVGreaterEqual(ExprRef, ExprRef),
-    BVGreaterEqualSigned(ExprRef, ExprRef),
-    BVConcat(ExprRef, ExprRef),
+    BVEqual(ExprRef, ExprRef, WidthInt),
+    BVImplies(ExprRef, ExprRef, WidthInt),
+    BVGreater(ExprRef, ExprRef, WidthInt),
+    BVGreaterSigned(ExprRef, ExprRef, WidthInt),
+    BVGreaterEqual(ExprRef, ExprRef, WidthInt),
+    BVGreaterEqualSigned(ExprRef, ExprRef, WidthInt),
+    BVConcat(ExprRef, ExprRef, WidthInt),
     // binary arithmetic
-    BVAnd(ExprRef, ExprRef),
-    BVOr(ExprRef, ExprRef),
-    BVXor(ExprRef, ExprRef),
-    BVShiftLeft(ExprRef, ExprRef),
-    BVArithmeticShiftRight(ExprRef, ExprRef),
-    BVShiftRight(ExprRef, ExprRef),
-    BVAdd(ExprRef, ExprRef),
-    BVMul(ExprRef, ExprRef),
-    BVSignedDiv(ExprRef, ExprRef),
-    BVUnsignedDiv(ExprRef, ExprRef),
-    BVSignedMod(ExprRef, ExprRef),
-    BVSignedRem(ExprRef, ExprRef),
-    BVUnsignedRem(ExprRef, ExprRef),
-    BVSub(ExprRef, ExprRef),
+    BVAnd(ExprRef, ExprRef, WidthInt),
+    BVOr(ExprRef, ExprRef, WidthInt),
+    BVXor(ExprRef, ExprRef, WidthInt),
+    BVShiftLeft(ExprRef, ExprRef, WidthInt),
+    BVArithmeticShiftRight(ExprRef, ExprRef, WidthInt),
+    BVShiftRight(ExprRef, ExprRef, WidthInt),
+    BVAdd(ExprRef, ExprRef, WidthInt),
+    BVMul(ExprRef, ExprRef, WidthInt),
+    BVSignedDiv(ExprRef, ExprRef, WidthInt),
+    BVUnsignedDiv(ExprRef, ExprRef, WidthInt),
+    BVSignedMod(ExprRef, ExprRef, WidthInt),
+    BVSignedRem(ExprRef, ExprRef, WidthInt),
+    BVUnsignedRem(ExprRef, ExprRef, WidthInt),
+    BVSub(ExprRef, ExprRef, WidthInt),
     //
     BVArrayRead {
         array: ExprRef,
         index: ExprRef,
+        width: WidthInt,
     },
     // ternary op
     BVIte {
         cond: ExprRef,
         tru: ExprRef,
         fals: ExprRef,
+        // no width since that would increase the Expr size by 8 bytes (b/c of alignment)
+        // width: WidthInt
     },
     // Array Expressions
     // nullary
@@ -206,6 +214,7 @@ pub enum Expr {
     ArrayConstant {
         e: ExprRef,
         index_width: WidthInt,
+        data_width: WidthInt, // extra info since we have space
     },
     // binary
     ArrayEqual(ExprRef, ExprRef),
@@ -240,6 +249,7 @@ impl Expr {
 
 pub trait ExprIntrospection {
     fn is_symbol(&self, ctx: &impl GetNode<Expr, ExprRef>) -> bool;
+    fn get_type(&self, ctx: &impl GetNode<Expr, ExprRef>) -> Type;
     fn get_symbol_name<'a>(
         &self,
         ctx: &'a (impl GetNode<Expr, ExprRef> + GetNode<str, StringRef>),
@@ -249,6 +259,10 @@ pub trait ExprIntrospection {
 impl ExprIntrospection for Expr {
     fn is_symbol(&self, _ctx: &impl GetNode<Expr, ExprRef>) -> bool {
         matches!(self, Expr::BVSymbol { .. } | Expr::ArraySymbol { .. })
+    }
+
+    fn get_type(&self, ctx: &impl GetNode<Expr, ExprRef>) -> Type {
+        todo!()
     }
 
     fn get_symbol_name<'a>(
@@ -267,6 +281,11 @@ impl ExprIntrospection for ExprRef {
     fn is_symbol(&self, ctx: &impl GetNode<Expr, ExprRef>) -> bool {
         ctx.get(*self).is_symbol(ctx)
     }
+
+    fn get_type(&self, ctx: &impl GetNode<Expr, ExprRef>) -> Type {
+        ctx.get(*self).get_type(ctx)
+    }
+
     fn get_symbol_name<'a>(
         &self,
         ctx: &'a (impl GetNode<Expr, ExprRef> + GetNode<str, StringRef>),
@@ -313,7 +332,7 @@ mod tests {
         assert_eq!(std::mem::size_of::<StringRef>(), 2);
         assert_eq!(std::mem::size_of::<ExprRef>(), 4);
 
-        // 4 bytes for the tag, 4 * 3 bytes for the largest field
+        // 8 bytes for the tag, 4 * 4 bytes for the largest field
         assert_eq!(std::mem::size_of::<Expr>(), 16);
         // we only represents widths up to (2^32 - 1)
         assert_eq!(std::mem::size_of::<WidthInt>(), 4);
@@ -331,7 +350,7 @@ mod tests {
             name: str_id0,
             width: 1,
         });
-        assert_eq!(id0.0, 0, "ids start at zero (for now)");
+        assert_eq!(id0.0.get(), 0, "ids start at one (for now)");
         let id0_b = ctx.add(Expr::BVSymbol {
             name: str_id0,
             width: 1,
@@ -341,6 +360,6 @@ mod tests {
             name: str_id0,
             width: 2,
         });
-        assert_eq!(id0.0 + 1, id1.0, "ids should increment!");
+        assert_eq!(id0.0.get() + 1, id1.0.get(), "ids should increment!");
     }
 }
