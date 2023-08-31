@@ -6,6 +6,7 @@ use crate::ir::*;
 use fuzzy_matcher::FuzzyMatcher;
 use smallvec::SmallVec;
 use std::collections::HashMap;
+use std::str::FromStr;
 
 pub fn parse_str(ctx: &mut Context, input: &str) -> Option<TransitionSystem> {
     match Parser::new(ctx).parse(input.as_bytes()) {
@@ -123,7 +124,7 @@ impl<'a> Parser<'a> {
                 }
                 "output" | "bad" | "constraint" | "fair" => {
                     label = SignalKind::from_str(op).unwrap();
-                    Some(self.get_expr_from_signal_id(line, &tokens[2])?)
+                    Some(self.get_expr_from_signal_id(line, tokens[2])?)
                 }
                 other => {
                     if OTHER_OPS_SET.contains(other) {

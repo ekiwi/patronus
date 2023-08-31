@@ -13,15 +13,17 @@ pub enum SignalKind {
     Fair,
 }
 
-impl SignalKind {
-    pub fn from_str(kind: &str) -> Option<Self> {
+impl std::str::FromStr for SignalKind {
+    type Err = ();
+
+    fn from_str(kind: &str) -> Result<Self, Self::Err> {
         match kind {
-            "node" => Some(SignalKind::Node),
-            "output" => Some(SignalKind::Output),
-            "bad" => Some(SignalKind::Bad),
-            "constraint" => Some(SignalKind::Constraint),
-            "fair" => Some(SignalKind::Fair),
-            _ => None,
+            "node" => Ok(SignalKind::Node),
+            "output" => Ok(SignalKind::Output),
+            "bad" => Ok(SignalKind::Bad),
+            "constraint" => Ok(SignalKind::Constraint),
+            "fair" => Ok(SignalKind::Fair),
+            _ => Err(()),
         }
     }
 }
