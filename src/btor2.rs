@@ -118,8 +118,8 @@ impl<'a> Parser<'a> {
                     self.parse_state(line, &cont, line_id)?;
                     None
                 }
-                "init" => {
-                    self.parse_state_init(line, &cont)?;
+                op @ ("init" | "next") => {
+                    self.parse_state_init_or_next(line, &cont, op == "init")?;
                     None
                 }
                 other => {
@@ -274,7 +274,13 @@ impl<'a> Parser<'a> {
         Ok(())
     }
 
-    fn parse_state_init(&mut self, line: &str, cont: &LineTokens) -> ParseLineResult {
+    fn parse_state_init_or_next(
+        &mut self,
+        line: &str,
+        cont: &LineTokens,
+        is_init_not_next: bool,
+    ) -> ParseLineResult {
+        let lbl = if is_init_not_next { "init" } else { "next" };
         self.require_at_least_n_tokens(line, &cont.tokens, 5)?;
         let tpe = self.get_tpe_from_id(line, cont.tokens[2])?;
         let state_ref = self.get_state_from_id(line, cont.tokens[3])?;
@@ -287,17 +293,22 @@ impl<'a> Parser<'a> {
             &tpe,
             line,
             cont.tokens[4],
-            &format!("[{state_name}.init] Expressions has mismatched type"),
+            &format!("[{state_name}.{lbl}] Expressions has mismatched type"),
         )?;
         self.check_type(
             &state_tpe,
             &tpe,
             line,
             cont.tokens[4],
-            &format!("[{state_name}.init] Expression type does not match state type."),
+            &format!("[{state_name}.{lbl}] Expression type does not match state type."),
         )?;
-        self.sys
-            .modify_state(state_ref, |state| state.init = Some(expr));
+        if is_init_not_next {
+            self.sys
+                .modify_state(state_ref, |state| state.init = Some(expr));
+        } else {
+            self.sys
+                .modify_state(state_ref, |state| state.next = Some(expr));
+        }
         Ok(())
     }
 
