@@ -253,6 +253,13 @@ pub enum Type {
     Array(ArrayType),
 }
 
+const BOOL_TYPE: Type = Type::BV(1);
+impl Type {
+    pub fn Bool() -> &'static Type {
+        &BOOL_TYPE
+    }
+}
+
 impl Display for Type {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match *self {

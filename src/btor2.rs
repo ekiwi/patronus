@@ -188,6 +188,67 @@ impl<'a> Parser<'a> {
 
     fn parse_bin_op(&mut self, line: &str, tokens: &[&str]) -> ParseLineResult<ExprRef> {
         self.require_at_least_n_tokens(line, tokens, 5)?;
+        let tpe = self.get_tpe_from_id(line, tokens[2])?;
+        let a = self.get_signal_from_id(line, tokens[3])?;
+        let b = self.get_signal_from_id(line, tokens[4])?;
+        let e = match tokens[1] {
+            "iff" => {
+                self.check_type(
+                    &tpe,
+                    Type::Bool(),
+                    line,
+                    tokens[2],
+                    "iff always returns bool",
+                )?;
+                self.check_type(
+                    &tpe,
+                    Type::Bool(),
+                    line,
+                    tokens[2],
+                    "iff always returns bool",
+                )?;
+            }
+            "implies" => {}
+            "sgt" => {}
+            "ugt" => {}
+            "sgte" => {}
+            "ugte" => {}
+            "slt" => {}
+            "ult" => {}
+            "slte" => {}
+            "ulte" => {}
+            "and" => {}
+            "nand" => {}
+            "nor" => {}
+            "or" => {}
+            "xnor" => {}
+            "xor" => {}
+            "rol" => {}
+            "ror" => {}
+            "sll" => {}
+            "sra" => {}
+            "srl" => {}
+            "add" => {}
+            "mul" => {}
+            "sdiv" => {}
+            "udiv" => {}
+            "smod" => {}
+            "srem" => {}
+            "urem" => {}
+            "sub" => {}
+            "saddo" => {}
+            "uaddo" => {}
+            "sdivo" => {}
+            "udivo" => {}
+            "smulo" => {}
+            "umulo" => {}
+            "ssubo" => {}
+            "usubo" => {}
+            "concat" => {}
+            "eq" => {}
+            "neq" => {}
+            other => panic!("unexpected binary op: {other}"),
+        };
         todo!("handle binary op")
     }
 
@@ -336,12 +397,12 @@ impl<'a> Parser<'a> {
 
     fn get_expr_from_signal_id(&mut self, line: &str, token: &str) -> ParseLineResult<ExprRef> {
         let signal = self.get_signal_from_id(line, token)?;
-        Ok(self.sys.get(signal).expr)
+        Ok(signal.expr)
     }
 
-    fn get_signal_from_id(&mut self, line: &str, token: &str) -> ParseLineResult<SignalRef> {
+    fn get_signal_from_id(&mut self, line: &str, token: &str) -> ParseLineResult<&Signal> {
         let signal_id = self.parse_line_id(line, token)?;
-        match self.signal_map.get(&signal_id) {
+        let signal_ref = match self.signal_map.get(&signal_id) {
             None => {
                 let _ = self.add_error(
                     line,
@@ -351,7 +412,8 @@ impl<'a> Parser<'a> {
                 Err(())
             }
             Some(signal) => Ok(*signal),
-        }
+        }?;
+        Ok(self.sys.get(signal_ref))
     }
 
     fn parse_sort(&mut self, line: &str, tokens: &[&str], line_id: LineId) -> ParseLineResult {
