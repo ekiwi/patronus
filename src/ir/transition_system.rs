@@ -8,6 +8,22 @@ use super::{Expr, ExprIntrospection, ExprRef, GetNode, StringRef};
 pub enum SignalKind {
     Node,
     Output,
+    Bad,
+    Constraint,
+    Fair,
+}
+
+impl SignalKind {
+    pub fn from_str(kind: &str) -> Option<Self> {
+        match kind {
+            "node" => Some(SignalKind::Node),
+            "output" => Some(SignalKind::Output),
+            "bad" => Some(SignalKind::Bad),
+            "constraint" => Some(SignalKind::Constraint),
+            "fair" => Some(SignalKind::Fair),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Hash)]

@@ -100,6 +100,7 @@ impl<'a> Parser<'a> {
         };
 
         // check op
+        let mut label = SignalKind::Node;
         let expr: Option<ExprRef> = if UNARY_OPS_SET.contains(op) {
             Some(self.parse_unary_op(line, tokens)?)
         } else if BINARY_OPS_SET.contains(op) {
@@ -119,9 +120,13 @@ impl<'a> Parser<'a> {
                     self.parse_state(line, &cont, line_id)?;
                     None
                 }
-                op @ ("init" | "next") => {
+                "init" | "next" => {
                     self.parse_state_init_or_next(line, &cont, op == "init")?;
                     None
+                }
+                "output" | "bad" | "constraint" | "fair" => {
+                    label = SignalKind::from_str(op).unwrap();
+                    Some(self.get_expr_from_signal_id(line, &tokens[2])?)
                 }
                 other => {
                     if OTHER_OPS_SET.contains(other) {
@@ -133,7 +138,7 @@ impl<'a> Parser<'a> {
             }
         };
         if let Some(e) = expr {
-            self.add_signal(line_id, e)?;
+            self.add_signal(line_id, e, label)?;
         }
         Ok(())
     }
@@ -164,8 +169,8 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn add_signal(&mut self, line_id: LineId, expr: ExprRef) -> ParseLineResult {
-        let signal_ref = self.sys.add_signal(expr, SignalKind::Node);
+    fn add_signal(&mut self, line_id: LineId, expr: ExprRef, kind: SignalKind) -> ParseLineResult {
+        let signal_ref = self.sys.add_signal(expr, kind);
         self.signal_map.insert(line_id, signal_ref);
         Ok(())
     }
