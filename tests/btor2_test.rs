@@ -4,6 +4,7 @@
 
 use patron::btor2;
 use patron::ir::Context;
+use patron::ir::SerializableIrNode;
 
 const COUNT_2: &str = r#"
 1 sort bitvec 3
@@ -23,5 +24,5 @@ const COUNT_2: &str = r#"
 fn parse_count2() {
     let mut ctx = Context::default();
     let sys = btor2::parse_str(&mut ctx, COUNT_2).unwrap();
-    println!("{}", btor2::serialize_to_str(&ctx, &sys));
+    println!("{}", sys.serialize_to_str(&ctx));
 }

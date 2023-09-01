@@ -3,8 +3,11 @@
 // author: Kevin Laeufer <laeufer@berkeley.edu>
 
 use super::{Context, Expr, ExprRef, GetNode};
+use crate::ir::{ExprIntrospection, TransitionSystem, Type, TypeCheck};
+use std::fmt::Display;
+use std::io::Write;
 
-trait SerializableIrNode {
+pub trait SerializableIrNode {
     fn serialize(&self, ctx: &Context, writer: &mut impl (std::io::Write)) -> std::io::Result<()>;
     fn serialize_to_str(&self, ctx: &Context) -> String {
         let mut buf = Vec::new();
@@ -269,6 +272,38 @@ impl SerializableIrNode for Expr {
 impl SerializableIrNode for ExprRef {
     fn serialize(&self, ctx: &Context, writer: &mut impl (std::io::Write)) -> std::io::Result<()> {
         ctx.get(*self).serialize(ctx, writer)
+    }
+}
+
+impl SerializableIrNode for Type {
+    fn serialize(&self, ctx: &Context, writer: &mut impl Write) -> std::io::Result<()> {
+        todo!()
+    }
+}
+
+impl SerializableIrNode for TransitionSystem {
+    fn serialize(&self, ctx: &Context, writer: &mut impl Write) -> std::io::Result<()> {
+        if !self.name.is_empty() {
+            writeln!(writer, "{}", self.name)?;
+        }
+
+        // inputs
+        for input in self.inputs.iter() {
+            let sym = ctx.get(*input);
+            let name = sym
+                .get_symbol_name(ctx)
+                .expect("all inputs should be symbols");
+            let tpe = sym.get_type(ctx);
+            writeln!(writer, "input {name} : {tpe}")?;
+        }
+
+        // outputs
+
+        // assumptions
+
+        // bad states
+
+        Ok(())
     }
 }
 

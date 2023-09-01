@@ -49,9 +49,9 @@ pub struct StateRef(usize);
 #[derive(Debug, PartialEq, Eq)]
 pub struct TransitionSystem {
     pub name: String,
-    states: Vec<State>,
-    inputs: Vec<ExprRef>,
-    signals: Vec<Signal>,
+    pub(crate) states: Vec<State>,
+    pub(crate) inputs: Vec<ExprRef>,
+    pub(crate) signals: Vec<Signal>,
 }
 
 impl TransitionSystem {

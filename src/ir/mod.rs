@@ -6,6 +6,7 @@ mod smt;
 mod transition_system;
 mod type_check;
 
+pub use serialize::SerializableIrNode;
 pub use smt::{
     bv_value_fits_width, AddNode, ArrayType, BVLiteralInt, Context, Expr, ExprIntrospection,
     ExprNodeConstruction, ExprRef, GetNode, StringRef, Type, WidthInt,
