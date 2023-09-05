@@ -2,9 +2,9 @@
 // released under BSD 3-Clause License
 // author: Kevin Laeufer <laeufer@berkeley.edu>
 
-use patron::btor2;
-use patron::ir::Context;
-use patron::ir::SerializableIrNode;
+use libpatron::btor2;
+use libpatron::ir::Context;
+use libpatron::ir::SerializableIrNode;
 
 const COUNT_2: &str = r#"
 1 sort bitvec 3
