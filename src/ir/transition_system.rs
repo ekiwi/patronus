@@ -46,6 +46,9 @@ pub struct State {
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
 pub struct StateRef(usize);
 
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
+pub struct InputRef(usize);
+
 #[derive(Debug, PartialEq, Eq)]
 pub struct TransitionSystem {
     pub name: String,
@@ -83,6 +86,13 @@ impl TransitionSystem {
             next: None,
         });
         StateRef(id)
+    }
+
+    pub fn add_input(&mut self, ctx: &impl GetNode<Expr, ExprRef>, symbol: ExprRef) -> InputRef {
+        assert!(symbol.is_symbol(ctx));
+        let id = self.inputs.len();
+        self.inputs.push(symbol);
+        InputRef(id)
     }
 
     pub fn modify_state<F>(&mut self, reference: StateRef, modify: F)

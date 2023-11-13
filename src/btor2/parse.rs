@@ -49,8 +49,6 @@ struct Parser<'a> {
     state_map: HashMap<LineId, StateRef>,
     /// maps file id to signal in the Transition System
     signal_map: HashMap<LineId, SignalRef>,
-    /// maps file id to input in the Transition System
-    input_map: HashMap<LineId, ExprRef>,
 }
 
 type LineId = u32;
@@ -65,7 +63,6 @@ impl<'a> Parser<'a> {
             type_map: HashMap::new(),
             state_map: HashMap::new(),
             signal_map: HashMap::new(),
-            input_map: HashMap::new(),
         }
     }
 
@@ -141,7 +138,7 @@ impl<'a> Parser<'a> {
                 }
                 "ones" => Some(self.parse_ones(line, tokens)?),
                 "state" => Some(self.parse_state(line, &cont, line_id)?),
-                "input" => Some(self.parse_input(line, &cont, line_id)?),
+                "input" => Some(self.parse_input(line, &cont)?),
                 "init" | "next" => {
                     self.parse_state_init_or_next(line, &cont, op == "init")?;
                     None
@@ -348,16 +345,11 @@ impl<'a> Parser<'a> {
         Ok(sym)
     }
 
-    fn parse_input(
-        &mut self,
-        line: &str,
-        cont: &LineTokens,
-        line_id: LineId,
-    ) -> ParseLineResult<ExprRef> {
+    fn parse_input(&mut self, line: &str, cont: &LineTokens) -> ParseLineResult<ExprRef> {
         let tpe = self.get_tpe_from_id(line, cont.tokens[2])?;
         let name = self.get_label_name(cont, "input");
         let sym = self.ctx.symbol(name, tpe);
-        self.input_map.insert(line_id, sym);
+        self.sys.add_input(self.ctx, sym);
         Ok(sym)
     }
 
