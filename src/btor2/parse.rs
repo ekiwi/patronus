@@ -162,14 +162,30 @@ impl<'a> Parser<'a> {
         Ok(())
     }
 
-    fn check_expr_type(&mut self, expr: ExprRef, line: &str) -> ParseLineResult<ExprRef> {
+    fn check_expr_type(
+        &mut self,
+        expr: ExprRef,
+        line: &str,
+        expected_type: Type,
+    ) -> ParseLineResult<ExprRef> {
+        // first we check for internal consitency
         match expr.type_check(self.ctx) {
-            Ok(_) => Ok(expr),
             Err(e) => {
                 let _ =
                     self.add_error(line, line, format!("Failed to type check: {}", e.get_msg()));
-                Err(())
+                return Err(());
             }
+            Ok(_) => {}
+        }
+        // then we make sure that the type of the expression is actually the type that was
+        // declared in the btor2 line
+        let actual_tpe = expr.get_type(self.ctx);
+        if actual_tpe != expected_type {
+            let _ =
+                self.add_error(line, line, format!("Expression has the type {actual_tpe}, but the declared btpr2 type is {expected_type}", ));
+            Err(())
+        } else {
+            Ok(expr)
         }
     }
 
@@ -225,7 +241,7 @@ impl<'a> Parser<'a> {
             }
             other => panic!("unexpected binary op: {other}"),
         };
-        self.check_expr_type(res, line)
+        self.check_expr_type(res, line, tpe)
     }
 
     fn parse_bin_op(&mut self, line: &str, tokens: &[&str]) -> ParseLineResult<ExprRef> {
@@ -270,18 +286,18 @@ impl<'a> Parser<'a> {
             "and" => self.ctx.and(a, b),
             "nand" => {
                 let inner = self.ctx.and(a, b);
-                self.check_expr_type(inner, line)?;
+                self.check_expr_type(inner, line, tpe)?;
                 self.ctx.not(inner)
             }
             "nor" => {
                 let inner = self.ctx.or(a, b);
-                self.check_expr_type(inner, line)?;
+                self.check_expr_type(inner, line, tpe)?;
                 self.ctx.not(inner)
             }
             "or" => self.ctx.or(a, b),
             "xnor" => {
                 let inner = self.ctx.xor(a, b);
-                self.check_expr_type(inner, line)?;
+                self.check_expr_type(inner, line, tpe)?;
                 self.ctx.not(inner)
             }
             "xor" => self.ctx.xor(a, b),
@@ -304,12 +320,12 @@ impl<'a> Parser<'a> {
             "eq" => self.ctx.bv_equal(a, b),
             "neq" => {
                 let inner = self.ctx.bv_equal(a, b);
-                self.check_expr_type(inner, line)?;
+                self.check_expr_type(inner, line, tpe)?;
                 self.ctx.not(inner)
             }
             other => panic!("unexpected binary op: {other}"),
         };
-        self.check_expr_type(e, line)
+        self.check_expr_type(e, line, tpe)
     }
 
     fn parse_ternary_op(&mut self, line: &str, tokens: &[&str]) -> ParseLineResult<ExprRef> {
@@ -328,7 +344,7 @@ impl<'a> Parser<'a> {
             }
             other => panic!("unexpected binary op: {other}"),
         };
-        self.check_expr_type(res, line)
+        self.check_expr_type(res, line, tpe)
     }
 
     fn parse_state(

@@ -382,7 +382,7 @@ pub struct ArrayType {
     pub index_width: WidthInt,
     pub data_width: WidthInt,
 }
-#[derive(Debug, PartialEq, Eq, Clone, Hash)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
 pub enum Type {
     BV(WidthInt),
     Array(ArrayType),

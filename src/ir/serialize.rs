@@ -4,7 +4,6 @@
 
 use super::{Context, Expr, ExprRef, GetNode};
 use crate::ir::{ExprIntrospection, TransitionSystem, Type, TypeCheck};
-use std::fmt::Display;
 use std::io::Write;
 
 pub trait SerializableIrNode {
@@ -295,6 +294,25 @@ impl SerializableIrNode for TransitionSystem {
                 .expect("all inputs should be symbols");
             let tpe = sym.get_type(ctx);
             writeln!(writer, "input {name} : {tpe}")?;
+        }
+
+        // signals
+        for (ii, signal) in self.signals.iter().enumerate() {
+            // we use the position as name if no name is available
+            if let Some(name) = &signal.name {
+                write!(writer, "{}", name)?;
+            } else {
+                write!(writer, "{}", ii)?;
+            }
+            // print the type
+            let tpe = signal.expr.get_type(ctx);
+            write!(writer, ": {tpe} = ",)?;
+
+            // print expression
+            signal.expr.serialize(ctx, writer)?;
+
+            // finish line
+            writeln!(writer, ";",)?;
         }
 
         // outputs
