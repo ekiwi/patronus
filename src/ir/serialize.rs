@@ -298,6 +298,7 @@ impl SerializableIrNode for TransitionSystem {
         }
 
         // outputs
+        // todo!();
 
         // assumptions
 

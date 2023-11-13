@@ -18,11 +18,13 @@ pub fn parse_str(ctx: &mut Context, input: &str) -> Option<TransitionSystem> {
     }
 }
 
-pub fn parse_file(ctx: &mut Context, path: &std::path::Path) -> Option<TransitionSystem> {
+pub fn parse_file(filename: &str) -> Option<(Context, TransitionSystem)> {
+    let path = std::path::Path::new(filename);
+    let mut ctx = Context::default();
     let f = std::fs::File::open(path).expect("Failed to open btor file!");
     let reader = std::io::BufReader::new(f);
-    match Parser::new(ctx).parse(reader) {
-        Ok(sys) => Some(sys),
+    match Parser::new(&mut ctx).parse(reader) {
+        Ok(sys) => Some((ctx, sys)),
         Err(errors) => {
             report_errors(
                 errors,
@@ -46,6 +48,8 @@ struct Parser<'a> {
     state_map: HashMap<LineId, StateRef>,
     /// maps file id to signal in the Transition System
     signal_map: HashMap<LineId, SignalRef>,
+    /// maps file id to input in the Transition System
+    input_map: HashMap<LineId, ExprRef>,
 }
 
 type LineId = u32;
@@ -60,6 +64,7 @@ impl<'a> Parser<'a> {
             type_map: HashMap::new(),
             state_map: HashMap::new(),
             signal_map: HashMap::new(),
+            input_map: HashMap::new(),
         }
     }
 
@@ -108,6 +113,10 @@ impl<'a> Parser<'a> {
         } else {
             self.require_at_least_n_tokens(line, tokens, 3)?;
             match op {
+                "ite" => {
+                    // ternary ops
+                    Some(self.parse_ternary_op(line, tokens)?)
+                }
                 "sort" => {
                     self.parse_sort(line, tokens, line_id)?;
                     None
@@ -117,6 +126,7 @@ impl<'a> Parser<'a> {
                 }
                 "ones" => Some(self.parse_ones(line, tokens)?),
                 "state" => Some(self.parse_state(line, &cont, line_id)?),
+                "input" => Some(self.parse_input(line, &cont, line_id)?),
                 "init" | "next" => {
                     self.parse_state_init_or_next(line, &cont, op == "init")?;
                     None
@@ -180,7 +190,30 @@ impl<'a> Parser<'a> {
 
     fn parse_unary_op(&mut self, line: &str, tokens: &[&str]) -> ParseLineResult<ExprRef> {
         self.require_at_least_n_tokens(line, tokens, 4)?;
-        todo!("handle unary op")
+        let tpe = self.get_tpe_from_id(line, tokens[2])?;
+        let e = self.get_expr_from_signal_id(line, tokens[3])?;
+        let res: ExprRef = match tokens[1] {
+            "slice" => {
+                // slice has two integer attributes
+                self.require_at_least_n_tokens(line, tokens, 6)?;
+                let msb = self.parse_width_int(line, tokens[4], "slice msb")?;
+                let lsb = self.parse_width_int(line, tokens[5], "slice lsb")?;
+                self.ctx.slice(e, msb, lsb)
+            }
+            "not" => self.ctx.not(e),
+            "uext" => {
+                self.require_at_least_n_tokens(line, tokens, 5)?;
+                let by = self.parse_width_int(line, tokens[4], "extension amount")?;
+                self.ctx.zero_extend(e, by)
+            }
+            "sext" => {
+                self.require_at_least_n_tokens(line, tokens, 5)?;
+                let by = self.parse_width_int(line, tokens[4], "extension amount")?;
+                self.ctx.sign_extend(e, by)
+            }
+            other => panic!("unexpected binary op: {other}"),
+        };
+        self.check_expr_type(res, line)
     }
 
     fn parse_bin_op(&mut self, line: &str, tokens: &[&str]) -> ParseLineResult<ExprRef> {
@@ -267,6 +300,25 @@ impl<'a> Parser<'a> {
         self.check_expr_type(e, line)
     }
 
+    fn parse_ternary_op(&mut self, line: &str, tokens: &[&str]) -> ParseLineResult<ExprRef> {
+        self.require_at_least_n_tokens(line, tokens, 6)?;
+        let tpe = self.get_tpe_from_id(line, tokens[2])?;
+        let a = self.get_expr_from_signal_id(line, tokens[3])?;
+        let b = self.get_expr_from_signal_id(line, tokens[4])?;
+        let c = self.get_expr_from_signal_id(line, tokens[5])?;
+        let res: ExprRef = match tokens[1] {
+            "ite" => {
+                if tpe.is_bit_vector() {
+                    self.ctx.bv_ite(a, b, c)
+                } else {
+                    todo!("Array ITE")
+                }
+            }
+            other => panic!("unexpected binary op: {other}"),
+        };
+        self.check_expr_type(res, line)
+    }
+
     fn parse_state(
         &mut self,
         line: &str,
@@ -278,6 +330,19 @@ impl<'a> Parser<'a> {
         let sym = self.ctx.symbol(name, tpe);
         let state_ref = self.sys.add_state(self.ctx, sym);
         self.state_map.insert(line_id, state_ref);
+        Ok(sym)
+    }
+
+    fn parse_input(
+        &mut self,
+        line: &str,
+        cont: &LineTokens,
+        line_id: LineId,
+    ) -> ParseLineResult<ExprRef> {
+        let tpe = self.get_tpe_from_id(line, cont.tokens[2])?;
+        let name = self.get_label_name(cont, "input");
+        let sym = self.ctx.symbol(name, tpe);
+        self.input_map.insert(line_id, sym);
         Ok(sym)
     }
 
@@ -556,6 +621,7 @@ impl<'a> Parser<'a> {
         let all_ops = UNARY_OPS
             .iter()
             .chain(BINARY_OPS.iter())
+            .chain(TERNARY_OPS.iter())
             .chain(OTHER_OPS.iter());
         let matcher = fuzzy_matcher::skim::SkimMatcherV2::default();
         let mut matches: Vec<(&&str, i64)> = all_ops
@@ -670,14 +736,17 @@ fn str_offset(needle: &str, haystack: &str) -> usize {
     offset
 }
 
-const UNARY_OPS: [&str; 7] = ["not", "inc", "dec", "neg", "redand", "redor", "redxor"];
+const UNARY_OPS: [&str; 10] = [
+    "not", "inc", "dec", "neg", "redand", "redor", "redxor", "slice", "uext", "sext",
+];
 const BINARY_OPS: [&str; 40] = [
     "iff", "implies", "sgt", "ugt", "sgte", "ugte", "slt", "ult", "slte", "ulte", "and", "nand",
     "nor", "or", "xnor", "xor", "rol", "ror", "sll", "sra", "srl", "add", "mul", "sdiv", "udiv",
     "smod", "srem", "urem", "sub", "saddo", "uaddo", "sdivo", "udivo", "smulo", "umulo", "ssubo",
     "usubo", "concat", "eq", "neq",
 ];
-const OTHER_OPS: [&str; 19] = [
+const TERNARY_OPS: [&str; 1] = ["ite"];
+const OTHER_OPS: [&str; 17] = [
     "sort",
     "input",
     "output",
@@ -693,10 +762,8 @@ const OTHER_OPS: [&str; 19] = [
     "zero",
     "one",
     "ones",
-    "slice",
     "read",
     "write",
-    "ite",
 ];
 
 lazy_static! {

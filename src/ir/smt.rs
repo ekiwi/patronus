@@ -51,6 +51,9 @@ pub trait ExprNodeConstruction:
     fn bv_equal(&mut self, a: ExprRef, b: ExprRef) -> ExprRef {
         self.add_node(Expr::BVEqual(a, b))
     }
+    fn bv_ite(&mut self, cond: ExprRef, tru: ExprRef, fals: ExprRef) -> ExprRef {
+        self.add_node(Expr::BVIte { cond, tru, fals })
+    }
     fn implies(&mut self, a: ExprRef, b: ExprRef) -> ExprRef {
         self.add_node(Expr::BVImplies(a, b))
     }
@@ -120,6 +123,17 @@ pub trait ExprNodeConstruction:
     fn concat(&mut self, a: ExprRef, b: ExprRef) -> ExprRef {
         let width = a.get_bv_type(self).unwrap() + b.get_bv_type(self).unwrap();
         self.add_node(Expr::BVConcat(a, b, width))
+    }
+    fn slice(&mut self, e: ExprRef, hi: WidthInt, lo: WidthInt) -> ExprRef {
+        self.add_node(Expr::BVSlice { e, hi, lo })
+    }
+    fn zero_extend(&mut self, e: ExprRef, by: WidthInt) -> ExprRef {
+        let width = e.get_bv_type(self).unwrap() + by;
+        self.add_node(Expr::BVZeroExt { e, by, width })
+    }
+    fn sign_extend(&mut self, e: ExprRef, by: WidthInt) -> ExprRef {
+        let width = e.get_bv_type(self).unwrap() + by;
+        self.add_node(Expr::BVSignExt { e, by, width })
     }
 }
 
@@ -376,6 +390,12 @@ pub enum Type {
 
 impl Type {
     pub const BOOL: Type = Type::BV(1);
+    pub fn is_bit_vector(&self) -> bool {
+        match &self {
+            Type::BV(_) => true,
+            Type::Array(_) => false,
+        }
+    }
 }
 
 impl std::fmt::Display for Type {
