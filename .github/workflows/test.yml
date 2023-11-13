@@ -44,7 +44,7 @@ jobs:
       - name: Build
         run: cargo build --verbose --examples --release
       - name: load_signals
-        run: cargo run --release --example bmc -- inputs/Quiz1.vcd
+        run: cargo run --release --example bmc -- inputs/Quiz1.btor
 
 
   semver:
