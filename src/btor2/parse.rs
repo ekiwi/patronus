@@ -8,8 +8,8 @@ use smallvec::SmallVec;
 use std::collections::HashMap;
 use std::str::FromStr;
 
-pub fn parse_str(ctx: &mut Context, input: &str) -> Option<TransitionSystem> {
-    match Parser::new(ctx).parse(input.as_bytes()) {
+pub fn parse_str(ctx: &mut Context, input: &str, name: Option<&str>) -> Option<TransitionSystem> {
+    match Parser::new(ctx).parse(input.as_bytes(), name) {
         Ok(sys) => Some(sys),
         Err(errors) => {
             report_errors(errors, "str", input);
@@ -23,7 +23,8 @@ pub fn parse_file(filename: &str) -> Option<(Context, TransitionSystem)> {
     let mut ctx = Context::default();
     let f = std::fs::File::open(path).expect("Failed to open btor file!");
     let reader = std::io::BufReader::new(f);
-    match Parser::new(&mut ctx).parse(reader) {
+    let backup_name = path.file_stem().and_then(|n| n.to_str());
+    match Parser::new(&mut ctx).parse(reader, backup_name) {
         Ok(sys) => Some((ctx, sys)),
         Err(errors) => {
             report_errors(
@@ -68,12 +69,26 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse(&mut self, input: impl std::io::BufRead) -> Result<TransitionSystem, Errors> {
+    fn parse(
+        &mut self,
+        input: impl std::io::BufRead,
+        backup_name: Option<&str>,
+    ) -> Result<TransitionSystem, Errors> {
         for line_res in input.lines() {
             let line = line_res.expect("failed to read line");
             let _ignore_errors = self.parse_line(&line);
             self.offset += line.len() + 1; // TODO: this assumes that the line terminates with a single character
         }
+
+        // get a better name if none could be determined from the file content
+        // this better name is often derived from the filename or other meta info
+        if self.sys.name.is_empty() {
+            if let Some(name) = backup_name {
+                self.sys.name = name.to_string();
+            }
+        }
+
+        // check to see if we encountered any errors
         if self.errors.is_empty() {
             Ok(std::mem::replace(
                 &mut self.sys,

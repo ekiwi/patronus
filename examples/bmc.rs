@@ -3,6 +3,7 @@
 // author: Kevin Laeufer <laeufer@berkeley.edu>
 
 use clap::Parser;
+use libpatron::ir::SerializableIrNode;
 use libpatron::*;
 
 #[derive(Parser, Debug)]
@@ -19,4 +20,5 @@ fn main() {
     let args = Args::parse();
     let (ctx, sys) = btor2::parse_file(&args.filename).expect("Failed to load btor2 file!");
     println!("Loaded: {}", sys.name);
+    println!("{}", sys.serialize_to_str(&ctx));
 }

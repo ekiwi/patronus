@@ -23,6 +23,6 @@ const COUNT_2: &str = r#"
 #[test]
 fn parse_count2() {
     let mut ctx = Context::default();
-    let sys = btor2::parse_str(&mut ctx, COUNT_2).unwrap();
+    let sys = btor2::parse_str(&mut ctx, COUNT_2, Some("count2")).unwrap();
     println!("{}", sys.serialize_to_str(&ctx));
 }
