@@ -52,11 +52,15 @@ where
         }
         Expr::BVSignExt { e, by, .. } => {
             write!(writer, "sext(")?;
-            serialize_expr_ref(e, ctx, writer, serialize_child)?;
+            if (serialize_child)(e, ctx, writer) {
+                serialize_expr_ref(e, ctx, writer, serialize_child)?;
+            }
             write!(writer, ", {by})")
         }
         Expr::BVSlice { e, hi, lo, .. } => {
-            serialize_expr_ref(e, ctx, writer, serialize_child)?;
+            if (serialize_child)(e, ctx, writer) {
+                serialize_expr_ref(e, ctx, writer, serialize_child)?;
+            }
             if hi == lo {
                 write!(writer, "[{hi}]")
             } else {
@@ -65,221 +69,343 @@ where
         }
         Expr::BVNot(e, _) => {
             write!(writer, "not(")?;
-            serialize_expr_ref(e, ctx, writer, serialize_child)?;
+            if (serialize_child)(e, ctx, writer) {
+                serialize_expr_ref(e, ctx, writer, serialize_child)?;
+            }
             write!(writer, ")")
         }
         Expr::BVNegate(e, _) => {
             write!(writer, "neg(")?;
-            serialize_expr_ref(e, ctx, writer, serialize_child)?;
+            if (serialize_child)(e, ctx, writer) {
+                serialize_expr_ref(e, ctx, writer, serialize_child)?;
+            }
             write!(writer, ")")
         }
         Expr::BVReduceOr(e) => {
             write!(writer, "redor(")?;
-            serialize_expr_ref(e, ctx, writer, serialize_child)?;
+            if (serialize_child)(e, ctx, writer) {
+                serialize_expr_ref(e, ctx, writer, serialize_child)?;
+            }
             write!(writer, ")")
         }
         Expr::BVReduceAnd(e) => {
             write!(writer, "redand(")?;
-            serialize_expr_ref(e, ctx, writer, serialize_child)?;
+            if (serialize_child)(e, ctx, writer) {
+                serialize_expr_ref(e, ctx, writer, serialize_child)?;
+            }
             write!(writer, ")")
         }
         Expr::BVReduceXor(e) => {
             write!(writer, "redxor(")?;
-            serialize_expr_ref(e, ctx, writer, serialize_child)?;
+            if (serialize_child)(e, ctx, writer) {
+                serialize_expr_ref(e, ctx, writer, serialize_child)?;
+            }
             write!(writer, ")")
         }
         Expr::BVEqual(a, b) => {
             write!(writer, "eq(")?;
-            serialize_expr_ref(a, ctx, writer, serialize_child)?;
+            if (serialize_child)(a, ctx, writer) {
+                serialize_expr_ref(a, ctx, writer, serialize_child)?;
+            }
             write!(writer, ", ")?;
-            serialize_expr_ref(b, ctx, writer, serialize_child)?;
+            if (serialize_child)(b, ctx, writer) {
+                serialize_expr_ref(b, ctx, writer, serialize_child)?;
+            }
             write!(writer, ")")
         }
         Expr::BVImplies(a, b) => {
             write!(writer, "implies(")?;
-            serialize_expr_ref(a, ctx, writer, serialize_child)?;
+            if (serialize_child)(a, ctx, writer) {
+                serialize_expr_ref(a, ctx, writer, serialize_child)?;
+            }
             write!(writer, ", ")?;
-            serialize_expr_ref(b, ctx, writer, serialize_child)?;
+            if (serialize_child)(b, ctx, writer) {
+                serialize_expr_ref(b, ctx, writer, serialize_child)?;
+            }
             write!(writer, ")")
         }
         Expr::BVGreater(a, b) => {
             write!(writer, "ugt(")?;
-            serialize_expr_ref(a, ctx, writer, serialize_child)?;
+            if (serialize_child)(a, ctx, writer) {
+                serialize_expr_ref(a, ctx, writer, serialize_child)?;
+            }
             write!(writer, ", ")?;
-            serialize_expr_ref(b, ctx, writer, serialize_child)?;
+            if (serialize_child)(b, ctx, writer) {
+                serialize_expr_ref(b, ctx, writer, serialize_child)?;
+            }
             write!(writer, ")")
         }
         Expr::BVGreaterSigned(a, b) => {
             write!(writer, "sgt(")?;
-            serialize_expr_ref(a, ctx, writer, serialize_child)?;
+            if (serialize_child)(a, ctx, writer) {
+                serialize_expr_ref(a, ctx, writer, serialize_child)?;
+            }
             write!(writer, ", ")?;
-            serialize_expr_ref(b, ctx, writer, serialize_child)?;
+            if (serialize_child)(b, ctx, writer) {
+                serialize_expr_ref(b, ctx, writer, serialize_child)?;
+            }
             write!(writer, ")")
         }
         Expr::BVGreaterEqual(a, b) => {
             write!(writer, "ugte(")?;
-            serialize_expr_ref(a, ctx, writer, serialize_child)?;
+            if (serialize_child)(a, ctx, writer) {
+                serialize_expr_ref(a, ctx, writer, serialize_child)?;
+            }
             write!(writer, ", ")?;
-            serialize_expr_ref(b, ctx, writer, serialize_child)?;
+            if (serialize_child)(b, ctx, writer) {
+                serialize_expr_ref(b, ctx, writer, serialize_child)?;
+            }
             write!(writer, ")")
         }
         Expr::BVGreaterEqualSigned(a, b) => {
             write!(writer, "sgte(")?;
-            serialize_expr_ref(a, ctx, writer, serialize_child)?;
+            if (serialize_child)(a, ctx, writer) {
+                serialize_expr_ref(a, ctx, writer, serialize_child)?;
+            }
             write!(writer, ", ")?;
-            serialize_expr_ref(b, ctx, writer, serialize_child)?;
+            if (serialize_child)(b, ctx, writer) {
+                serialize_expr_ref(b, ctx, writer, serialize_child)?;
+            }
             write!(writer, ")")
         }
         Expr::BVConcat(a, b, _) => {
             write!(writer, "concat(")?;
-            serialize_expr_ref(a, ctx, writer, serialize_child)?;
+            if (serialize_child)(a, ctx, writer) {
+                serialize_expr_ref(a, ctx, writer, serialize_child)?;
+            }
             write!(writer, ", ")?;
-            serialize_expr_ref(b, ctx, writer, serialize_child)?;
+            if (serialize_child)(b, ctx, writer) {
+                serialize_expr_ref(b, ctx, writer, serialize_child)?;
+            }
             write!(writer, ")")
         }
         Expr::BVAnd(a, b, _) => {
             write!(writer, "and(")?;
-            serialize_expr_ref(a, ctx, writer, serialize_child)?;
+            if (serialize_child)(a, ctx, writer) {
+                serialize_expr_ref(a, ctx, writer, serialize_child)?;
+            }
             write!(writer, ", ")?;
-            serialize_expr_ref(b, ctx, writer, serialize_child)?;
+            if (serialize_child)(b, ctx, writer) {
+                serialize_expr_ref(b, ctx, writer, serialize_child)?;
+            }
             write!(writer, ")")
         }
         Expr::BVOr(a, b, _) => {
             write!(writer, "or(")?;
-            serialize_expr_ref(a, ctx, writer, serialize_child)?;
+            if (serialize_child)(a, ctx, writer) {
+                serialize_expr_ref(a, ctx, writer, serialize_child)?;
+            }
             write!(writer, ", ")?;
-            serialize_expr_ref(b, ctx, writer, serialize_child)?;
+            if (serialize_child)(b, ctx, writer) {
+                serialize_expr_ref(b, ctx, writer, serialize_child)?;
+            }
             write!(writer, ")")
         }
         Expr::BVXor(a, b, _) => {
             write!(writer, "xor(")?;
-            serialize_expr_ref(a, ctx, writer, serialize_child)?;
+            if (serialize_child)(a, ctx, writer) {
+                serialize_expr_ref(a, ctx, writer, serialize_child)?;
+            }
             write!(writer, ", ")?;
-            serialize_expr_ref(b, ctx, writer, serialize_child)?;
+            if (serialize_child)(b, ctx, writer) {
+                serialize_expr_ref(b, ctx, writer, serialize_child)?;
+            }
             write!(writer, ")")
         }
         Expr::BVShiftLeft(a, b, _) => {
             write!(writer, "logical_shift_left(")?;
-            serialize_expr_ref(a, ctx, writer, serialize_child)?;
+            if (serialize_child)(a, ctx, writer) {
+                serialize_expr_ref(a, ctx, writer, serialize_child)?;
+            }
             write!(writer, ", ")?;
-            serialize_expr_ref(b, ctx, writer, serialize_child)?;
+            if (serialize_child)(b, ctx, writer) {
+                serialize_expr_ref(b, ctx, writer, serialize_child)?;
+            }
             write!(writer, ")")
         }
         Expr::BVArithmeticShiftRight(a, b, _) => {
             write!(writer, "arithmetic_shift_right(")?;
-            serialize_expr_ref(a, ctx, writer, serialize_child)?;
+            if (serialize_child)(a, ctx, writer) {
+                serialize_expr_ref(a, ctx, writer, serialize_child)?;
+            }
             write!(writer, ", ")?;
-            serialize_expr_ref(b, ctx, writer, serialize_child)?;
+            if (serialize_child)(b, ctx, writer) {
+                serialize_expr_ref(b, ctx, writer, serialize_child)?;
+            }
             write!(writer, ")")
         }
         Expr::BVShiftRight(a, b, _) => {
             write!(writer, "logical_shift_right(")?;
-            serialize_expr_ref(a, ctx, writer, serialize_child)?;
+            if (serialize_child)(a, ctx, writer) {
+                serialize_expr_ref(a, ctx, writer, serialize_child)?;
+            }
             write!(writer, ", ")?;
-            serialize_expr_ref(b, ctx, writer, serialize_child)?;
+            if (serialize_child)(b, ctx, writer) {
+                serialize_expr_ref(b, ctx, writer, serialize_child)?;
+            }
             write!(writer, ")")
         }
         Expr::BVAdd(a, b, _) => {
             write!(writer, "add(")?;
-            serialize_expr_ref(a, ctx, writer, serialize_child)?;
+            if (serialize_child)(a, ctx, writer) {
+                serialize_expr_ref(a, ctx, writer, serialize_child)?;
+            }
             write!(writer, ", ")?;
-            serialize_expr_ref(b, ctx, writer, serialize_child)?;
+            if (serialize_child)(b, ctx, writer) {
+                serialize_expr_ref(b, ctx, writer, serialize_child)?;
+            }
             write!(writer, ")")
         }
         Expr::BVMul(a, b, _) => {
             write!(writer, "mul(")?;
-            serialize_expr_ref(a, ctx, writer, serialize_child)?;
+            if (serialize_child)(a, ctx, writer) {
+                serialize_expr_ref(a, ctx, writer, serialize_child)?;
+            }
             write!(writer, ", ")?;
-            serialize_expr_ref(b, ctx, writer, serialize_child)?;
+            if (serialize_child)(b, ctx, writer) {
+                serialize_expr_ref(b, ctx, writer, serialize_child)?;
+            }
             write!(writer, ")")
         }
         Expr::BVSignedDiv(a, b, _) => {
             write!(writer, "sdiv(")?;
-            serialize_expr_ref(a, ctx, writer, serialize_child)?;
+            if (serialize_child)(a, ctx, writer) {
+                serialize_expr_ref(a, ctx, writer, serialize_child)?;
+            }
             write!(writer, ", ")?;
-            serialize_expr_ref(b, ctx, writer, serialize_child)?;
+            if (serialize_child)(b, ctx, writer) {
+                serialize_expr_ref(b, ctx, writer, serialize_child)?;
+            }
             write!(writer, ")")
         }
         Expr::BVUnsignedDiv(a, b, _) => {
             write!(writer, "udiv(")?;
-            serialize_expr_ref(a, ctx, writer, serialize_child)?;
+            if (serialize_child)(a, ctx, writer) {
+                serialize_expr_ref(a, ctx, writer, serialize_child)?;
+            }
             write!(writer, ", ")?;
-            serialize_expr_ref(b, ctx, writer, serialize_child)?;
+            if (serialize_child)(b, ctx, writer) {
+                serialize_expr_ref(b, ctx, writer, serialize_child)?;
+            }
             write!(writer, ")")
         }
         Expr::BVSignedMod(a, b, _) => {
             write!(writer, "smod(")?;
-            serialize_expr_ref(a, ctx, writer, serialize_child)?;
+            if (serialize_child)(a, ctx, writer) {
+                serialize_expr_ref(a, ctx, writer, serialize_child)?;
+            }
             write!(writer, ", ")?;
-            serialize_expr_ref(b, ctx, writer, serialize_child)?;
+            if (serialize_child)(b, ctx, writer) {
+                serialize_expr_ref(b, ctx, writer, serialize_child)?;
+            }
             write!(writer, ")")
         }
         Expr::BVSignedRem(a, b, _) => {
             write!(writer, "srem(")?;
-            serialize_expr_ref(a, ctx, writer, serialize_child)?;
+            if (serialize_child)(a, ctx, writer) {
+                serialize_expr_ref(a, ctx, writer, serialize_child)?;
+            }
             write!(writer, ", ")?;
-            serialize_expr_ref(b, ctx, writer, serialize_child)?;
+            if (serialize_child)(b, ctx, writer) {
+                serialize_expr_ref(b, ctx, writer, serialize_child)?;
+            }
             write!(writer, ")")
         }
         Expr::BVUnsignedRem(a, b, _) => {
             write!(writer, "urem(")?;
-            serialize_expr_ref(a, ctx, writer, serialize_child)?;
+            if (serialize_child)(a, ctx, writer) {
+                serialize_expr_ref(a, ctx, writer, serialize_child)?;
+            }
             write!(writer, ", ")?;
-            serialize_expr_ref(b, ctx, writer, serialize_child)?;
+            if (serialize_child)(b, ctx, writer) {
+                serialize_expr_ref(b, ctx, writer, serialize_child)?;
+            }
             write!(writer, ")")
         }
         Expr::BVSub(a, b, _) => {
             write!(writer, "sub(")?;
-            serialize_expr_ref(a, ctx, writer, serialize_child)?;
+            if (serialize_child)(a, ctx, writer) {
+                serialize_expr_ref(a, ctx, writer, serialize_child)?;
+            }
             write!(writer, ", ")?;
-            serialize_expr_ref(b, ctx, writer, serialize_child)?;
+            if (serialize_child)(b, ctx, writer) {
+                serialize_expr_ref(b, ctx, writer, serialize_child)?;
+            }
             write!(writer, ")")
         }
         Expr::BVArrayRead { array, index, .. } => {
-            serialize_expr_ref(array, ctx, writer, serialize_child)?;
+            if (serialize_child)(array, ctx, writer) {
+                serialize_expr_ref(array, ctx, writer, serialize_child)?;
+            }
             write!(writer, "[")?;
-            serialize_expr_ref(index, ctx, writer, serialize_child)?;
+            if (serialize_child)(index, ctx, writer) {
+                serialize_expr_ref(index, ctx, writer, serialize_child)?;
+            }
             write!(writer, "]")
         }
         Expr::BVIte {
             cond, tru, fals, ..
         } => {
             write!(writer, "ite(")?;
-            serialize_expr_ref(cond, ctx, writer, serialize_child)?;
+            if (serialize_child)(cond, ctx, writer) {
+                serialize_expr_ref(cond, ctx, writer, serialize_child)?;
+            }
             write!(writer, ", ")?;
-            serialize_expr_ref(tru, ctx, writer, serialize_child)?;
+            if (serialize_child)(tru, ctx, writer) {
+                serialize_expr_ref(tru, ctx, writer, serialize_child)?;
+            }
             write!(writer, ", ")?;
-            serialize_expr_ref(fals, ctx, writer, serialize_child)?;
+            if (serialize_child)(fals, ctx, writer) {
+                serialize_expr_ref(fals, ctx, writer, serialize_child)?;
+            }
             write!(writer, ")")
         }
         Expr::ArraySymbol { name, .. } => write!(writer, "{}", ctx.get(*name)),
         Expr::ArrayConstant { e, index_width, .. } => {
             write!(writer, "([")?;
-            serialize_expr_ref(e, ctx, writer, serialize_child)?;
+            if (serialize_child)(e, ctx, writer) {
+                serialize_expr_ref(e, ctx, writer, serialize_child)?;
+            }
             write!(writer, "] x 2^{index_width})")
         }
         Expr::ArrayEqual(a, b) => {
             write!(writer, "eq(")?;
-            serialize_expr_ref(a, ctx, writer, serialize_child)?;
+            if (serialize_child)(a, ctx, writer) {
+                serialize_expr_ref(a, ctx, writer, serialize_child)?;
+            }
             write!(writer, ", ")?;
-            serialize_expr_ref(b, ctx, writer, serialize_child)?;
+            if (serialize_child)(b, ctx, writer) {
+                serialize_expr_ref(b, ctx, writer, serialize_child)?;
+            }
             write!(writer, ")")
         }
         Expr::ArrayStore { array, index, data } => {
-            serialize_expr_ref(array, ctx, writer, serialize_child)?;
+            if (serialize_child)(array, ctx, writer) {
+                serialize_expr_ref(array, ctx, writer, serialize_child)?;
+            }
             write!(writer, "[")?;
-            serialize_expr_ref(index, ctx, writer, serialize_child)?;
+            if (serialize_child)(index, ctx, writer) {
+                serialize_expr_ref(index, ctx, writer, serialize_child)?;
+            }
             write!(writer, " := ")?;
-            serialize_expr_ref(data, ctx, writer, serialize_child)?;
+            if (serialize_child)(data, ctx, writer) {
+                serialize_expr_ref(data, ctx, writer, serialize_child)?;
+            }
             write!(writer, "]")
         }
         Expr::ArrayIte { cond, tru, fals } => {
             write!(writer, "ite(")?;
-            serialize_expr_ref(cond, ctx, writer, serialize_child)?;
+            if (serialize_child)(cond, ctx, writer) {
+                serialize_expr_ref(cond, ctx, writer, serialize_child)?;
+            }
             write!(writer, ", ")?;
-            serialize_expr_ref(tru, ctx, writer, serialize_child)?;
+            if (serialize_child)(tru, ctx, writer) {
+                serialize_expr_ref(tru, ctx, writer, serialize_child)?;
+            }
             write!(writer, ", ")?;
-            serialize_expr_ref(fals, ctx, writer, serialize_child)?;
+            if (serialize_child)(fals, ctx, writer) {
+                serialize_expr_ref(fals, ctx, writer, serialize_child)?;
+            }
             write!(writer, ")")
         }
     }
