@@ -115,7 +115,7 @@ mod tests {
         assert_eq!(std::mem::size_of::<SignalKind>(), 1);
         // Optional name (saved as a string ref) + SignalKind
         assert_eq!(std::mem::size_of::<SignalInfo>(), 4);
-        // the option type can use unused byt
+        // the option type can use unused values and thus takes no extra space
         assert_eq!(std::mem::size_of::<Option<SignalInfo>>(), 4);
     }
 }
