@@ -3,7 +3,7 @@
 // author: Kevin Laeufer <laeufer@berkeley.edu>
 
 use super::{Context, Expr, ExprRef, GetNode};
-use crate::ir::{ExprIntrospection, TransitionSystem, Type, TypeCheck};
+use crate::ir::{ExprIntrospection, SignalKind, TransitionSystem, Type, TypeCheck};
 use std::io::Write;
 
 pub trait SerializableIrNode {
@@ -286,23 +286,18 @@ impl SerializableIrNode for TransitionSystem {
             writeln!(writer, "{}", self.name)?;
         }
 
-        // inputs
-        // for input in self.inputs.iter() {
-        //     let sym = ctx.get(*input);
-        //     let name = sym
-        //         .get_symbol_name(ctx)
-        //         .expect("all inputs should be symbols");
-        //     let tpe = sym.get_type(ctx);
-        //     writeln!(writer, "input {name} : {tpe}")?;
-        // }
-
         // signals
         for (ii, signal) in self
             .signals
             .iter()
             .enumerate()
             .flat_map(|(ii, maybe_signal)| maybe_signal.as_ref().and_then(|s| Some((ii, s))))
+            // do not explicitly print states
+            .filter(|(_, s)| !matches!(s.kind, SignalKind::State))
         {
+            // print the kind
+            write!(writer, "{} ", signal.kind)?;
+
             // we use the position as name if no name is available
             if let Some(name_ref) = signal.name {
                 write!(writer, "{}", ctx.get(name_ref))?;
@@ -314,21 +309,38 @@ impl SerializableIrNode for TransitionSystem {
 
             // print the type
             let tpe = expr.get_type(ctx);
-            write!(writer, ": {tpe} = ",)?;
+            write!(writer, " : {tpe}",)?;
 
-            // print expression
-            expr.serialize(ctx, writer)?;
-
-            // finish line
-            writeln!(writer, ";",)?;
+            // do not print simple symbols
+            if expr.is_symbol(ctx) {
+                writeln!(writer, "")?;
+            } else {
+                write!(writer, " = ")?;
+                expr.serialize(ctx, writer)?;
+                writeln!(writer, "",)?;
+            }
         }
 
-        // outputs
-        // todo!();
+        // states
+        for state in self.states.iter() {
+            let name = state
+                .symbol
+                .get_symbol_name(ctx)
+                .expect("all states are required to have a name!");
+            let tpe = state.symbol.get_type(ctx);
+            writeln!(writer, "state {name} : {tpe}")?;
 
-        // assumptions
-
-        // bad states
+            if let Some(expr) = state.init {
+                write!(writer, "  [init] ")?;
+                expr.serialize(ctx, writer)?;
+                writeln!(writer, "",)?;
+            }
+            if let Some(expr) = state.next {
+                write!(writer, "  [next] ")?;
+                expr.serialize(ctx, writer)?;
+                writeln!(writer, "",)?;
+            }
+        }
 
         Ok(())
     }

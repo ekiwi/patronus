@@ -353,6 +353,8 @@ pub trait ExprIntrospection {
         &self,
         ctx: &'a (impl GetNode<Expr, ExprRef> + GetNode<str, StringRef>),
     ) -> Option<&'a str>;
+
+    fn get_symbol_name_ref(&self, ctx: &impl GetNode<Expr, ExprRef>) -> Option<StringRef>;
 }
 
 impl ExprIntrospection for Expr {
@@ -360,21 +362,29 @@ impl ExprIntrospection for Expr {
         matches!(self, Expr::BVSymbol { .. } | Expr::ArraySymbol { .. })
     }
 
+    fn get_symbol_name_ref(&self, _ctx: &impl GetNode<Expr, ExprRef>) -> Option<StringRef> {
+        match self {
+            Expr::BVSymbol { name, .. } => Some(*name),
+            Expr::ArraySymbol { name, .. } => Some(*name),
+            _ => None,
+        }
+    }
+
     fn get_symbol_name<'a>(
         &self,
         ctx: &'a (impl GetNode<Expr, ExprRef> + GetNode<str, StringRef>),
     ) -> Option<&'a str> {
-        match self {
-            Expr::BVSymbol { name, .. } => Some(ctx.get(*name)),
-            Expr::ArraySymbol { name, .. } => Some(ctx.get(*name)),
-            _ => None,
-        }
+        self.get_symbol_name_ref(ctx).map(|r| ctx.get(r))
     }
 }
 
 impl ExprIntrospection for ExprRef {
     fn is_symbol(&self, ctx: &impl GetNode<Expr, ExprRef>) -> bool {
         ctx.get(*self).is_symbol(ctx)
+    }
+
+    fn get_symbol_name_ref(&self, ctx: &impl GetNode<Expr, ExprRef>) -> Option<StringRef> {
+        ctx.get(*self).get_symbol_name_ref(ctx)
     }
 
     fn get_symbol_name<'a>(

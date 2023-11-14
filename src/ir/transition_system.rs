@@ -4,6 +4,7 @@
 
 use super::{Expr, ExprIntrospection, ExprRef, GetNode};
 use crate::ir::StringRef;
+use std::fmt::{Display, Formatter};
 
 #[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub enum SignalKind {
@@ -14,6 +15,27 @@ pub enum SignalKind {
     Fair,
     Input,
     State,
+}
+
+impl SignalKind {
+    #[inline]
+    pub fn to_string(&self) -> &'static str {
+        match &self {
+            SignalKind::Node => "node",
+            SignalKind::Output => "output",
+            SignalKind::Bad => "bad",
+            SignalKind::Constraint => "constraint",
+            SignalKind::Fair => "fair",
+            SignalKind::Input => "input",
+            SignalKind::State => "state",
+        }
+    }
+}
+
+impl Display for SignalKind {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.to_string())
+    }
 }
 
 impl std::str::FromStr for SignalKind {
@@ -74,8 +96,17 @@ impl TransitionSystem {
         self.signals[id] = Some(SignalInfo { name, kind });
     }
 
+    pub fn add_input(&mut self, ctx: &impl GetNode<Expr, ExprRef>, symbol: ExprRef) {
+        assert!(symbol.is_symbol(ctx));
+        let name = symbol.get_symbol_name_ref(ctx);
+        self.add_signal(symbol, SignalKind::Input, name);
+    }
+
     pub fn add_state(&mut self, ctx: &impl GetNode<Expr, ExprRef>, symbol: ExprRef) -> StateRef {
         assert!(symbol.is_symbol(ctx));
+        // also add as a signal
+        let name = symbol.get_symbol_name_ref(ctx);
+        self.add_signal(symbol, SignalKind::State, name);
         let id = self.states.len();
         self.states.push(State {
             symbol,

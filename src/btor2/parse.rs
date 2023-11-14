@@ -137,8 +137,14 @@ impl<'a> Parser<'a> {
                     Some(self.parse_format(line, tokens, op)?)
                 }
                 "ones" => Some(self.parse_ones(line, tokens)?),
-                "state" => Some(self.parse_state(line, &cont, line_id)?),
-                "input" => Some(self.parse_input(line, &cont)?),
+                "state" => {
+                    self.parse_state(line, &cont, line_id)?;
+                    None // states are already added, no need to re-add them
+                }
+                "input" => {
+                    self.parse_input(line, &cont, line_id)?;
+                    None // inputs are already added, no need to re-add them
+                }
                 "init" | "next" => {
                     self.parse_state_init_or_next(line, &cont, op == "init")?;
                     None
@@ -157,7 +163,7 @@ impl<'a> Parser<'a> {
             }
         };
         if let Some(e) = expr {
-            self.add_signal(line_id, e, label)?;
+            self.add_signal(line_id, e, label, None)?;
         }
         Ok(())
     }
@@ -204,8 +210,14 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn add_signal(&mut self, line_id: LineId, expr: ExprRef, kind: SignalKind) -> ParseLineResult {
-        self.sys.add_signal(expr, kind, None);
+    fn add_signal(
+        &mut self,
+        line_id: LineId,
+        expr: ExprRef,
+        kind: SignalKind,
+        name: Option<StringRef>,
+    ) -> ParseLineResult {
+        self.sys.add_signal(expr, kind, name);
         self.signal_map.insert(line_id, expr);
         Ok(())
     }
@@ -352,21 +364,28 @@ impl<'a> Parser<'a> {
         line: &str,
         cont: &LineTokens,
         line_id: LineId,
-    ) -> ParseLineResult<ExprRef> {
+    ) -> ParseLineResult<()> {
         let tpe = self.get_tpe_from_id(line, cont.tokens[2])?;
         let name = self.get_label_name(cont, "state");
         let sym = self.ctx.symbol(name, tpe);
         let state_ref = self.sys.add_state(self.ctx, sym);
         self.state_map.insert(line_id, state_ref);
-        Ok(sym)
+        self.signal_map.insert(line_id, sym);
+        Ok(())
     }
 
-    fn parse_input(&mut self, line: &str, cont: &LineTokens) -> ParseLineResult<ExprRef> {
+    fn parse_input(
+        &mut self,
+        line: &str,
+        cont: &LineTokens,
+        line_id: LineId,
+    ) -> ParseLineResult<()> {
         let tpe = self.get_tpe_from_id(line, cont.tokens[2])?;
         let name = self.get_label_name(cont, "input");
         let sym = self.ctx.symbol(name, tpe);
-        self.sys.add_signal(sym, SignalKind::Input, None);
-        Ok(sym)
+        self.sys.add_input(self.ctx, sym);
+        self.signal_map.insert(line_id, sym);
+        Ok(())
     }
 
     fn parse_state_init_or_next(
