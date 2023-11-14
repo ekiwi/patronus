@@ -26,3 +26,10 @@ fn parse_count2() {
     let sys = btor2::parse_str(&mut ctx, COUNT_2, Some("count2")).unwrap();
     insta::assert_snapshot!(sys.serialize_to_str(&ctx));
 }
+
+
+#[test]
+fn parse_quiz1() {
+    let (ctx, sys) = btor2::parse_file("inputs/Quiz1.btor").unwrap();
+    insta::assert_snapshot!(sys.serialize_to_str(&ctx));
+}
