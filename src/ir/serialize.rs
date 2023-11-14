@@ -3,7 +3,7 @@
 // author: Kevin Laeufer <laeufer@berkeley.edu>
 
 use super::{Context, Expr, ExprRef, GetNode};
-use crate::ir::{ExprIntrospection, SignalKind, TransitionSystem, Type, TypeCheck};
+use crate::ir::{SignalKind, TransitionSystem, Type, TypeCheck};
 use std::io::Write;
 
 pub trait SerializableIrNode {
@@ -299,7 +299,7 @@ impl SerializableIrNode for TransitionSystem {
             let expr = ctx.get(ExprRef::from_index(ii));
 
             // skip symbols and literals
-            if expr.is_symbol(ctx) || expr.is_bv_lit(ctx) {
+            if expr.is_symbol() || expr.is_bv_lit() {
                 continue;
             }
 
@@ -318,7 +318,7 @@ impl SerializableIrNode for TransitionSystem {
             write!(writer, " : {tpe}",)?;
 
             // do not print simple symbols
-            if expr.is_symbol(ctx) {
+            if expr.is_symbol() {
                 writeln!(writer, "")?;
             } else {
                 write!(writer, " = ")?;

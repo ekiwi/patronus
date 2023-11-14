@@ -8,8 +8,8 @@ mod type_check;
 
 pub use serialize::SerializableIrNode;
 pub use smt::{
-    bv_value_fits_width, AddNode, ArrayType, BVLiteralInt, Context, Expr, ExprIntrospection,
-    ExprNodeConstruction, ExprRef, GetNode, StringRef, Type, WidthInt,
+    bv_value_fits_width, AddNode, ArrayType, BVLiteralInt, Context, Expr, ExprNodeConstruction,
+    ExprRef, GetNode, StringRef, Type, WidthInt,
 };
 pub use transition_system::{SignalInfo, SignalKind, State, StateRef, TransitionSystem};
 pub use type_check::{TypeCheck, TypeCheckError};

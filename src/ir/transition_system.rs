@@ -2,7 +2,7 @@
 // released under BSD 3-Clause License
 // author: Kevin Laeufer <laeufer@berkeley.edu>
 
-use super::{Expr, ExprIntrospection, ExprRef, GetNode};
+use super::{Expr, ExprRef, GetNode};
 use crate::ir::StringRef;
 use std::fmt::{Display, Formatter};
 

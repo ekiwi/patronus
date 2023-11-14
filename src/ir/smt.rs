@@ -345,58 +345,42 @@ impl Expr {
             },
         }
     }
-}
 
-pub trait ExprIntrospection {
-    fn is_symbol(&self, ctx: &impl GetNode<Expr, ExprRef>) -> bool;
-    fn is_bv_lit(&self, _ctx: &impl GetNode<Expr, ExprRef>) -> bool;
-    fn get_symbol_name<'a>(
-        &self,
-        ctx: &'a (impl GetNode<Expr, ExprRef> + GetNode<str, StringRef>),
-    ) -> Option<&'a str>;
-
-    fn get_symbol_name_ref(&self, ctx: &impl GetNode<Expr, ExprRef>) -> Option<StringRef>;
-}
-
-impl ExprIntrospection for Expr {
-    fn is_symbol(&self, _ctx: &impl GetNode<Expr, ExprRef>) -> bool {
+    pub fn is_symbol(&self) -> bool {
         matches!(self, Expr::BVSymbol { .. } | Expr::ArraySymbol { .. })
     }
 
-    fn is_bv_lit(&self, _ctx: &impl GetNode<Expr, ExprRef>) -> bool {
+    pub fn is_bv_lit(&self) -> bool {
         matches!(self, Expr::BVLiteral { .. })
     }
 
-    fn get_symbol_name<'a>(
-        &self,
-        ctx: &'a (impl GetNode<Expr, ExprRef> + GetNode<str, StringRef>),
-    ) -> Option<&'a str> {
-        self.get_symbol_name_ref(ctx).map(|r| ctx.get(r))
-    }
-
-    fn get_symbol_name_ref(&self, _ctx: &impl GetNode<Expr, ExprRef>) -> Option<StringRef> {
+    pub fn get_symbol_name_ref(&self) -> Option<StringRef> {
         match self {
             Expr::BVSymbol { name, .. } => Some(*name),
             Expr::ArraySymbol { name, .. } => Some(*name),
             _ => None,
         }
     }
+
+    pub fn get_symbol_name<'a>(&self, ctx: &'a impl GetNode<str, StringRef>) -> Option<&'a str> {
+        self.get_symbol_name_ref().map(|r| ctx.get(r))
+    }
 }
 
-impl ExprIntrospection for ExprRef {
-    fn is_symbol(&self, ctx: &impl GetNode<Expr, ExprRef>) -> bool {
-        ctx.get(*self).is_symbol(ctx)
+impl ExprRef {
+    pub fn is_symbol(&self, ctx: &impl GetNode<Expr, ExprRef>) -> bool {
+        ctx.get(*self).is_symbol()
     }
 
-    fn is_bv_lit(&self, ctx: &impl GetNode<Expr, ExprRef>) -> bool {
-        ctx.get(*self).is_bv_lit(ctx)
+    pub fn is_bv_lit(&self, ctx: &impl GetNode<Expr, ExprRef>) -> bool {
+        ctx.get(*self).is_bv_lit()
     }
 
-    fn get_symbol_name_ref(&self, ctx: &impl GetNode<Expr, ExprRef>) -> Option<StringRef> {
-        ctx.get(*self).get_symbol_name_ref(ctx)
+    pub fn get_symbol_name_ref(&self, ctx: &impl GetNode<Expr, ExprRef>) -> Option<StringRef> {
+        ctx.get(*self).get_symbol_name_ref()
     }
 
-    fn get_symbol_name<'a>(
+    pub fn get_symbol_name<'a>(
         &self,
         ctx: &'a (impl GetNode<Expr, ExprRef> + GetNode<str, StringRef>),
     ) -> Option<&'a str> {
