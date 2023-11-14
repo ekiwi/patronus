@@ -3,10 +3,11 @@
 // author: Kevin Laeufer <laeufer@berkeley.edu>
 
 use crate::ir::*;
+use std::io::Write;
 
 pub fn serialize(
     ctx: &Context,
-    writer: &mut impl (std::io::Write),
+    writer: &mut impl Write,
     sys: &TransitionSystem,
 ) -> std::io::Result<()> {
     Serializer::new(ctx, writer).serialize_sys(sys)
@@ -20,12 +21,12 @@ pub fn serialize_to_str(ctx: &Context, sys: &TransitionSystem) -> String {
     String::from_utf8(buf).expect("Failed to read string we wrote!")
 }
 
-struct Serializer<'a, W: std::io::Write> {
+struct Serializer<'a, W: Write> {
     ctx: &'a Context,
     writer: &'a mut W,
 }
 
-impl<'a, W: std::io::Write> Serializer<'a, W> {
+impl<'a, W: Write> Serializer<'a, W> {
     fn new(ctx: &'a Context, writer: &'a mut W) -> Self {
         Serializer { ctx, writer }
     }
