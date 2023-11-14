@@ -201,7 +201,7 @@ impl GetNode<str, StringRef> for Context {
 impl AddNode<Expr, ExprRef> for Context {
     fn add_node(&mut self, value: Expr) -> ExprRef {
         let (index, _) = self.exprs.insert_full(value);
-        ExprRef(NonZeroU32::new((index + 1) as u32).unwrap())
+        ExprRef::from_index(index)
     }
 }
 
@@ -219,6 +219,16 @@ impl ExprNodeConstruction for Context {}
 pub struct StringRef(string_interner::symbol::SymbolU16);
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
 pub struct ExprRef(NonZeroU32);
+
+impl ExprRef {
+    pub(crate) fn from_index(index: usize) -> Self {
+        ExprRef(NonZeroU32::new((index + 1) as u32).unwrap())
+    }
+
+    pub(crate) fn index(&self) -> usize {
+        (self.0.get() - 1) as usize
+    }
+}
 
 #[derive(Debug, PartialEq, Eq, Clone, Hash)]
 /// Represents a SMT bit-vector or array expression.

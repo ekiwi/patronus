@@ -287,29 +287,37 @@ impl SerializableIrNode for TransitionSystem {
         }
 
         // inputs
-        for input in self.inputs.iter() {
-            let sym = ctx.get(*input);
-            let name = sym
-                .get_symbol_name(ctx)
-                .expect("all inputs should be symbols");
-            let tpe = sym.get_type(ctx);
-            writeln!(writer, "input {name} : {tpe}")?;
-        }
+        // for input in self.inputs.iter() {
+        //     let sym = ctx.get(*input);
+        //     let name = sym
+        //         .get_symbol_name(ctx)
+        //         .expect("all inputs should be symbols");
+        //     let tpe = sym.get_type(ctx);
+        //     writeln!(writer, "input {name} : {tpe}")?;
+        // }
 
         // signals
-        for (ii, signal) in self.signals.iter().enumerate() {
+        for (ii, signal) in self
+            .signals
+            .iter()
+            .enumerate()
+            .flat_map(|(ii, maybe_signal)| maybe_signal.as_ref().and_then(|s| Some((ii, s))))
+        {
             // we use the position as name if no name is available
-            if let Some(name) = &signal.name {
-                write!(writer, "{}", name)?;
+            if let Some(name_ref) = signal.name {
+                write!(writer, "{}", ctx.get(name_ref))?;
             } else {
-                write!(writer, "{}", ii)?;
+                write!(writer, "%{}", ii)?;
             }
+            // we deduce the expression id from the index
+            let expr = ExprRef::from_index(ii);
+
             // print the type
-            let tpe = signal.expr.get_type(ctx);
+            let tpe = expr.get_type(ctx);
             write!(writer, ": {tpe} = ",)?;
 
             // print expression
-            signal.expr.serialize(ctx, writer)?;
+            expr.serialize(ctx, writer)?;
 
             // finish line
             writeln!(writer, ";",)?;

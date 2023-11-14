@@ -48,7 +48,7 @@ struct Parser<'a> {
     /// maps file id to state in the Transition System
     state_map: HashMap<LineId, StateRef>,
     /// maps file id to signal in the Transition System
-    signal_map: HashMap<LineId, SignalRef>,
+    signal_map: HashMap<LineId, ExprRef>,
 }
 
 type LineId = u32;
@@ -145,7 +145,7 @@ impl<'a> Parser<'a> {
                 }
                 "output" | "bad" | "constraint" | "fair" => {
                     label = SignalKind::from_str(op).unwrap();
-                    Some(self.get_expr_from_signal_id(line, tokens[2])?)
+                    Some(self.get_expr_from_line_id(line, tokens[2])?)
                 }
                 other => {
                     if OTHER_OPS_SET.contains(other) {
@@ -205,8 +205,8 @@ impl<'a> Parser<'a> {
     }
 
     fn add_signal(&mut self, line_id: LineId, expr: ExprRef, kind: SignalKind) -> ParseLineResult {
-        let signal_ref = self.sys.add_signal(expr, kind);
-        self.signal_map.insert(line_id, signal_ref);
+        self.sys.add_signal(expr, kind, None);
+        self.signal_map.insert(line_id, expr);
         Ok(())
     }
 
@@ -219,7 +219,7 @@ impl<'a> Parser<'a> {
     fn parse_unary_op(&mut self, line: &str, tokens: &[&str]) -> ParseLineResult<ExprRef> {
         self.require_at_least_n_tokens(line, tokens, 4)?;
         let tpe = self.get_tpe_from_id(line, tokens[2])?;
-        let e = self.get_expr_from_signal_id(line, tokens[3])?;
+        let e = self.get_expr_from_line_id(line, tokens[3])?;
         let res: ExprRef = match tokens[1] {
             "slice" => {
                 // slice has two integer attributes
@@ -247,8 +247,8 @@ impl<'a> Parser<'a> {
     fn parse_bin_op(&mut self, line: &str, tokens: &[&str]) -> ParseLineResult<ExprRef> {
         self.require_at_least_n_tokens(line, tokens, 5)?;
         let tpe = self.get_tpe_from_id(line, tokens[2])?;
-        let a = self.get_expr_from_signal_id(line, tokens[3])?;
-        let b = self.get_expr_from_signal_id(line, tokens[4])?;
+        let a = self.get_expr_from_line_id(line, tokens[3])?;
+        let b = self.get_expr_from_line_id(line, tokens[4])?;
         let e: ExprRef = match tokens[1] {
             "iff" => {
                 self.check_type(
@@ -331,9 +331,9 @@ impl<'a> Parser<'a> {
     fn parse_ternary_op(&mut self, line: &str, tokens: &[&str]) -> ParseLineResult<ExprRef> {
         self.require_at_least_n_tokens(line, tokens, 6)?;
         let tpe = self.get_tpe_from_id(line, tokens[2])?;
-        let a = self.get_expr_from_signal_id(line, tokens[3])?;
-        let b = self.get_expr_from_signal_id(line, tokens[4])?;
-        let c = self.get_expr_from_signal_id(line, tokens[5])?;
+        let a = self.get_expr_from_line_id(line, tokens[3])?;
+        let b = self.get_expr_from_line_id(line, tokens[4])?;
+        let c = self.get_expr_from_line_id(line, tokens[5])?;
         let res: ExprRef = match tokens[1] {
             "ite" => {
                 if tpe.is_bit_vector() {
@@ -365,7 +365,7 @@ impl<'a> Parser<'a> {
         let tpe = self.get_tpe_from_id(line, cont.tokens[2])?;
         let name = self.get_label_name(cont, "input");
         let sym = self.ctx.symbol(name, tpe);
-        self.sys.add_input(self.ctx, sym);
+        self.sys.add_signal(sym, SignalKind::Input, None);
         Ok(sym)
     }
 
@@ -382,7 +382,7 @@ impl<'a> Parser<'a> {
         let state_sym = self.sys.get(state_ref).symbol;
         let state_tpe = state_sym.type_check(self.ctx).unwrap();
         let state_name = state_sym.get_symbol_name(self.ctx).unwrap().to_string();
-        let expr = self.get_expr_from_signal_id(line, cont.tokens[4])?;
+        let expr = self.get_expr_from_line_id(line, cont.tokens[4])?;
         self.check_type(
             &expr.get_type(self.ctx),
             &tpe,
@@ -528,14 +528,9 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn get_expr_from_signal_id(&mut self, line: &str, token: &str) -> ParseLineResult<ExprRef> {
-        let signal = self.get_signal_from_id(line, token)?;
-        Ok(signal.expr)
-    }
-
-    fn get_signal_from_id(&mut self, line: &str, token: &str) -> ParseLineResult<&Signal> {
+    fn get_expr_from_line_id(&mut self, line: &str, token: &str) -> ParseLineResult<ExprRef> {
         let signal_id = self.parse_line_id(line, token)?;
-        let signal_ref = match self.signal_map.get(&signal_id) {
+        let expr_ref = match self.signal_map.get(&signal_id) {
             None => {
                 let _ = self.add_error(
                     line,
@@ -546,7 +541,7 @@ impl<'a> Parser<'a> {
             }
             Some(signal) => Ok(*signal),
         }?;
-        Ok(self.sys.get(signal_ref))
+        Ok(expr_ref)
     }
 
     fn parse_sort(&mut self, line: &str, tokens: &[&str], line_id: LineId) -> ParseLineResult {
@@ -840,7 +835,7 @@ mod tests {
 
     fn parse_private(code: &str) -> Result<TransitionSystem, Errors> {
         let mut ctx = Context::default();
-        Parser::new(&mut ctx).parse(code.as_bytes())
+        Parser::new(&mut ctx).parse(code.as_bytes(), None)
     }
 
     #[test]

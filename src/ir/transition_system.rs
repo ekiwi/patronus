@@ -3,6 +3,7 @@
 // author: Kevin Laeufer <laeufer@berkeley.edu>
 
 use super::{Expr, ExprIntrospection, ExprRef, GetNode};
+use crate::ir::StringRef;
 
 #[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub enum SignalKind {
@@ -11,6 +12,8 @@ pub enum SignalKind {
     Bad,
     Constraint,
     Fair,
+    Input,
+    State,
 }
 
 impl std::str::FromStr for SignalKind {
@@ -29,13 +32,10 @@ impl std::str::FromStr for SignalKind {
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Hash)]
-pub struct Signal {
-    pub name: Option<String>,
-    pub expr: ExprRef,
+pub struct SignalInfo {
+    pub name: Option<StringRef>,
     pub kind: SignalKind,
 }
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
-pub struct SignalRef(usize);
 
 #[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub struct State {
@@ -53,8 +53,8 @@ pub struct InputRef(usize);
 pub struct TransitionSystem {
     pub name: String,
     pub(crate) states: Vec<State>,
-    pub(crate) inputs: Vec<ExprRef>,
-    pub(crate) signals: Vec<Signal>,
+    /// signal meta-data stored in a dense hash map, matching the index of the corresponding expression
+    pub(crate) signals: Vec<Option<SignalInfo>>,
 }
 
 impl TransitionSystem {
@@ -62,19 +62,16 @@ impl TransitionSystem {
         TransitionSystem {
             name,
             states: Vec::default(),
-            inputs: Vec::default(),
             signals: Vec::default(),
         }
     }
 
-    pub fn add_signal(&mut self, expr: ExprRef, kind: SignalKind) -> SignalRef {
-        let id = self.signals.len();
-        self.signals.push(Signal {
-            name: None,
-            expr,
-            kind,
-        });
-        SignalRef(id)
+    pub fn add_signal(&mut self, expr: ExprRef, kind: SignalKind, name: Option<StringRef>) {
+        let id = expr.index();
+        if self.signals.len() <= id {
+            self.signals.resize(id + 1, None);
+        }
+        self.signals[id] = Some(SignalInfo { name, kind });
     }
 
     pub fn add_state(&mut self, ctx: &impl GetNode<Expr, ExprRef>, symbol: ExprRef) -> StateRef {
@@ -88,13 +85,6 @@ impl TransitionSystem {
         StateRef(id)
     }
 
-    pub fn add_input(&mut self, ctx: &impl GetNode<Expr, ExprRef>, symbol: ExprRef) -> InputRef {
-        assert!(symbol.is_symbol(ctx));
-        let id = self.inputs.len();
-        self.inputs.push(symbol);
-        InputRef(id)
-    }
-
     pub fn modify_state<F>(&mut self, reference: StateRef, modify: F)
     where
         F: FnOnce(&mut State),
@@ -103,14 +93,29 @@ impl TransitionSystem {
     }
 }
 
-impl GetNode<Signal, SignalRef> for TransitionSystem {
-    fn get(&self, reference: SignalRef) -> &Signal {
-        &self.signals[reference.0]
+impl GetNode<SignalInfo, ExprRef> for TransitionSystem {
+    fn get(&self, reference: ExprRef) -> &SignalInfo {
+        self.signals[reference.index()].as_ref().unwrap()
     }
 }
 
 impl GetNode<State, StateRef> for TransitionSystem {
     fn get(&self, reference: StateRef) -> &State {
         &self.states[reference.0]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ir_type_size() {
+        // Simple C-like enum
+        assert_eq!(std::mem::size_of::<SignalKind>(), 1);
+        // Optional name (saved as a string ref) + SignalKind
+        assert_eq!(std::mem::size_of::<SignalInfo>(), 4);
+        // the option type can use unused byt
+        assert_eq!(std::mem::size_of::<Option<SignalInfo>>(), 4);
     }
 }
