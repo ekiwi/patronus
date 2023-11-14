@@ -295,6 +295,14 @@ impl SerializableIrNode for TransitionSystem {
             // do not explicitly print states
             .filter(|(_, s)| !matches!(s.kind, SignalKind::State))
         {
+            // we deduce the expression id from the index
+            let expr = ctx.get(ExprRef::from_index(ii));
+
+            // skip symbols and literals
+            if expr.is_symbol(ctx) || expr.is_bv_lit(ctx) {
+                continue;
+            }
+
             // print the kind
             write!(writer, "{} ", signal.kind)?;
 
@@ -304,8 +312,6 @@ impl SerializableIrNode for TransitionSystem {
             } else {
                 write!(writer, "%{}", ii)?;
             }
-            // we deduce the expression id from the index
-            let expr = ExprRef::from_index(ii);
 
             // print the type
             let tpe = expr.get_type(ctx);
