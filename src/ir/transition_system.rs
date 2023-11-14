@@ -96,6 +96,11 @@ impl TransitionSystem {
         self.signals[id] = Some(SignalInfo { name, kind });
     }
 
+    pub fn get_signal(&self, expr: ExprRef) -> Option<&SignalInfo> {
+        let entry = self.signals.get(expr.index())?;
+        entry.as_ref()
+    }
+
     pub fn add_input(&mut self, ctx: &impl GetNode<Expr, ExprRef>, symbol: ExprRef) {
         assert!(symbol.is_symbol(ctx));
         let name = symbol.get_symbol_name_ref(ctx);

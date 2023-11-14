@@ -7,7 +7,7 @@ use crate::ir::{SignalKind, TransitionSystem, Type, TypeCheck};
 use std::io::Write;
 
 pub trait SerializableIrNode {
-    fn serialize(&self, ctx: &Context, writer: &mut impl Write) -> std::io::Result<()>;
+    fn serialize<W: Write>(&self, ctx: &Context, writer: &mut W) -> std::io::Result<()>;
     fn serialize_to_str(&self, ctx: &Context) -> String {
         let mut buf = Vec::new();
         self.serialize(ctx, &mut buf)
@@ -17,8 +17,8 @@ pub trait SerializableIrNode {
 }
 
 impl SerializableIrNode for Expr {
-    fn serialize(&self, ctx: &Context, writer: &mut impl Write) -> std::io::Result<()> {
-        serialize_expr(&self, ctx, writer, &|_, _, _| false)
+    fn serialize<W: Write>(&self, ctx: &Context, writer: &mut W) -> std::io::Result<()> {
+        serialize_expr(&self, ctx, writer, &|_, _, _| Ok(false))
     }
 }
 
@@ -31,7 +31,7 @@ fn serialize_expr<F, W>(
     serialize_child: &F,
 ) -> std::io::Result<()>
 where
-    F: Fn(&ExprRef, &Context, &mut W) -> bool,
+    F: Fn(&ExprRef, &Context, &mut W) -> std::io::Result<bool>,
     W: Write,
 {
     match expr {
@@ -45,20 +45,20 @@ where
         }
         Expr::BVZeroExt { e, by, .. } => {
             write!(writer, "zext(")?;
-            if (serialize_child)(e, ctx, writer) {
+            if (serialize_child)(e, ctx, writer)? {
                 serialize_expr_ref(e, ctx, writer, serialize_child)?;
             }
             write!(writer, ", {by})")
         }
         Expr::BVSignExt { e, by, .. } => {
             write!(writer, "sext(")?;
-            if (serialize_child)(e, ctx, writer) {
+            if (serialize_child)(e, ctx, writer)? {
                 serialize_expr_ref(e, ctx, writer, serialize_child)?;
             }
             write!(writer, ", {by})")
         }
         Expr::BVSlice { e, hi, lo, .. } => {
-            if (serialize_child)(e, ctx, writer) {
+            if (serialize_child)(e, ctx, writer)? {
                 serialize_expr_ref(e, ctx, writer, serialize_child)?;
             }
             if hi == lo {
@@ -69,276 +69,276 @@ where
         }
         Expr::BVNot(e, _) => {
             write!(writer, "not(")?;
-            if (serialize_child)(e, ctx, writer) {
+            if (serialize_child)(e, ctx, writer)? {
                 serialize_expr_ref(e, ctx, writer, serialize_child)?;
             }
             write!(writer, ")")
         }
         Expr::BVNegate(e, _) => {
             write!(writer, "neg(")?;
-            if (serialize_child)(e, ctx, writer) {
+            if (serialize_child)(e, ctx, writer)? {
                 serialize_expr_ref(e, ctx, writer, serialize_child)?;
             }
             write!(writer, ")")
         }
         Expr::BVReduceOr(e) => {
             write!(writer, "redor(")?;
-            if (serialize_child)(e, ctx, writer) {
+            if (serialize_child)(e, ctx, writer)? {
                 serialize_expr_ref(e, ctx, writer, serialize_child)?;
             }
             write!(writer, ")")
         }
         Expr::BVReduceAnd(e) => {
             write!(writer, "redand(")?;
-            if (serialize_child)(e, ctx, writer) {
+            if (serialize_child)(e, ctx, writer)? {
                 serialize_expr_ref(e, ctx, writer, serialize_child)?;
             }
             write!(writer, ")")
         }
         Expr::BVReduceXor(e) => {
             write!(writer, "redxor(")?;
-            if (serialize_child)(e, ctx, writer) {
+            if (serialize_child)(e, ctx, writer)? {
                 serialize_expr_ref(e, ctx, writer, serialize_child)?;
             }
             write!(writer, ")")
         }
         Expr::BVEqual(a, b) => {
             write!(writer, "eq(")?;
-            if (serialize_child)(a, ctx, writer) {
+            if (serialize_child)(a, ctx, writer)? {
                 serialize_expr_ref(a, ctx, writer, serialize_child)?;
             }
             write!(writer, ", ")?;
-            if (serialize_child)(b, ctx, writer) {
+            if (serialize_child)(b, ctx, writer)? {
                 serialize_expr_ref(b, ctx, writer, serialize_child)?;
             }
             write!(writer, ")")
         }
         Expr::BVImplies(a, b) => {
             write!(writer, "implies(")?;
-            if (serialize_child)(a, ctx, writer) {
+            if (serialize_child)(a, ctx, writer)? {
                 serialize_expr_ref(a, ctx, writer, serialize_child)?;
             }
             write!(writer, ", ")?;
-            if (serialize_child)(b, ctx, writer) {
+            if (serialize_child)(b, ctx, writer)? {
                 serialize_expr_ref(b, ctx, writer, serialize_child)?;
             }
             write!(writer, ")")
         }
         Expr::BVGreater(a, b) => {
             write!(writer, "ugt(")?;
-            if (serialize_child)(a, ctx, writer) {
+            if (serialize_child)(a, ctx, writer)? {
                 serialize_expr_ref(a, ctx, writer, serialize_child)?;
             }
             write!(writer, ", ")?;
-            if (serialize_child)(b, ctx, writer) {
+            if (serialize_child)(b, ctx, writer)? {
                 serialize_expr_ref(b, ctx, writer, serialize_child)?;
             }
             write!(writer, ")")
         }
         Expr::BVGreaterSigned(a, b) => {
             write!(writer, "sgt(")?;
-            if (serialize_child)(a, ctx, writer) {
+            if (serialize_child)(a, ctx, writer)? {
                 serialize_expr_ref(a, ctx, writer, serialize_child)?;
             }
             write!(writer, ", ")?;
-            if (serialize_child)(b, ctx, writer) {
+            if (serialize_child)(b, ctx, writer)? {
                 serialize_expr_ref(b, ctx, writer, serialize_child)?;
             }
             write!(writer, ")")
         }
         Expr::BVGreaterEqual(a, b) => {
             write!(writer, "ugte(")?;
-            if (serialize_child)(a, ctx, writer) {
+            if (serialize_child)(a, ctx, writer)? {
                 serialize_expr_ref(a, ctx, writer, serialize_child)?;
             }
             write!(writer, ", ")?;
-            if (serialize_child)(b, ctx, writer) {
+            if (serialize_child)(b, ctx, writer)? {
                 serialize_expr_ref(b, ctx, writer, serialize_child)?;
             }
             write!(writer, ")")
         }
         Expr::BVGreaterEqualSigned(a, b) => {
             write!(writer, "sgte(")?;
-            if (serialize_child)(a, ctx, writer) {
+            if (serialize_child)(a, ctx, writer)? {
                 serialize_expr_ref(a, ctx, writer, serialize_child)?;
             }
             write!(writer, ", ")?;
-            if (serialize_child)(b, ctx, writer) {
+            if (serialize_child)(b, ctx, writer)? {
                 serialize_expr_ref(b, ctx, writer, serialize_child)?;
             }
             write!(writer, ")")
         }
         Expr::BVConcat(a, b, _) => {
             write!(writer, "concat(")?;
-            if (serialize_child)(a, ctx, writer) {
+            if (serialize_child)(a, ctx, writer)? {
                 serialize_expr_ref(a, ctx, writer, serialize_child)?;
             }
             write!(writer, ", ")?;
-            if (serialize_child)(b, ctx, writer) {
+            if (serialize_child)(b, ctx, writer)? {
                 serialize_expr_ref(b, ctx, writer, serialize_child)?;
             }
             write!(writer, ")")
         }
         Expr::BVAnd(a, b, _) => {
             write!(writer, "and(")?;
-            if (serialize_child)(a, ctx, writer) {
+            if (serialize_child)(a, ctx, writer)? {
                 serialize_expr_ref(a, ctx, writer, serialize_child)?;
             }
             write!(writer, ", ")?;
-            if (serialize_child)(b, ctx, writer) {
+            if (serialize_child)(b, ctx, writer)? {
                 serialize_expr_ref(b, ctx, writer, serialize_child)?;
             }
             write!(writer, ")")
         }
         Expr::BVOr(a, b, _) => {
             write!(writer, "or(")?;
-            if (serialize_child)(a, ctx, writer) {
+            if (serialize_child)(a, ctx, writer)? {
                 serialize_expr_ref(a, ctx, writer, serialize_child)?;
             }
             write!(writer, ", ")?;
-            if (serialize_child)(b, ctx, writer) {
+            if (serialize_child)(b, ctx, writer)? {
                 serialize_expr_ref(b, ctx, writer, serialize_child)?;
             }
             write!(writer, ")")
         }
         Expr::BVXor(a, b, _) => {
             write!(writer, "xor(")?;
-            if (serialize_child)(a, ctx, writer) {
+            if (serialize_child)(a, ctx, writer)? {
                 serialize_expr_ref(a, ctx, writer, serialize_child)?;
             }
             write!(writer, ", ")?;
-            if (serialize_child)(b, ctx, writer) {
+            if (serialize_child)(b, ctx, writer)? {
                 serialize_expr_ref(b, ctx, writer, serialize_child)?;
             }
             write!(writer, ")")
         }
         Expr::BVShiftLeft(a, b, _) => {
             write!(writer, "logical_shift_left(")?;
-            if (serialize_child)(a, ctx, writer) {
+            if (serialize_child)(a, ctx, writer)? {
                 serialize_expr_ref(a, ctx, writer, serialize_child)?;
             }
             write!(writer, ", ")?;
-            if (serialize_child)(b, ctx, writer) {
+            if (serialize_child)(b, ctx, writer)? {
                 serialize_expr_ref(b, ctx, writer, serialize_child)?;
             }
             write!(writer, ")")
         }
         Expr::BVArithmeticShiftRight(a, b, _) => {
             write!(writer, "arithmetic_shift_right(")?;
-            if (serialize_child)(a, ctx, writer) {
+            if (serialize_child)(a, ctx, writer)? {
                 serialize_expr_ref(a, ctx, writer, serialize_child)?;
             }
             write!(writer, ", ")?;
-            if (serialize_child)(b, ctx, writer) {
+            if (serialize_child)(b, ctx, writer)? {
                 serialize_expr_ref(b, ctx, writer, serialize_child)?;
             }
             write!(writer, ")")
         }
         Expr::BVShiftRight(a, b, _) => {
             write!(writer, "logical_shift_right(")?;
-            if (serialize_child)(a, ctx, writer) {
+            if (serialize_child)(a, ctx, writer)? {
                 serialize_expr_ref(a, ctx, writer, serialize_child)?;
             }
             write!(writer, ", ")?;
-            if (serialize_child)(b, ctx, writer) {
+            if (serialize_child)(b, ctx, writer)? {
                 serialize_expr_ref(b, ctx, writer, serialize_child)?;
             }
             write!(writer, ")")
         }
         Expr::BVAdd(a, b, _) => {
             write!(writer, "add(")?;
-            if (serialize_child)(a, ctx, writer) {
+            if (serialize_child)(a, ctx, writer)? {
                 serialize_expr_ref(a, ctx, writer, serialize_child)?;
             }
             write!(writer, ", ")?;
-            if (serialize_child)(b, ctx, writer) {
+            if (serialize_child)(b, ctx, writer)? {
                 serialize_expr_ref(b, ctx, writer, serialize_child)?;
             }
             write!(writer, ")")
         }
         Expr::BVMul(a, b, _) => {
             write!(writer, "mul(")?;
-            if (serialize_child)(a, ctx, writer) {
+            if (serialize_child)(a, ctx, writer)? {
                 serialize_expr_ref(a, ctx, writer, serialize_child)?;
             }
             write!(writer, ", ")?;
-            if (serialize_child)(b, ctx, writer) {
+            if (serialize_child)(b, ctx, writer)? {
                 serialize_expr_ref(b, ctx, writer, serialize_child)?;
             }
             write!(writer, ")")
         }
         Expr::BVSignedDiv(a, b, _) => {
             write!(writer, "sdiv(")?;
-            if (serialize_child)(a, ctx, writer) {
+            if (serialize_child)(a, ctx, writer)? {
                 serialize_expr_ref(a, ctx, writer, serialize_child)?;
             }
             write!(writer, ", ")?;
-            if (serialize_child)(b, ctx, writer) {
+            if (serialize_child)(b, ctx, writer)? {
                 serialize_expr_ref(b, ctx, writer, serialize_child)?;
             }
             write!(writer, ")")
         }
         Expr::BVUnsignedDiv(a, b, _) => {
             write!(writer, "udiv(")?;
-            if (serialize_child)(a, ctx, writer) {
+            if (serialize_child)(a, ctx, writer)? {
                 serialize_expr_ref(a, ctx, writer, serialize_child)?;
             }
             write!(writer, ", ")?;
-            if (serialize_child)(b, ctx, writer) {
+            if (serialize_child)(b, ctx, writer)? {
                 serialize_expr_ref(b, ctx, writer, serialize_child)?;
             }
             write!(writer, ")")
         }
         Expr::BVSignedMod(a, b, _) => {
             write!(writer, "smod(")?;
-            if (serialize_child)(a, ctx, writer) {
+            if (serialize_child)(a, ctx, writer)? {
                 serialize_expr_ref(a, ctx, writer, serialize_child)?;
             }
             write!(writer, ", ")?;
-            if (serialize_child)(b, ctx, writer) {
+            if (serialize_child)(b, ctx, writer)? {
                 serialize_expr_ref(b, ctx, writer, serialize_child)?;
             }
             write!(writer, ")")
         }
         Expr::BVSignedRem(a, b, _) => {
             write!(writer, "srem(")?;
-            if (serialize_child)(a, ctx, writer) {
+            if (serialize_child)(a, ctx, writer)? {
                 serialize_expr_ref(a, ctx, writer, serialize_child)?;
             }
             write!(writer, ", ")?;
-            if (serialize_child)(b, ctx, writer) {
+            if (serialize_child)(b, ctx, writer)? {
                 serialize_expr_ref(b, ctx, writer, serialize_child)?;
             }
             write!(writer, ")")
         }
         Expr::BVUnsignedRem(a, b, _) => {
             write!(writer, "urem(")?;
-            if (serialize_child)(a, ctx, writer) {
+            if (serialize_child)(a, ctx, writer)? {
                 serialize_expr_ref(a, ctx, writer, serialize_child)?;
             }
             write!(writer, ", ")?;
-            if (serialize_child)(b, ctx, writer) {
+            if (serialize_child)(b, ctx, writer)? {
                 serialize_expr_ref(b, ctx, writer, serialize_child)?;
             }
             write!(writer, ")")
         }
         Expr::BVSub(a, b, _) => {
             write!(writer, "sub(")?;
-            if (serialize_child)(a, ctx, writer) {
+            if (serialize_child)(a, ctx, writer)? {
                 serialize_expr_ref(a, ctx, writer, serialize_child)?;
             }
             write!(writer, ", ")?;
-            if (serialize_child)(b, ctx, writer) {
+            if (serialize_child)(b, ctx, writer)? {
                 serialize_expr_ref(b, ctx, writer, serialize_child)?;
             }
             write!(writer, ")")
         }
         Expr::BVArrayRead { array, index, .. } => {
-            if (serialize_child)(array, ctx, writer) {
+            if (serialize_child)(array, ctx, writer)? {
                 serialize_expr_ref(array, ctx, writer, serialize_child)?;
             }
             write!(writer, "[")?;
-            if (serialize_child)(index, ctx, writer) {
+            if (serialize_child)(index, ctx, writer)? {
                 serialize_expr_ref(index, ctx, writer, serialize_child)?;
             }
             write!(writer, "]")
@@ -347,15 +347,15 @@ where
             cond, tru, fals, ..
         } => {
             write!(writer, "ite(")?;
-            if (serialize_child)(cond, ctx, writer) {
+            if (serialize_child)(cond, ctx, writer)? {
                 serialize_expr_ref(cond, ctx, writer, serialize_child)?;
             }
             write!(writer, ", ")?;
-            if (serialize_child)(tru, ctx, writer) {
+            if (serialize_child)(tru, ctx, writer)? {
                 serialize_expr_ref(tru, ctx, writer, serialize_child)?;
             }
             write!(writer, ", ")?;
-            if (serialize_child)(fals, ctx, writer) {
+            if (serialize_child)(fals, ctx, writer)? {
                 serialize_expr_ref(fals, ctx, writer, serialize_child)?;
             }
             write!(writer, ")")
@@ -363,47 +363,47 @@ where
         Expr::ArraySymbol { name, .. } => write!(writer, "{}", ctx.get(*name)),
         Expr::ArrayConstant { e, index_width, .. } => {
             write!(writer, "([")?;
-            if (serialize_child)(e, ctx, writer) {
+            if (serialize_child)(e, ctx, writer)? {
                 serialize_expr_ref(e, ctx, writer, serialize_child)?;
             }
             write!(writer, "] x 2^{index_width})")
         }
         Expr::ArrayEqual(a, b) => {
             write!(writer, "eq(")?;
-            if (serialize_child)(a, ctx, writer) {
+            if (serialize_child)(a, ctx, writer)? {
                 serialize_expr_ref(a, ctx, writer, serialize_child)?;
             }
             write!(writer, ", ")?;
-            if (serialize_child)(b, ctx, writer) {
+            if (serialize_child)(b, ctx, writer)? {
                 serialize_expr_ref(b, ctx, writer, serialize_child)?;
             }
             write!(writer, ")")
         }
         Expr::ArrayStore { array, index, data } => {
-            if (serialize_child)(array, ctx, writer) {
+            if (serialize_child)(array, ctx, writer)? {
                 serialize_expr_ref(array, ctx, writer, serialize_child)?;
             }
             write!(writer, "[")?;
-            if (serialize_child)(index, ctx, writer) {
+            if (serialize_child)(index, ctx, writer)? {
                 serialize_expr_ref(index, ctx, writer, serialize_child)?;
             }
             write!(writer, " := ")?;
-            if (serialize_child)(data, ctx, writer) {
+            if (serialize_child)(data, ctx, writer)? {
                 serialize_expr_ref(data, ctx, writer, serialize_child)?;
             }
             write!(writer, "]")
         }
         Expr::ArrayIte { cond, tru, fals } => {
             write!(writer, "ite(")?;
-            if (serialize_child)(cond, ctx, writer) {
+            if (serialize_child)(cond, ctx, writer)? {
                 serialize_expr_ref(cond, ctx, writer, serialize_child)?;
             }
             write!(writer, ", ")?;
-            if (serialize_child)(tru, ctx, writer) {
+            if (serialize_child)(tru, ctx, writer)? {
                 serialize_expr_ref(tru, ctx, writer, serialize_child)?;
             }
             write!(writer, ", ")?;
-            if (serialize_child)(fals, ctx, writer) {
+            if (serialize_child)(fals, ctx, writer)? {
                 serialize_expr_ref(fals, ctx, writer, serialize_child)?;
             }
             write!(writer, ")")
@@ -420,29 +420,54 @@ fn serialize_expr_ref<F, W>(
     serialize_child: &F,
 ) -> std::io::Result<()>
 where
-    F: Fn(&ExprRef, &Context, &mut W) -> bool,
+    F: Fn(&ExprRef, &Context, &mut W) -> std::io::Result<bool>,
     W: Write,
 {
     serialize_expr(ctx.get(*expr), ctx, writer, serialize_child)
 }
 
 impl SerializableIrNode for ExprRef {
-    fn serialize(&self, ctx: &Context, writer: &mut impl Write) -> std::io::Result<()> {
+    fn serialize<W: Write>(&self, ctx: &Context, writer: &mut W) -> std::io::Result<()> {
         ctx.get(*self).serialize(ctx, writer)
     }
 }
 
 impl SerializableIrNode for Type {
-    fn serialize(&self, _ctx: &Context, writer: &mut impl Write) -> std::io::Result<()> {
+    fn serialize<W: Write>(&self, _ctx: &Context, writer: &mut W) -> std::io::Result<()> {
         write!(writer, "{}", self)
     }
 }
 
+fn inline_expr_for_transition_system(expr: &Expr) -> bool {
+    expr.is_symbol() || expr.is_bv_lit()
+}
+
 impl SerializableIrNode for TransitionSystem {
-    fn serialize(&self, ctx: &Context, writer: &mut impl Write) -> std::io::Result<()> {
+    fn serialize<W: Write>(&self, ctx: &Context, writer: &mut W) -> std::io::Result<()> {
         if !self.name.is_empty() {
             writeln!(writer, "{}", self.name)?;
         }
+
+        // this closure allows us to use node names instead of serializing all sub-expressions
+        let serialize_child =
+            |expr_ref: &ExprRef, ctx: &Context, writer: &mut W| -> std::io::Result<bool> {
+                let expr = ctx.get(*expr_ref);
+
+                if inline_expr_for_transition_system(expr) {
+                    Ok(true) // recurse to child
+                } else {
+                    // print the name of the signal
+                    let maybe_name: Option<&str> = self
+                        .get_signal(*expr_ref)
+                        .and_then(|s| s.name)
+                        .map(|r| ctx.get(r));
+                    match maybe_name {
+                        None => write!(writer, "%{}", expr_ref.index())?,
+                        Some(name) => write!(writer, "{}", name)?,
+                    };
+                    Ok(false)
+                }
+            };
 
         // signals
         for (ii, signal) in self
@@ -457,7 +482,7 @@ impl SerializableIrNode for TransitionSystem {
             let expr = ctx.get(ExprRef::from_index(ii));
 
             // skip symbols and literals
-            if expr.is_symbol() || expr.is_bv_lit() {
+            if inline_expr_for_transition_system(expr) {
                 continue;
             }
 
@@ -480,7 +505,7 @@ impl SerializableIrNode for TransitionSystem {
                 writeln!(writer, "")?;
             } else {
                 write!(writer, " = ")?;
-                expr.serialize(ctx, writer)?;
+                serialize_expr(expr, ctx, writer, &serialize_child)?;
                 writeln!(writer, "",)?;
             }
         }
@@ -494,14 +519,14 @@ impl SerializableIrNode for TransitionSystem {
             let tpe = state.symbol.get_type(ctx);
             writeln!(writer, "state {name} : {tpe}")?;
 
-            if let Some(expr) = state.init {
+            if let Some(expr) = &state.init {
                 write!(writer, "  [init] ")?;
-                expr.serialize(ctx, writer)?;
+                serialize_expr_ref(expr, ctx, writer, &serialize_child)?;
                 writeln!(writer, "",)?;
             }
-            if let Some(expr) = state.next {
+            if let Some(expr) = &state.next {
                 write!(writer, "  [next] ")?;
-                expr.serialize(ctx, writer)?;
+                serialize_expr_ref(expr, ctx, writer, &serialize_child)?;
                 writeln!(writer, "",)?;
             }
         }
