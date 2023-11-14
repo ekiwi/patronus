@@ -34,7 +34,6 @@ fn serialize_count2() {
     insta::assert_snapshot!(btor2::serialize_to_str(&ctx, &sys));
 }
 
-
 #[test]
 fn parse_quiz1() {
     let (ctx, sys) = btor2::parse_file("inputs/Quiz1.btor").unwrap();
