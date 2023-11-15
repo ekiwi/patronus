@@ -6,11 +6,14 @@ use crate::ir::Type;
 use num_bigint::BigUint;
 
 /// Contains the initial state and the inputs over `len` cycles.
+#[derive(Debug, Default)]
 pub struct Witness {
     /// The starting state. Contains an optional value for each state.
-    init: State,
+    pub init: State,
     /// The inputs over time. Each entry contains an optional value for each input.
-    inputs: Vec<State>,
+    pub inputs: Vec<State>,
+    /// Index of all safety properties (bad state predicates) that are violated by this witness.
+    pub failed_safety: Vec<u32>,
 }
 
 impl Witness {
@@ -44,6 +47,7 @@ fn smt_tpe_to_storage_tpe(tpe: Type) -> StorageType {
 }
 
 /// Represents concrete values which can be updated, but state cannot be added once created.
+#[derive(Debug)]
 pub struct State {
     meta: Vec<StorageMetaData>,
     longs: Vec<u64>,
@@ -119,6 +123,10 @@ impl State {
             }
             _ => panic!("Incompatible value for storage type: {:?}", meta.tpe),
         };
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.meta.is_empty()
     }
 }
 

@@ -1,0 +1,36 @@
+1 sort bitvec 1
+5 sort bitvec 5
+23 sort bitvec 32
+
+; Symbolic Constant: addr
+121 state 5 addr
+122 next 5 121 121
+
+; Symbolic Constant: data
+123 state 23 data
+124 next 23 123 123
+
+; Symbolic Constant: mem
+125 sort array 5 23
+126 state 125 mem
+127 next 125 126 126
+
+; mem[addr := data]
+148 write 125 126 121 123
+
+; mem_n = mem[addr := data]
+155 state 125 mem_n
+156 init 125 155 148
+157 next 125 155 155
+
+; bad: mem_n[a] != mem[a]
+
+; Symbolic Constant: a
+200 state 5 a
+201 next 5 200 200
+
+210 read 23 126 200
+211 read 23 155 200
+212 neq 1 210 211
+213 bad 212
+

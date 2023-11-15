@@ -682,13 +682,13 @@ impl<'a> Parser<'a> {
 
 // Line Tokenizer
 #[derive(Default, Debug)]
-struct LineTokens<'a> {
-    tokens: SmallVec<[&'a str; 4]>,
-    comment: Option<&'a str>,
+pub(crate) struct LineTokens<'a> {
+    pub(crate) tokens: SmallVec<[&'a str; 4]>,
+    pub(crate) comment: Option<&'a str>,
 }
 
 const NO_TOKEN: usize = usize::MAX;
-fn tokenize_line(line: &str) -> LineTokens {
+pub(crate) fn tokenize_line(line: &str) -> LineTokens {
     if line.is_empty() {
         // special handling for empty lines
         return LineTokens::default();
