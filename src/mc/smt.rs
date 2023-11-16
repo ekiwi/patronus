@@ -29,6 +29,8 @@ pub struct SmtModelCheckerOptions {
     pub check_constraints: bool,
     /// Perform one SMT solver check per assertion instead of combining them into a single check.
     pub check_bad_states_individually: bool,
+    /// If true, the communication with the SMT solver will be logged into a `replay.smt` file.
+    pub save_smt_replay: bool,
 }
 
 pub struct SmtModelChecker {
@@ -50,9 +52,14 @@ impl SmtModelChecker {
         k_max: u64,
     ) -> Result<ModelCheckResult> {
         assert!(k_max > 0 && k_max <= 2000, "unreasonable k_max={}", k_max);
+        let replay_file = if self.opts.save_smt_replay {
+            Some(std::fs::File::create("replay.smt")?)
+        } else {
+            None
+        };
         let mut smt_ctx = easy_smt::ContextBuilder::new()
             .solver(self.solver.name, self.solver.args)
-            .replay_file(Some(std::fs::File::create("replay.smt")?))
+            .replay_file(replay_file)
             .build()?;
 
         // z3 only supports the non-standard as-const array syntax when the logic is set to ALL

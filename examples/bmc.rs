@@ -32,6 +32,7 @@ fn main() {
     let checker_opts = mc::SmtModelCheckerOptions {
         check_constraints: true,
         check_bad_states_individually: true,
+        save_smt_replay: false,
     };
     let solver = mc::BITWUZLA_CMD;
     if args.verbose {
