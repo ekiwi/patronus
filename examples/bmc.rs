@@ -3,7 +3,6 @@
 // author: Kevin Laeufer <laeufer@berkeley.edu>
 
 use clap::Parser;
-use libpatron::btor2::print_witness;
 use libpatron::ir::*;
 use libpatron::*;
 
@@ -48,7 +47,7 @@ fn main() {
             println!("unsat");
         }
         mc::ModelCheckResult::Fail(wit) => {
-            print_witness(&mut std::io::stdout(), &wit, &sys, &ctx).unwrap();
+            btor2::print_witness(&mut std::io::stdout(), &wit, &sys, &ctx).unwrap();
         }
     }
 }

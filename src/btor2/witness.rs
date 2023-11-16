@@ -201,7 +201,7 @@ pub fn print_witness(
                 let name = input_sym.get_symbol_name(ctx).unwrap();
                 writeln!(
                     out,
-                    "{id} {} {}@0",
+                    "{id} {} {}@{k}",
                     value.to_bit_string(width).unwrap(),
                     name
                 )?;

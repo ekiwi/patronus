@@ -50,7 +50,7 @@ fn smt_tpe_to_storage_tpe(tpe: Type) -> StorageType {
 /// Represents concrete values which can be updated, but state cannot be added once created.
 #[derive(Debug)]
 pub struct State {
-    meta: Vec<StorageMetaData>,
+    meta: Vec<Option<StorageMetaData>>,
     longs: Vec<u64>,
     bigs: Vec<BigUint>,
     // TODO: add array support
@@ -89,7 +89,7 @@ impl State {
                 index: index as u16,
                 is_valid: false,
             };
-            state.meta.push(meta);
+            state.meta.push(Some(meta));
         }
         // initialize arrays with default data
         state.longs.resize(long_count, u64::default());
@@ -99,7 +99,7 @@ impl State {
     }
 
     pub fn get(&self, index: usize) -> Option<ValueRef> {
-        let meta = self.meta.get(index)?;
+        let meta = self.meta.get(index)?.as_ref()?;
         self.get_from_meta(meta)
     }
 
@@ -115,7 +115,8 @@ impl State {
     }
 
     pub fn update(&mut self, index: usize, value: Value) {
-        let meta = self.meta.get(index).unwrap();
+        let meta = self.meta.get_mut(index).unwrap().as_mut().unwrap();
+        meta.is_valid = true;
         match (meta.tpe, value) {
             (StorageType::Long, Value::Long(value)) => {
                 self.longs[meta.index as usize] = value;
@@ -133,8 +134,31 @@ impl State {
     pub fn insert(&mut self, index: usize, value: Value) {
         match self.meta.get(index) {
             Some(_) => self.update(index, value),
-            None => {}
+            None => {
+                // expand meta
+                self.meta.resize(index + 1, None);
+                // allocate storage and store value
+                self.meta[index] = Some(self.allocate_for_value(value));
+            }
         };
+    }
+
+    fn allocate_for_value(&mut self, value: Value) -> StorageMetaData {
+        let (tpe, index) = match value {
+            Value::Long(val) => {
+                self.longs.push(val);
+                (StorageType::Long, self.longs.len() - 1)
+            }
+            Value::Big(val) => {
+                self.bigs.push(val);
+                (StorageType::Big, self.bigs.len() - 1)
+            }
+        };
+        StorageMetaData {
+            tpe,
+            index: index as u16,
+            is_valid: true,
+        }
     }
 
     pub fn is_empty(&self) -> bool {
@@ -148,7 +172,7 @@ impl State {
 
 pub struct StateIter<'a> {
     state: &'a State,
-    underlying: std::slice::Iter<'a, StorageMetaData>,
+    underlying: std::slice::Iter<'a, Option<StorageMetaData>>,
 }
 
 impl<'a> StateIter<'a> {
@@ -163,8 +187,9 @@ impl<'a> Iterator for StateIter<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         match self.underlying.next() {
-            None => return None, // we are done!
-            Some(m) => Some(self.state.get_from_meta(m)),
+            None => None,             // we are done!
+            Some(None) => Some(None), // invalid / unallocated element
+            Some(Some(m)) => Some(self.state.get_from_meta(m)),
         }
     }
 }
@@ -268,5 +293,6 @@ mod tests {
 
         // We store 4 bytes of meta-data for every item in the storage
         assert_eq!(std::mem::size_of::<StorageMetaData>(), 4);
+        assert_eq!(std::mem::size_of::<Option<StorageMetaData>>(), 4);
     }
 }
