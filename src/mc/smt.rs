@@ -9,6 +9,8 @@ use std::borrow::Cow;
 use crate::ir::SignalKind::Input;
 use crate::mc::{State, Value, Witness};
 use easy_smt as smt;
+use num_bigint::BigUint;
+use num_traits::Num;
 
 #[derive(Debug, Clone, Copy)]
 pub struct SmtSolverCmd {
@@ -156,7 +158,44 @@ impl SmtModelChecker {
 
 fn get_smt_value(smt_ctx: &mut smt::Context, expr: smt::SExpr) -> Result<Value> {
     let smt_value = smt_ctx.get_value(vec![expr])?[0].1;
-    todo!("Convert: {:?}", smt_ctx.display(smt_value).to_string())
+    let atom = smt_ctx.get(smt_value);
+    match atom {
+        smt::SExprData::Atom(a) => {
+            let value = smt_bit_vec_str_to_value(a);
+            Ok(value)
+        }
+        smt::SExprData::List(elements) => {
+            todo!(
+                "Deal with list value: {}",
+                smt_ctx.display(smt_value).to_string()
+            )
+        }
+    }
+}
+
+fn smt_bit_vec_str_to_value(a: &str) -> Value {
+    if let Some(suffix) = a.strip_prefix("#b") {
+        if suffix.len() <= 64 {
+            Value::Long(u64::from_str_radix(suffix, 2).unwrap())
+        } else {
+            Value::Big(BigUint::from_str_radix(suffix, 2).unwrap())
+        }
+    } else if let Some(suffix) = a.strip_prefix("#x") {
+        if suffix.len() <= (64 / 4) {
+            Value::Long(u64::from_str_radix(suffix, 16).unwrap())
+        } else {
+            Value::Big(BigUint::from_str_radix(suffix, 16).unwrap())
+        }
+    } else if a == "true" {
+        Value::Long(1)
+    } else if a == "false" {
+        Value::Long(0)
+    } else {
+        match u64::from_str_radix(a, 10) {
+            Ok(value) => Value::Long(value),
+            Err(_) => Value::Big(BigUint::from_str_radix(a, 10).unwrap()),
+        }
+    }
 }
 
 pub enum ModelCheckResult {
@@ -502,8 +541,8 @@ fn unescape_smt_identifier(id: &str) -> &str {
 
 #[cfg(test)]
 mod tests {
-    use easy_smt::*;
     use super::*;
+    use easy_smt::*;
 
     #[test]
     fn easy_smt_symbol_escaping() {
@@ -517,6 +556,9 @@ mod tests {
 
     #[test]
     fn test_our_escaping() {
-        assert_eq!(unescape_smt_identifier(&escape_smt_identifier("a b")), "a b");
+        assert_eq!(
+            unescape_smt_identifier(&escape_smt_identifier("a b")),
+            "a b"
+        );
     }
 }

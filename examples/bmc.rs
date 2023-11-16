@@ -12,6 +12,8 @@ use libpatron::*;
 #[command(version)]
 #[command(about = "Performs bounded model checking on a btor2 file.", long_about = None)]
 struct Args {
+    #[arg(short, long)]
+    verbose: bool,
     #[arg(value_name = "BTOR2", index = 1)]
     filename: String,
 }
@@ -19,20 +21,24 @@ struct Args {
 fn main() {
     let args = Args::parse();
     let (ctx, sys) = btor2::parse_file(&args.filename).expect("Failed to load btor2 file!");
-    println!("Loaded: {}", sys.name);
-    println!("{}", sys.serialize_to_str(&ctx));
-    println!();
-    println!();
+    if args.verbose {
+        println!("Loaded: {}", sys.name);
+        println!("{}", sys.serialize_to_str(&ctx));
+        println!();
+        println!();
+    }
     let k_max = 25;
     let checker_opts = mc::SmtModelCheckerOptions {
         check_constraints: true,
         check_bad_states_individually: true,
     };
     let solver = mc::BITWUZLA_CMD;
-    println!(
-        "Checking up to {k_max} using {} and the following options:\n{checker_opts:?}",
-        solver.name
-    );
+    if args.verbose {
+        println!(
+            "Checking up to {k_max} using {} and the following options:\n{checker_opts:?}",
+            solver.name
+        );
+    }
     let checker = mc::SmtModelChecker::new(solver, checker_opts);
     let res = checker.check(&ctx, &sys, k_max).unwrap();
     match res {
@@ -41,7 +47,7 @@ fn main() {
         }
         mc::ModelCheckResult::Fail(_) => {
             println!("sat");
-            todo!("print witness")
+            println!("TODO: print witness")
         }
     }
 }
