@@ -198,6 +198,12 @@ impl GetNode<str, StringRef> for Context {
     }
 }
 
+impl GetNode<str, &StringRef> for Context {
+    fn get(&self, reference: &StringRef) -> &str {
+        self.get(*reference)
+    }
+}
+
 impl AddNode<Expr, ExprRef> for Context {
     fn add_node(&mut self, value: Expr) -> ExprRef {
         let (index, _) = self.exprs.insert_full(value);
@@ -395,6 +401,16 @@ pub struct ArrayType {
     pub index_width: WidthInt,
     pub data_width: WidthInt,
 }
+
+impl ArrayType {
+    pub fn data_type(&self) -> Type {
+        Type::BV(self.data_width)
+    }
+    pub fn index_type(&self) -> Type {
+        Type::BV(self.index_width)
+    }
+}
+
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
 pub enum Type {
     BV(WidthInt),

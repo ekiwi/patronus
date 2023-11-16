@@ -3,7 +3,7 @@
 // author: Kevin Laeufer <laeufer@berkeley.edu>
 
 use clap::Parser;
-use libpatron::ir::SerializableIrNode;
+use libpatron::ir::*;
 use libpatron::*;
 
 #[derive(Parser, Debug)]
@@ -21,4 +21,27 @@ fn main() {
     let (ctx, sys) = btor2::parse_file(&args.filename).expect("Failed to load btor2 file!");
     println!("Loaded: {}", sys.name);
     println!("{}", sys.serialize_to_str(&ctx));
+    println!();
+    println!();
+    let k_max = 25;
+    let checker_opts = mc::SmtModelCheckerOptions {
+        check_constraints: true,
+        check_bad_states_individually: true,
+    };
+    let solver = mc::BITWUZLA_CMD;
+    println!(
+        "Checking up to {k_max} using {} and the following options:\n{checker_opts:?}",
+        solver.name
+    );
+    let checker = mc::SmtModelChecker::new(solver, checker_opts);
+    let res = checker.check(&ctx, &sys, k_max).unwrap();
+    match res {
+        mc::ModelCheckResult::Success => {
+            println!("unsat");
+        }
+        mc::ModelCheckResult::Fail(_) => {
+            println!("sat");
+            todo!("print witness")
+        }
+    }
 }

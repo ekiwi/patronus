@@ -74,9 +74,9 @@ pub struct InputRef(usize);
 #[derive(Debug, PartialEq, Eq)]
 pub struct TransitionSystem {
     pub name: String,
-    pub(crate) states: Vec<State>,
+    states: Vec<State>,
     /// signal meta-data stored in a dense hash map, matching the index of the corresponding expression
-    pub(crate) signals: Vec<Option<SignalInfo>>,
+    signals: Vec<Option<SignalInfo>>,
 }
 
 impl TransitionSystem {
@@ -126,6 +126,32 @@ impl TransitionSystem {
         F: FnOnce(&mut State),
     {
         modify(self.states.get_mut(reference.0).unwrap())
+    }
+
+    pub fn states(&self) -> core::slice::Iter<'_, State> {
+        self.states.iter()
+    }
+
+    pub fn get_signals(&self, filter: fn(&SignalInfo) -> bool) -> Vec<(ExprRef, SignalInfo)> {
+        self.signals
+            .iter()
+            .enumerate()
+            .filter(|(_, opt)| opt.as_ref().map(|i| filter(i)).unwrap_or(false))
+            .map(|(index, opt_info)| {
+                (
+                    ExprRef::from_index(index),
+                    opt_info.as_ref().unwrap().clone(),
+                )
+            })
+            .collect::<Vec<_>>()
+    }
+
+    pub fn constraints(&self) -> Vec<(ExprRef, SignalInfo)> {
+        self.get_signals(|info| info.kind == SignalKind::Constraint)
+    }
+
+    pub fn bad_states(&self) -> Vec<(ExprRef, SignalInfo)> {
+        self.get_signals(|info| info.kind == SignalKind::Bad)
     }
 }
 

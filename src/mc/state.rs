@@ -125,6 +125,13 @@ impl State {
         };
     }
 
+    pub fn insert(&mut self, index: usize, value: Value) {
+        match self.meta.get(index) {
+            Some(_) => self.update(index, value),
+            None => {}
+        };
+    }
+
     pub fn is_empty(&self) -> bool {
         self.meta.is_empty()
     }

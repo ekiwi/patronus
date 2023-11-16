@@ -470,16 +470,9 @@ impl SerializableIrNode for TransitionSystem {
             };
 
         // signals
-        for (ii, signal) in self
-            .signals
-            .iter()
-            .enumerate()
-            .flat_map(|(ii, maybe_signal)| maybe_signal.as_ref().and_then(|s| Some((ii, s))))
-            // do not explicitly print states
-            .filter(|(_, s)| !matches!(s.kind, SignalKind::State))
-        {
+        for (ii, signal) in self.get_signals(|s| !matches!(s.kind, SignalKind::State)) {
             // we deduce the expression id from the index
-            let expr = ctx.get(ExprRef::from_index(ii));
+            let expr = ctx.get(ii);
 
             // skip symbols and literals
             if inline_expr_for_transition_system(expr) {
@@ -493,7 +486,7 @@ impl SerializableIrNode for TransitionSystem {
             if let Some(name_ref) = signal.name {
                 write!(writer, "{}", ctx.get(name_ref))?;
             } else {
-                write!(writer, "%{}", ii)?;
+                write!(writer, "%{}", ii.index())?;
             }
 
             // print the type
@@ -511,7 +504,7 @@ impl SerializableIrNode for TransitionSystem {
         }
 
         // states
-        for state in self.states.iter() {
+        for state in self.states() {
             let name = state
                 .symbol
                 .get_symbol_name(ctx)
