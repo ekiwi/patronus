@@ -473,7 +473,7 @@ impl<'a> TransitionSystemEncoding for UnrollSmtEncoding<'a> {
     }
     fn get_at(&self, smt_ctx: &mut smt::Context, expr: ExprRef, k: u64) -> smt::SExpr {
         assert!(k <= self.current_step.unwrap_or(0));
-        self.get_local_expr_symbol_at(smt_ctx, expr, self.current_step.unwrap())
+        self.get_local_expr_symbol_at(smt_ctx, expr, k)
     }
 }
 

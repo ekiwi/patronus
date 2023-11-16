@@ -14,6 +14,8 @@ use libpatron::*;
 struct Args {
     #[arg(short, long)]
     verbose: bool,
+    #[arg(short, long)]
+    dump_smt: bool,
     #[arg(value_name = "BTOR2", index = 1)]
     filename: String,
 }
@@ -31,7 +33,7 @@ fn main() {
     let checker_opts = mc::SmtModelCheckerOptions {
         check_constraints: true,
         check_bad_states_individually: true,
-        save_smt_replay: false,
+        save_smt_replay: args.dump_smt,
     };
     let solver = mc::BITWUZLA_CMD;
     if args.verbose {
