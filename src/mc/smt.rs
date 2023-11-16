@@ -242,21 +242,12 @@ impl<'a> UnrollSmtEncoding<'a> {
 
     fn expr_in_step(&self, smt_ctx: &mut smt::Context, expr: ExprRef, step: u64) -> smt::SExpr {
         let rename = |name: &str| -> Cow<'_, str> { Cow::Owned(format!("{}@{}", name, step)) };
-        let general_rename = generalize_lifetime(rename);
-        convert_expr(smt_ctx, self.ctx, expr, &general_rename)
+        convert_expr(smt_ctx, self.ctx, expr, &rename)
     }
 
     fn name_at(&self, sym: ExprRef, step: u64) -> String {
         format!("{}@{}", sym.get_symbol_name(self.ctx).unwrap(), step)
     }
-}
-
-// stack overflow hack: https://stackoverflow.com/questions/70597152/creating-an-alias-for-a-fn-trait-results-in-one-type-is-more-general-than-the-o
-fn generalize_lifetime<'a, F>(f: F) -> F
-where
-    F: Fn(&'a str) -> Cow<'a, str>,
-{
-    f
 }
 
 fn convert_tpe(smt_ctx: &mut smt::Context, tpe: Type) -> smt::SExpr {
@@ -499,6 +490,7 @@ fn escape_smt_identifier(id: &str) -> std::borrow::Cow<'_, str> {
     }
 }
 
+#[cfg(test)]
 fn unescape_smt_identifier(id: &str) -> &str {
     if id.starts_with("|") {
         assert!(id.ends_with("|"));
@@ -511,13 +503,20 @@ fn unescape_smt_identifier(id: &str) -> &str {
 #[cfg(test)]
 mod tests {
     use easy_smt::*;
+    use super::*;
 
     #[test]
     fn easy_smt_symbol_escaping() {
-        let mut ctx = ContextBuilder::new().build().unwrap();
+        let ctx = ContextBuilder::new().build().unwrap();
         let test = ctx.atom("test");
         assert_eq!(ctx.display(test).to_string(), "test");
+        // turns out easy_smt does not do any escaping!
         let needs_to_be_escaped_1 = ctx.atom("a b");
         assert_eq!(ctx.display(needs_to_be_escaped_1).to_string(), "a b");
+    }
+
+    #[test]
+    fn test_our_escaping() {
+        assert_eq!(unescape_smt_identifier(&escape_smt_identifier("a b")), "a b");
     }
 }
