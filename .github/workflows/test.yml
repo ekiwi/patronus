@@ -46,7 +46,7 @@ jobs:
       - uses: actions/checkout@v3
       - name: Build
         run: cargo build --verbose --examples --release
-      - name: load_signals
+      - name: bmc Quiz1
         run: cargo run --release --example bmc -- inputs/Quiz1.btor
 
 
