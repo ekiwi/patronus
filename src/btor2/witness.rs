@@ -5,7 +5,7 @@
 use crate::btor2::parse::tokenize_line;
 use crate::ir;
 use crate::ir::{SignalKind, TypeCheck};
-use crate::mc::{State, Value, Witness};
+use crate::mc::{Value, ValueStore, Witness};
 use std::io::{BufRead, Write};
 
 enum ParserState {
@@ -28,7 +28,7 @@ pub fn parse_witnesses(input: &mut impl BufRead, parse_max: usize) -> Result<Vec
     let mut state = ParserState::Start;
     let mut out = Vec::with_capacity(1);
     let mut wit = Witness::default();
-    let mut inputs = State::default();
+    let mut inputs = ValueStore::default();
 
     let finish_witness = |out: &mut Vec<Witness>, wit: &mut Witness| {
         out.push(std::mem::replace(wit, Witness::default()));
@@ -43,8 +43,9 @@ pub fn parse_witnesses(input: &mut impl BufRead, parse_max: usize) -> Result<Vec
         assert_eq!(at as usize, wit.inputs.len());
         ParserState::ParsingInputsAt(at)
     };
-    let finish_inputs = |wit: &mut Witness, inputs: &mut State| {
-        wit.inputs.push(std::mem::replace(inputs, State::default()));
+    let finish_inputs = |wit: &mut Witness, inputs: &mut ValueStore| {
+        wit.inputs
+            .push(std::mem::replace(inputs, ValueStore::default()));
     };
     let start_state = |line: &str| {
         let at = u64::from_str_radix(&line[1..], 10).unwrap();

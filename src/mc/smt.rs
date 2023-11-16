@@ -7,7 +7,7 @@ use crate::ir::{Expr, ExprRef, GetNode, SignalInfo, SignalKind, Type, TypeCheck}
 use std::borrow::Cow;
 
 use crate::ir::SignalKind::Input;
-use crate::mc::{State, Value, Witness};
+use crate::mc::{Value, ValueStore, Witness};
 use easy_smt as smt;
 
 #[derive(Debug, Clone, Copy)]
@@ -160,7 +160,7 @@ impl SmtModelChecker {
         // collect all inputs
         let inputs = sys.get_signals(|s| s.kind == SignalKind::Input);
         for k in 0..=k_max {
-            let mut input_values = State::default();
+            let mut input_values = ValueStore::default();
             for (input_idx, (input, _)) in inputs.iter().enumerate() {
                 let sym_at = enc.get_at(smt_ctx, *input, k);
                 let value = get_smt_value(smt_ctx, sym_at)?;

@@ -10,9 +10,9 @@ use num_traits::{Num, Zero};
 #[derive(Debug, Default)]
 pub struct Witness {
     /// The starting state. Contains an optional value for each state.
-    pub init: State,
+    pub init: ValueStore,
     /// The inputs over time. Each entry contains an optional value for each input.
-    pub inputs: Vec<State>,
+    pub inputs: Vec<ValueStore>,
     /// Index of all safety properties (bad state predicates) that are violated by this witness.
     pub failed_safety: Vec<u32>,
 }
@@ -47,9 +47,9 @@ fn smt_tpe_to_storage_tpe(tpe: Type) -> StorageType {
     }
 }
 
-/// Represents concrete values which can be updated, but state cannot be added once created.
+/// Represents concrete values which can be updated.
 #[derive(Debug)]
-pub struct State {
+pub struct ValueStore {
     meta: Vec<Option<StorageMetaData>>,
     longs: Vec<u64>,
     bigs: Vec<BigUint>,
@@ -57,9 +57,9 @@ pub struct State {
     //arrays: Vec<ArrayValue>,
 }
 
-impl Default for State {
+impl Default for ValueStore {
     fn default() -> Self {
-        State {
+        ValueStore {
             meta: Vec::default(),
             longs: Vec::default(),
             bigs: Vec::default(),
@@ -67,9 +67,9 @@ impl Default for State {
     }
 }
 
-impl State {
+impl ValueStore {
     pub fn new(types: impl Iterator<Item = Type>) -> Self {
-        let mut state = State::default();
+        let mut state = ValueStore::default();
         let mut long_count = 0;
         let mut big_count = 0;
         for tpe in types {
@@ -165,24 +165,24 @@ impl State {
         self.meta.is_empty()
     }
 
-    pub fn iter(&self) -> StateIter<'_> {
-        StateIter::new(&self)
+    pub fn iter(&self) -> ValueStoreIter<'_> {
+        ValueStoreIter::new(&self)
     }
 }
 
-pub struct StateIter<'a> {
-    state: &'a State,
+pub struct ValueStoreIter<'a> {
+    state: &'a ValueStore,
     underlying: std::slice::Iter<'a, Option<StorageMetaData>>,
 }
 
-impl<'a> StateIter<'a> {
-    fn new(state: &'a State) -> Self {
+impl<'a> ValueStoreIter<'a> {
+    fn new(state: &'a ValueStore) -> Self {
         let underlying = state.meta.iter();
         Self { state, underlying }
     }
 }
 
-impl<'a> Iterator for StateIter<'a> {
+impl<'a> Iterator for ValueStoreIter<'a> {
     type Item = Option<ValueRef<'a>>;
 
     fn next(&mut self) -> Option<Self::Item> {
