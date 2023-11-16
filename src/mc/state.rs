@@ -4,6 +4,7 @@
 
 use crate::ir::Type;
 use num_bigint::BigUint;
+use num_traits::Num;
 
 /// Contains the initial state and the inputs over `len` cycles.
 #[derive(Debug, Default)]
@@ -141,6 +142,32 @@ impl State {
 pub enum Value {
     Long(u64),
     Big(BigUint),
+}
+
+impl Value {
+    /// parses a string of 1s and 0s into a value.
+    pub fn from_bit_string(value: &str) -> Self {
+        if value.len() <= 64 {
+            Value::Long(u64::from_str_radix(value, 2).unwrap())
+        } else {
+            Value::Big(BigUint::from_str_radix(value, 2).unwrap())
+        }
+    }
+
+    pub fn from_hex_string(value: &str) -> Self {
+        if value.len() <= (64 / 4) {
+            Value::Long(u64::from_str_radix(value, 16).unwrap())
+        } else {
+            Value::Big(BigUint::from_str_radix(value, 16).unwrap())
+        }
+    }
+
+    pub fn from_decimal_string(value: &str) -> Self {
+        match u64::from_str_radix(value, 10) {
+            Ok(value) => Value::Long(value),
+            Err(_) => Value::Big(BigUint::from_str_radix(value, 10).unwrap()),
+        }
+    }
 }
 
 #[derive(Debug, PartialEq)]

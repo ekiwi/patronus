@@ -9,8 +9,6 @@ use std::borrow::Cow;
 use crate::ir::SignalKind::Input;
 use crate::mc::{State, Value, Witness};
 use easy_smt as smt;
-use num_bigint::BigUint;
-use num_traits::Num;
 
 #[derive(Debug, Clone, Copy)]
 pub struct SmtSolverCmd {
@@ -175,26 +173,15 @@ fn get_smt_value(smt_ctx: &mut smt::Context, expr: smt::SExpr) -> Result<Value> 
 
 fn smt_bit_vec_str_to_value(a: &str) -> Value {
     if let Some(suffix) = a.strip_prefix("#b") {
-        if suffix.len() <= 64 {
-            Value::Long(u64::from_str_radix(suffix, 2).unwrap())
-        } else {
-            Value::Big(BigUint::from_str_radix(suffix, 2).unwrap())
-        }
+        Value::from_bit_string(suffix)
     } else if let Some(suffix) = a.strip_prefix("#x") {
-        if suffix.len() <= (64 / 4) {
-            Value::Long(u64::from_str_radix(suffix, 16).unwrap())
-        } else {
-            Value::Big(BigUint::from_str_radix(suffix, 16).unwrap())
-        }
+        Value::from_hex_string(suffix)
     } else if a == "true" {
         Value::Long(1)
     } else if a == "false" {
         Value::Long(0)
     } else {
-        match u64::from_str_radix(a, 10) {
-            Ok(value) => Value::Long(value),
-            Err(_) => Value::Big(BigUint::from_str_radix(a, 10).unwrap()),
-        }
+        Value::from_decimal_string(a)
     }
 }
 

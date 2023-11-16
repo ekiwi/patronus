@@ -4,8 +4,6 @@
 
 use crate::btor2::parse::tokenize_line;
 use crate::mc::{State, Value, Witness};
-use num_bigint::BigUint;
-use num_traits::Num;
 use std::io::BufRead;
 
 enum ParserState {
@@ -147,19 +145,10 @@ fn parse_assignment<'a>(tokens: &'a [&'a str]) -> (u64, &'a str, Value, Option<V
     let (value, array_index) = if is_array {
         let index_str = tokens[1];
         assert!(index_str.starts_with("[") && index_str.ends_with("]"));
-        let array_index = parse_bit_vec(&index_str[1..index_str.len() - 1]);
-        (parse_bit_vec(tokens[2]), Some(array_index))
+        let array_index = Value::from_bit_string(&index_str[1..index_str.len() - 1]);
+        (Value::from_bit_string(tokens[2]), Some(array_index))
     } else {
-        (parse_bit_vec(tokens[1]), None)
+        (Value::from_bit_string(tokens[1]), None)
     };
     (index, name, value, array_index)
-}
-
-/// parses a string of 1s and 0s into a value.
-fn parse_bit_vec(value: &str) -> Value {
-    if value.len() <= 64 {
-        Value::Long(u64::from_str_radix(value, 2).unwrap())
-    } else {
-        Value::Big(BigUint::from_str_radix(value, 2).unwrap())
-    }
 }
