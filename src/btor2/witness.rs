@@ -4,7 +4,7 @@
 
 use crate::btor2::parse::tokenize_line;
 use crate::mc::{State, Value, Witness};
-use std::io::BufRead;
+use std::io::{BufRead, Write};
 
 enum ParserState {
     Start,
@@ -151,4 +151,10 @@ fn parse_assignment<'a>(tokens: &'a [&'a str]) -> (u64, &'a str, Value, Option<V
         (Value::from_bit_string(tokens[1]), None)
     };
     (index, name, value, array_index)
+}
+
+pub fn print_witness(out: &mut impl Write, witness: &Witness) -> std::io::Result<()> {
+    writeln!(out, "sat")?;
+
+    Ok(())
 }
