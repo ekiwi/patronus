@@ -62,7 +62,7 @@ pub trait ExprNodeConstruction:
     }
 
     fn greater(&mut self, a: ExprRef, b: ExprRef) -> ExprRef {
-        self.add_node(Expr::BVGreaterSigned(a, b))
+        self.add_node(Expr::BVGreater(a, b))
     }
     fn greater_or_equal_signed(&mut self, a: ExprRef, b: ExprRef) -> ExprRef {
         self.add_node(Expr::BVGreaterEqualSigned(a, b))
