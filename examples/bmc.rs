@@ -48,7 +48,7 @@ fn main() {
             println!("unsat");
         }
         mc::ModelCheckResult::Fail(wit) => {
-            print_witness(&mut std::io::stdout(), &wit).unwrap();
+            print_witness(&mut std::io::stdout(), &wit, &sys, &ctx).unwrap();
         }
     }
 }

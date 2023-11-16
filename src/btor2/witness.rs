@@ -3,6 +3,8 @@
 // author: Kevin Laeufer <laeufer@berkeley.edu>
 
 use crate::btor2::parse::tokenize_line;
+use crate::ir;
+use crate::ir::{SignalKind, TypeCheck};
 use crate::mc::{State, Value, Witness};
 use std::io::{BufRead, Write};
 
@@ -153,8 +155,61 @@ fn parse_assignment<'a>(tokens: &'a [&'a str]) -> (u64, &'a str, Value, Option<V
     (index, name, value, array_index)
 }
 
-pub fn print_witness(out: &mut impl Write, witness: &Witness) -> std::io::Result<()> {
+pub fn print_witness(
+    out: &mut impl Write,
+    witness: &Witness,
+    sys: &ir::TransitionSystem,
+    ctx: &ir::Context,
+) -> std::io::Result<()> {
     writeln!(out, "sat")?;
+
+    // declare failed properties
+    for (ii, bad_id) in witness.failed_safety.iter().enumerate() {
+        let is_last = ii + 1 == witness.failed_safety.len();
+        write!(out, "b{bad_id}")?;
+        if is_last {
+            writeln!(out, "")?;
+        } else {
+            write!(out, " ")?;
+        }
+    }
+
+    // print starting state (if non-empty)
+    if !witness.init.is_empty() {
+        writeln!(out, "#0")?;
+        for (id, (maybe_value, state)) in witness.init.iter().zip(sys.states()).enumerate() {
+            if let Some(value) = maybe_value {
+                let width = state.symbol.get_type(ctx).get_bit_vector_width().unwrap();
+                let name = state.symbol.get_symbol_name(ctx).unwrap();
+                writeln!(
+                    out,
+                    "{id} {} {}@0",
+                    value.to_bit_string(width).unwrap(),
+                    name
+                )?;
+            }
+        }
+    }
+
+    // print inputs
+    let inputs = sys.get_signals(|s| s.kind == SignalKind::Input);
+    for (k, values) in witness.inputs.iter().enumerate() {
+        writeln!(out, "@{k}")?;
+        for (id, (maybe_value, (input_sym, _))) in values.iter().zip(inputs.iter()).enumerate() {
+            if let Some(value) = maybe_value {
+                let width = input_sym.get_type(ctx).get_bit_vector_width().unwrap();
+                let name = input_sym.get_symbol_name(ctx).unwrap();
+                writeln!(
+                    out,
+                    "{id} {} {}@0",
+                    value.to_bit_string(width).unwrap(),
+                    name
+                )?;
+            }
+        }
+    }
+
+    writeln!(out, ".")?;
 
     Ok(())
 }

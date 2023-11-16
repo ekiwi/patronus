@@ -425,6 +425,13 @@ impl Type {
             Type::Array(_) => false,
         }
     }
+
+    pub fn get_bit_vector_width(&self) -> Option<WidthInt> {
+        match &self {
+            Type::BV(width) => Some(*width),
+            Type::Array(_) => None,
+        }
+    }
 }
 
 impl std::fmt::Display for Type {

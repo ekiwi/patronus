@@ -3,7 +3,7 @@
 // author: Kevin Laeufer <laeufer@berkeley.edu>
 
 use crate::ir;
-use crate::ir::{Expr, ExprRef, GetNode, SignalKind, Type, TypeCheck};
+use crate::ir::{Expr, ExprRef, GetNode, SignalInfo, SignalKind, Type, TypeCheck};
 use std::borrow::Cow;
 
 use crate::ir::SignalKind::Input;
@@ -83,7 +83,7 @@ impl SmtModelChecker {
         for k in 0..=k_max {
             // assume all constraints hold in this step
             for (expr_ref, _) in constraints.iter() {
-                let expr = enc.get_constraint(&mut smt_ctx, *expr_ref);
+                let expr = enc.get_at(&mut smt_ctx, *expr_ref, k);
                 smt_ctx.assert(expr)?;
             }
 
@@ -100,24 +100,24 @@ impl SmtModelChecker {
 
             if self.opts.check_bad_states_individually {
                 for (_bs_id, (expr_ref, _)) in bad_states.iter().enumerate() {
-                    let expr = enc.get_bad_state(&mut smt_ctx, *expr_ref);
+                    let expr = enc.get_at(&mut smt_ctx, *expr_ref, k);
                     let res = smt_ctx.check_assuming([expr])?;
 
                     if res == smt::Response::Sat {
-                        let wit = self.get_witness(sys, &mut smt_ctx, &enc, k)?;
+                        let wit = self.get_witness(sys, &mut smt_ctx, &enc, k, &bad_states)?;
                         return Ok(ModelCheckResult::Fail(wit));
                     }
                 }
             } else {
                 let all_bads = bad_states
                     .iter()
-                    .map(|(expr_ref, _)| enc.get_bad_state(&mut smt_ctx, *expr_ref))
+                    .map(|(expr_ref, _)| enc.get_at(&mut smt_ctx, *expr_ref, k))
                     .collect::<Vec<_>>();
                 let any_bad = smt_ctx.or_many(all_bads);
                 let res = smt_ctx.check_assuming([any_bad])?;
 
                 if res == smt::Response::Sat {
-                    let wit = self.get_witness(sys, &mut smt_ctx, &enc, k)?;
+                    let wit = self.get_witness(sys, &mut smt_ctx, &enc, k, &bad_states)?;
                     return Ok(ModelCheckResult::Fail(wit));
                 }
             }
@@ -136,11 +136,23 @@ impl SmtModelChecker {
         smt_ctx: &mut smt::Context,
         enc: &UnrollSmtEncoding,
         k_max: u64,
+        bad_states: &[(ExprRef, SignalInfo)],
     ) -> Result<Witness> {
         let mut wit = Witness::default();
+
+        // which bad states did we hit?
+        for (bad_idx, (expr, _)) in bad_states.iter().enumerate() {
+            let sym_at = enc.get_at(smt_ctx, *expr, k_max);
+            let value = get_smt_value(smt_ctx, sym_at)?;
+            if !value.is_zero() {
+                // was the bad state condition fulfilled?
+                wit.failed_safety.push(bad_idx as u32);
+            }
+        }
+
         // collect initial values
         for (state_idx, state) in sys.states().enumerate() {
-            let sym_at = enc.get_symbol_at(smt_ctx, state.symbol, 0);
+            let sym_at = enc.get_at(smt_ctx, state.symbol, 0);
             let value = get_smt_value(smt_ctx, sym_at)?;
             wit.init.insert(state_idx, value);
         }
@@ -150,7 +162,7 @@ impl SmtModelChecker {
         for k in 0..=k_max {
             let mut input_values = State::default();
             for (input_idx, (input, _)) in inputs.iter().enumerate() {
-                let sym_at = enc.get_symbol_at(smt_ctx, *input, k);
+                let sym_at = enc.get_at(smt_ctx, *input, k);
                 let value = get_smt_value(smt_ctx, sym_at)?;
                 input_values.insert(input_idx, value);
             }
@@ -201,9 +213,8 @@ pub trait TransitionSystemEncoding {
     fn define_header(&self, smt_ctx: &mut smt::Context) -> Result<()>;
     fn init(&mut self, smt_ctx: &mut smt::Context) -> Result<()>;
     fn unroll(&mut self, smt_ctx: &mut smt::Context) -> Result<()>;
-    fn get_constraint(&self, smt_ctx: &mut smt::Context, e: ExprRef) -> smt::SExpr;
-    fn get_bad_state(&self, smt_ctx: &mut smt::Context, e: ExprRef) -> smt::SExpr;
-    fn get_symbol_at(&self, smt_ctx: &mut smt::Context, sym: ExprRef, k: u64) -> smt::SExpr;
+    /// Allows access to inputs, states, constraints and bad_state expressions.
+    fn get_at(&self, smt_ctx: &mut smt::Context, expr: ExprRef, k: u64) -> smt::SExpr;
 }
 
 pub struct UnrollSmtEncoding<'a> {
@@ -262,15 +273,21 @@ impl<'a> UnrollSmtEncoding<'a> {
         e: ExprRef,
         k: u64,
     ) -> smt::SExpr {
-        // find our local name
-        let base_name: &str = self
-            .signals
-            .iter()
-            .find(|(id, _)| *id == e)
-            .map(|(_, n)| n)
-            .unwrap();
-        let name = format!("{}@{}", base_name, k);
-        smt_ctx.atom(escape_smt_identifier(&name))
+        // is it already a symbol?
+        if e.is_symbol(self.ctx) {
+            let name = self.name_at(e, k);
+            smt_ctx.atom(escape_smt_identifier(&name))
+        } else {
+            // find our local name
+            let base_name: &str = self
+                .signals
+                .iter()
+                .find(|(id, _)| *id == e)
+                .map(|(_, n)| n)
+                .unwrap();
+            let name = format!("{}@{}", base_name, k);
+            smt_ctx.atom(escape_smt_identifier(&name))
+        }
     }
 
     fn expr_in_step(&self, smt_ctx: &mut smt::Context, expr: ExprRef, step: u64) -> smt::SExpr {
@@ -454,20 +471,9 @@ impl<'a> TransitionSystemEncoding for UnrollSmtEncoding<'a> {
         self.current_step = Some(next_step);
         Ok(())
     }
-
-    fn get_constraint(&self, smt_ctx: &mut smt::Context, e: ExprRef) -> smt::SExpr {
-        self.get_local_expr_symbol_at(smt_ctx, e, self.current_step.unwrap())
-    }
-
-    fn get_bad_state(&self, smt_ctx: &mut smt::Context, e: ExprRef) -> smt::SExpr {
-        self.get_local_expr_symbol_at(smt_ctx, e, self.current_step.unwrap())
-    }
-
-    fn get_symbol_at(&self, smt_ctx: &mut smt::Context, sym: ExprRef, k: u64) -> smt::SExpr {
-        assert!(sym.is_symbol(self.ctx));
+    fn get_at(&self, smt_ctx: &mut smt::Context, expr: ExprRef, k: u64) -> smt::SExpr {
         assert!(k <= self.current_step.unwrap_or(0));
-        let name = self.name_at(sym, k);
-        smt_ctx.atom(escape_smt_identifier(&name))
+        self.get_local_expr_symbol_at(smt_ctx, expr, self.current_step.unwrap())
     }
 }
 

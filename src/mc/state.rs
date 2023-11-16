@@ -2,9 +2,9 @@
 // released under BSD 3-Clause License
 // author: Kevin Laeufer <laeufer@berkeley.edu>
 
-use crate::ir::Type;
+use crate::ir::{Type, WidthInt};
 use num_bigint::BigUint;
-use num_traits::Num;
+use num_traits::{Num, Zero};
 
 /// Contains the initial state and the inputs over `len` cycles.
 #[derive(Debug, Default)]
@@ -100,6 +100,10 @@ impl State {
 
     pub fn get(&self, index: usize) -> Option<ValueRef> {
         let meta = self.meta.get(index)?;
+        self.get_from_meta(meta)
+    }
+
+    fn get_from_meta(&self, meta: &StorageMetaData) -> Option<ValueRef> {
         if !meta.is_valid {
             return None;
         }
@@ -136,6 +140,33 @@ impl State {
     pub fn is_empty(&self) -> bool {
         self.meta.is_empty()
     }
+
+    pub fn iter(&self) -> StateIter<'_> {
+        StateIter::new(&self)
+    }
+}
+
+pub struct StateIter<'a> {
+    state: &'a State,
+    underlying: std::slice::Iter<'a, StorageMetaData>,
+}
+
+impl<'a> StateIter<'a> {
+    fn new(state: &'a State) -> Self {
+        let underlying = state.meta.iter();
+        Self { state, underlying }
+    }
+}
+
+impl<'a> Iterator for StateIter<'a> {
+    type Item = Option<ValueRef<'a>>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.underlying.next() {
+            None => return None, // we are done!
+            Some(m) => Some(self.state.get_from_meta(m)),
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -168,6 +199,32 @@ impl Value {
             Err(_) => Value::Big(BigUint::from_str_radix(value, 10).unwrap()),
         }
     }
+
+    pub fn is_zero(&self) -> bool {
+        match &self {
+            Value::Long(value) => *value == 0,
+            Value::Big(value) => value.is_zero(),
+        }
+    }
+
+    /// Returns the value as a fixed with bit string. Returns None if the value is an array.
+    pub fn to_bit_string(&self, width: WidthInt) -> Option<String> {
+        let base_str = match &self {
+            Value::Long(value) => format!("{value:b}"),
+            Value::Big(value) => value.to_str_radix(2),
+        };
+        let base_len = base_str.len();
+        if base_len == width as usize {
+            Some(base_str)
+        } else {
+            // pad with zeros
+            assert!(base_len < width as usize);
+            let zeros = width as usize - base_len;
+            let mut out = "0".repeat(zeros);
+            out.push_str(&base_str);
+            Some(out)
+        }
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -177,11 +234,23 @@ pub enum ValueRef<'a> {
 }
 
 impl<'a> ValueRef<'a> {
-    fn cloned(&self) -> Value {
+    pub fn cloned(&self) -> Value {
         match self {
             ValueRef::Long(value) => Value::Long(*value),
             ValueRef::Big(value) => Value::Big((*value).clone()),
         }
+    }
+
+    pub fn is_zero(&self) -> bool {
+        match self {
+            ValueRef::Long(value) => *value == 0,
+            ValueRef::Big(value) => value.is_zero(),
+        }
+    }
+
+    /// Returns the value as a fixed with bit string. Returns None if the value is an array.
+    pub fn to_bit_string(&self, width: WidthInt) -> Option<String> {
+        self.cloned().to_bit_string(width) // TODO: optimize
     }
 }
 
