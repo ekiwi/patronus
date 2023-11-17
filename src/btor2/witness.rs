@@ -103,7 +103,7 @@ pub fn parse_witnesses(input: &mut impl BufRead, parse_max: usize) -> Result<Vec
                     start_inputs(line, &wit)
                 } else {
                     let tok = tokenize_line(line);
-                    let (ii, _, data, index) = parse_assignment(&tok.tokens);
+                    let (ii, _, data, _index) = parse_assignment(&tok.tokens);
                     println!("TODO: {ii} = {data:?}");
                     // continue reading in state
                     ParserState::ParsingStatesAt(at)
@@ -121,7 +121,7 @@ pub fn parse_witnesses(input: &mut impl BufRead, parse_max: usize) -> Result<Vec
                     start_state(line)
                 } else {
                     let tok = tokenize_line(line);
-                    let (ii, _, data, index) = parse_assignment(&tok.tokens);
+                    let (ii, _, data, _index) = parse_assignment(&tok.tokens);
                     println!("TODO: {ii} = {data:?}");
                     // continue reading in inputs
                     ParserState::ParsingInputsAt(at)

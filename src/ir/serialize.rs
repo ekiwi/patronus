@@ -3,7 +3,10 @@
 // author: Kevin Laeufer <laeufer@berkeley.edu>
 
 use super::{Context, Expr, ExprRef, GetNode};
-use crate::ir::{SignalKind, TransitionSystem, Type, TypeCheck};
+use crate::ir::{
+    count_expr_uses, is_usage_root_signal, SignalInfo, SignalKind, TransitionSystem, Type,
+    TypeCheck,
+};
 use std::io::Write;
 
 pub trait SerializableIrNode {
@@ -438,93 +441,107 @@ impl SerializableIrNode for Type {
     }
 }
 
-fn inline_expr_for_transition_system(expr: &Expr) -> bool {
-    expr.is_symbol() || expr.is_bv_lit()
+fn inline_expr_for_transition_system(expr: &Expr, use_count: u32) -> bool {
+    let always_inline = expr.is_symbol() || expr.is_bv_lit();
+    // TODO: re-enable using the use_count for inlining decisions after we add a way to turn it off
+    always_inline // || use_count <= 1
+}
+
+fn serialize_transition_system<W: Write>(
+    ctx: &Context,
+    sys: &TransitionSystem,
+    writer: &mut W,
+) -> std::io::Result<()> {
+    if !sys.name.is_empty() {
+        writeln!(writer, "{}", sys.name)?;
+    }
+
+    let uses = count_expr_uses(ctx, sys);
+
+    // this closure allows us to use node names instead of serializing all sub-expressions
+    let serialize_child =
+        |expr_ref: &ExprRef, ctx: &Context, writer: &mut W| -> std::io::Result<bool> {
+            // we inline, if the expression has only one use
+            let use_count = uses.get(expr_ref.index()).map(|v| *v).unwrap_or_default();
+            assert!(use_count > 0, "{:?}", ctx.get(*expr_ref));
+            let expr = ctx.get(*expr_ref);
+            if inline_expr_for_transition_system(expr, use_count) {
+                Ok(true) // recurse to child
+            } else {
+                // print the name of the signal
+                let maybe_name: Option<&str> = sys
+                    .get_signal(*expr_ref)
+                    .and_then(|s| s.name)
+                    .map(|r| ctx.get(r));
+                match maybe_name {
+                    None => write!(writer, "%{}", expr_ref.index())?,
+                    Some(name) => write!(writer, "{}", name)?,
+                };
+                Ok(false)
+            }
+        };
+
+    // signals
+    for (ii, signal) in sys.get_signals(|s| !matches!(s.kind, SignalKind::State)) {
+        let use_count = uses.get(ii.index()).map(|v| *v).unwrap_or_default();
+        let expr = ctx.get(ii);
+
+        // skip any expressions that not used multiple times, unless it us a usage root signal
+        if inline_expr_for_transition_system(expr, use_count) && !is_usage_root_signal(&signal) {
+            continue;
+        }
+
+        // print the kind
+        write!(writer, "{} ", signal.kind)?;
+
+        // we use the position as name if no name is available
+        if let Some(name_ref) = signal.name {
+            write!(writer, "{}", ctx.get(name_ref))?;
+        } else {
+            write!(writer, "%{}", ii.index())?;
+        }
+
+        // print the type
+        let tpe = expr.get_type(ctx);
+        write!(writer, " : {tpe}",)?;
+
+        // do not print simple symbols
+        if expr.is_symbol() {
+            writeln!(writer, "")?;
+        } else {
+            write!(writer, " = ")?;
+            serialize_expr(expr, ctx, writer, &serialize_child)?;
+            writeln!(writer, "",)?;
+        }
+    }
+
+    // states
+    for state in sys.states() {
+        let name = state
+            .symbol
+            .get_symbol_name(ctx)
+            .expect("all states are required to have a name!");
+        let tpe = state.symbol.get_type(ctx);
+        writeln!(writer, "state {name} : {tpe}")?;
+
+        if let Some(expr) = &state.init {
+            write!(writer, "  [init] ")?;
+            serialize_expr_ref(expr, ctx, writer, &serialize_child)?;
+            writeln!(writer, "",)?;
+        }
+        if let Some(expr) = &state.next {
+            write!(writer, "  [next] ")?;
+            serialize_expr_ref(expr, ctx, writer, &serialize_child)?;
+            writeln!(writer, "",)?;
+        }
+    }
+
+    Ok(())
 }
 
 impl SerializableIrNode for TransitionSystem {
     fn serialize<W: Write>(&self, ctx: &Context, writer: &mut W) -> std::io::Result<()> {
-        if !self.name.is_empty() {
-            writeln!(writer, "{}", self.name)?;
-        }
-
-        // this closure allows us to use node names instead of serializing all sub-expressions
-        let serialize_child =
-            |expr_ref: &ExprRef, ctx: &Context, writer: &mut W| -> std::io::Result<bool> {
-                let expr = ctx.get(*expr_ref);
-
-                if inline_expr_for_transition_system(expr) {
-                    Ok(true) // recurse to child
-                } else {
-                    // print the name of the signal
-                    let maybe_name: Option<&str> = self
-                        .get_signal(*expr_ref)
-                        .and_then(|s| s.name)
-                        .map(|r| ctx.get(r));
-                    match maybe_name {
-                        None => write!(writer, "%{}", expr_ref.index())?,
-                        Some(name) => write!(writer, "{}", name)?,
-                    };
-                    Ok(false)
-                }
-            };
-
-        // signals
-        for (ii, signal) in self.get_signals(|s| !matches!(s.kind, SignalKind::State)) {
-            // we deduce the expression id from the index
-            let expr = ctx.get(ii);
-
-            // skip symbols and literals
-            if inline_expr_for_transition_system(expr) {
-                continue;
-            }
-
-            // print the kind
-            write!(writer, "{} ", signal.kind)?;
-
-            // we use the position as name if no name is available
-            if let Some(name_ref) = signal.name {
-                write!(writer, "{}", ctx.get(name_ref))?;
-            } else {
-                write!(writer, "%{}", ii.index())?;
-            }
-
-            // print the type
-            let tpe = expr.get_type(ctx);
-            write!(writer, " : {tpe}",)?;
-
-            // do not print simple symbols
-            if expr.is_symbol() {
-                writeln!(writer, "")?;
-            } else {
-                write!(writer, " = ")?;
-                serialize_expr(expr, ctx, writer, &serialize_child)?;
-                writeln!(writer, "",)?;
-            }
-        }
-
-        // states
-        for state in self.states() {
-            let name = state
-                .symbol
-                .get_symbol_name(ctx)
-                .expect("all states are required to have a name!");
-            let tpe = state.symbol.get_type(ctx);
-            writeln!(writer, "state {name} : {tpe}")?;
-
-            if let Some(expr) = &state.init {
-                write!(writer, "  [init] ")?;
-                serialize_expr_ref(expr, ctx, writer, &serialize_child)?;
-                writeln!(writer, "",)?;
-            }
-            if let Some(expr) = &state.next {
-                write!(writer, "  [next] ")?;
-                serialize_expr_ref(expr, ctx, writer, &serialize_child)?;
-                writeln!(writer, "",)?;
-            }
-        }
-
-        Ok(())
+        serialize_transition_system(ctx, self, writer)
     }
 }
 

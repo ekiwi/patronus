@@ -3,6 +3,7 @@
 // author: Kevin Laeufer <laeufer@berkeley.edu>
 
 use crate::ir::TypeCheck;
+use std::fmt::{Debug, Formatter};
 use std::num::NonZeroU32;
 
 /// This type restricts the maximum width that a bit-vector type is allowed to have in our IR.
@@ -223,8 +224,15 @@ impl ExprNodeConstruction for Context {}
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
 pub struct StringRef(string_interner::symbol::SymbolU16);
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
+#[derive(PartialEq, Eq, Clone, Copy, Hash)]
 pub struct ExprRef(NonZeroU32);
+
+impl Debug for ExprRef {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        // we need a custom implementation in order to show the zero based index
+        write!(f, "ExprRef({})", self.index())
+    }
+}
 
 impl ExprRef {
     pub(crate) fn from_index(index: usize) -> Self {

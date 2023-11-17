@@ -181,7 +181,7 @@ fn get_smt_value(smt_ctx: &mut smt::Context, expr: smt::SExpr) -> Result<Value> 
             let value = smt_bit_vec_str_to_value(a);
             Ok(value)
         }
-        smt::SExprData::List(elements) => {
+        smt::SExprData::List(_elements) => {
             todo!(
                 "Deal with list value: {}",
                 smt_ctx.display(smt_value).to_string()
