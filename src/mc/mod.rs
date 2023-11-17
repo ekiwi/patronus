@@ -3,10 +3,10 @@
 // author: Kevin Laeufer <laeufer@berkeley.edu>
 mod sim;
 mod smt;
-mod state;
+mod values;
 
 pub use sim::Simulator;
 pub use smt::{
     ModelCheckResult, SmtModelChecker, SmtModelCheckerOptions, SmtSolverCmd, BITWUZLA_CMD,
 };
-pub use state::{Value, ValueRef, ValueStore, Witness};
+pub use values::{Value, ValueRef, ValueStore, Witness};
