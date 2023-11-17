@@ -156,6 +156,16 @@ fn parse_assignment<'a>(tokens: &'a [&'a str]) -> (u64, &'a str, Value, Option<V
     (index, name, value, array_index)
 }
 
+pub fn witness_to_string(
+    witness: &Witness,
+    sys: &ir::TransitionSystem,
+    ctx: &ir::Context,
+) -> String {
+    let mut buf = Vec::new();
+    print_witness(&mut buf, witness, sys, ctx).expect("Failed to write to string!");
+    String::from_utf8(buf).expect("Failed to read string we wrote!")
+}
+
 pub fn print_witness(
     out: &mut impl Write,
     witness: &Witness,
