@@ -126,45 +126,46 @@ impl ValueStore {
         state
     }
 
-    pub fn get(&self, index: usize) -> Option<ScalarValueRef> {
+    pub fn get(&self, index: usize) -> Option<ValueRef> {
         let meta = self.meta.get(index)?.as_ref()?;
         self.get_from_meta(meta)
     }
 
-    fn get_from_meta(&self, meta: &StorageMetaData) -> Option<ScalarValueRef> {
+    fn get_from_meta(&self, meta: &StorageMetaData) -> Option<ValueRef> {
         if !meta.is_valid {
             return None;
         }
-        let res: ScalarValueRef = match meta.tpe {
+        let res = match meta.tpe {
             StorageType::Scalar(ScalarStorageType::Long) => {
-                ScalarValueRef::Long(self.longs[meta.index as usize])
+                ValueRef::Scalar(ScalarValueRef::Long(self.longs[meta.index as usize]))
             }
             StorageType::Scalar(ScalarStorageType::Big) => {
-                ScalarValueRef::Big(&self.bigs[meta.index as usize])
+                ValueRef::Scalar(ScalarValueRef::Big(&self.bigs[meta.index as usize]))
             }
-            StorageType::Array(_, _) => todo!(),
+            StorageType::Array(_, _) => {
+                // unwrap is safe because meta.is_valid
+                ValueRef::Array(self.arrays[meta.index as usize].as_ref().unwrap())
+            }
         };
         Some(res)
     }
 
-    pub fn update(&mut self, index: usize, value: ScalarValue) {
+    pub fn update(&mut self, index: usize, value: Value) {
         let meta = self.meta.get_mut(index).unwrap().as_mut().unwrap();
         meta.is_valid = true;
         match (meta.tpe, value) {
-            (StorageType::Scalar(ScalarStorageType::Long), ScalarValue::Long(value)) => {
-                self.longs[meta.index as usize] = value;
+            (StorageType::Scalar(ScalarStorageType::Long), Value::Scalar(value)) => {
+                self.longs[meta.index as usize] = <u64 as TryFromValue>::try_from(value).unwrap();
             }
-            (StorageType::Scalar(ScalarStorageType::Big), ScalarValue::Big(value)) => {
-                self.bigs[meta.index as usize] = value;
-            }
-            (StorageType::Scalar(ScalarStorageType::Big), ScalarValue::Long(value)) => {
-                self.bigs[meta.index as usize] = BigUint::from(value);
+            (StorageType::Scalar(ScalarStorageType::Big), Value::Scalar(value)) => {
+                self.bigs[meta.index as usize] =
+                    <BigUint as TryFromValue>::try_from(value).unwrap();
             }
             _ => panic!("Incompatible value for storage type: {:?}", meta.tpe),
         };
     }
 
-    pub fn insert(&mut self, index: usize, value: ScalarValue) {
+    pub fn insert(&mut self, index: usize, value: Value) {
         match self.meta.get(index) {
             Some(_) => self.update(index, value),
             None => {
@@ -176,19 +177,30 @@ impl ValueStore {
         };
     }
 
-    fn allocate_for_value(&mut self, value: ScalarValue) -> StorageMetaData {
+    fn allocate_for_value(&mut self, value: Value) -> StorageMetaData {
         let (tpe, index) = match value {
-            ScalarValue::Long(val) => {
+            Value::Scalar(ScalarValue::Long(val)) => {
                 self.longs.push(val);
-                (ScalarStorageType::Long, self.longs.len() - 1)
+                (
+                    StorageType::Scalar(ScalarStorageType::Long),
+                    self.longs.len() - 1,
+                )
             }
-            ScalarValue::Big(val) => {
+            Value::Scalar(ScalarValue::Big(val)) => {
                 self.bigs.push(val);
-                (ScalarStorageType::Big, self.bigs.len() - 1)
+                (
+                    StorageType::Scalar(ScalarStorageType::Big),
+                    self.bigs.len() - 1,
+                )
+            }
+            Value::Array(val) => {
+                let storage_tpe = val.get_storage_tpe();
+                self.arrays.push(Some(val));
+                (storage_tpe, self.arrays.len() - 1)
             }
         };
         StorageMetaData {
-            tpe: StorageType::Scalar(tpe),
+            tpe,
             index: index as u16,
             is_valid: true,
         }
@@ -216,7 +228,7 @@ impl<'a> ValueStoreIter<'a> {
 }
 
 impl<'a> Iterator for ValueStoreIter<'a> {
-    type Item = Option<ScalarValueRef<'a>>;
+    type Item = Option<ValueRef<'a>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         match self.underlying.next() {
@@ -237,6 +249,21 @@ pub enum ScalarValue {
 pub enum Value {
     Scalar(ScalarValue),
     Array(ArrayValue),
+}
+
+impl Value {
+    pub fn is_zero(&self) -> bool {
+        match self {
+            Value::Scalar(v) => v.is_zero(),
+            _ => false,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum ValueRef<'a> {
+    Scalar(ScalarValueRef<'a>),
+    Array(&'a ArrayValue),
 }
 
 impl ScalarValue {
@@ -506,6 +533,10 @@ impl ArrayValue {
 
     fn get(&self, index: ScalarValue) -> ScalarValueRef {
         self.inner.get(index)
+    }
+
+    fn get_storage_tpe(&self) -> StorageType {
+        todo!()
     }
 }
 

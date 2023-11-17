@@ -7,7 +7,7 @@ use crate::ir::{Expr, ExprRef, GetNode, SignalInfo, SignalKind, Type, TypeCheck}
 use std::borrow::Cow;
 
 use crate::ir::SignalKind::Input;
-use crate::sim::{ScalarValue, ValueStore, Witness};
+use crate::sim::{ArrayValue, ScalarValue, Value, ValueStore, Witness};
 use easy_smt as smt;
 
 #[derive(Debug, Clone, Copy)]
@@ -173,13 +173,13 @@ impl SmtModelChecker {
     }
 }
 
-fn get_smt_value(smt_ctx: &mut smt::Context, expr: smt::SExpr) -> Result<ScalarValue> {
+fn get_smt_value(smt_ctx: &mut smt::Context, expr: smt::SExpr) -> Result<Value> {
     let smt_value = smt_ctx.get_value(vec![expr])?[0].1;
     let atom = smt_ctx.get(smt_value);
     match atom {
         smt::SExprData::Atom(a) => {
             let value = smt_bit_vec_str_to_value(a);
-            Ok(value)
+            Ok(Value::Scalar(value))
         }
         smt::SExprData::List(_elements) => {
             todo!(

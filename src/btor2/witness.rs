@@ -5,7 +5,7 @@
 use crate::btor2::parse::tokenize_line;
 use crate::ir;
 use crate::ir::{SignalKind, TypeCheck};
-use crate::sim::{ScalarValue, ValueStore, Witness};
+use crate::sim::{ScalarValue, ValueRef, ValueStore, Witness};
 use std::io::{BufRead, Write};
 
 enum ParserState {
@@ -190,14 +190,7 @@ pub fn print_witness(
         writeln!(out, "#0")?;
         for (id, (maybe_value, state)) in witness.init.iter().zip(sys.states()).enumerate() {
             if let Some(value) = maybe_value {
-                let width = state.symbol.get_type(ctx).get_bit_vector_width().unwrap();
-                let name = state.symbol.get_symbol_name(ctx).unwrap();
-                writeln!(
-                    out,
-                    "{id} {} {}@0",
-                    value.to_bit_string(width).unwrap(),
-                    name
-                )?;
+                print_witness_value(out, ctx, value, &state.symbol, id, 0)?;
             }
         }
     }
@@ -208,14 +201,7 @@ pub fn print_witness(
         writeln!(out, "@{k}")?;
         for (id, (maybe_value, (input_sym, _))) in values.iter().zip(inputs.iter()).enumerate() {
             if let Some(value) = maybe_value {
-                let width = input_sym.get_type(ctx).get_bit_vector_width().unwrap();
-                let name = input_sym.get_symbol_name(ctx).unwrap();
-                writeln!(
-                    out,
-                    "{id} {} {}@{k}",
-                    value.to_bit_string(width).unwrap(),
-                    name
-                )?;
+                print_witness_value(out, ctx, value, input_sym, id, k)?;
             }
         }
     }
@@ -223,4 +209,29 @@ pub fn print_witness(
     writeln!(out, ".")?;
 
     Ok(())
+}
+
+fn print_witness_value(
+    out: &mut impl Write,
+    ctx: &ir::Context,
+    value: ValueRef,
+    symbol: &ir::ExprRef,
+    id: usize,
+    k: usize,
+) -> std::io::Result<()> {
+    let name = symbol.get_symbol_name(ctx).unwrap();
+    match value {
+        ValueRef::Scalar(scalar) => {
+            let width = symbol.get_type(ctx).get_bit_vector_width().unwrap();
+            writeln!(
+                out,
+                "{id} {} {}@{k}",
+                scalar.to_bit_string(width).unwrap(),
+                name
+            )
+        }
+        ValueRef::Array(_) => {
+            todo!("serialize array")
+        }
+    }
 }

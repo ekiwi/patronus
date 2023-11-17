@@ -7,4 +7,4 @@ mod values;
 // author: Kevin Laeufer <laeufer@berkeley.edu>
 pub mod interpreter;
 
-pub use values::{ScalarValue, ScalarValueRef, ValueStore, Witness};
+pub use values::{ArrayValue, ScalarValue, ScalarValueRef, Value, ValueRef, ValueStore, Witness};
