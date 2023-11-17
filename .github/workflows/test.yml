@@ -15,8 +15,6 @@ jobs:
       matrix:
         toolchain:
           - stable
-          - beta
-          - nightly
 
     steps:
     - name: Update Rust to ${{ matrix.toolchain }}
@@ -34,8 +32,6 @@ jobs:
       matrix:
         toolchain:
           - stable
-          - beta
-          - nightly
 
     steps:
       - uses: YosysHQ/setup-oss-cad-suite@v2
