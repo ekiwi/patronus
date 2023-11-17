@@ -5,7 +5,7 @@
 use crate::btor2::parse::tokenize_line;
 use crate::ir;
 use crate::ir::{SignalKind, TypeCheck};
-use crate::sim::{Value, ValueStore, Witness};
+use crate::sim::{ScalarValue, ValueStore, Witness};
 use std::io::{BufRead, Write};
 
 enum ParserState {
@@ -133,7 +133,7 @@ pub fn parse_witnesses(input: &mut impl BufRead, parse_max: usize) -> Result<Vec
     Ok(out)
 }
 
-fn parse_assignment<'a>(tokens: &'a [&'a str]) -> (u64, &'a str, Value, Option<Value>) {
+fn parse_assignment<'a>(tokens: &'a [&'a str]) -> (u64, &'a str, ScalarValue, Option<ScalarValue>) {
     let is_array = match tokens.len() {
         3 => false, // its a bit vector
         4 => true,
@@ -148,10 +148,10 @@ fn parse_assignment<'a>(tokens: &'a [&'a str]) -> (u64, &'a str, Value, Option<V
     let (value, array_index) = if is_array {
         let index_str = tokens[1];
         assert!(index_str.starts_with("[") && index_str.ends_with("]"));
-        let array_index = Value::from_bit_string(&index_str[1..index_str.len() - 1]);
-        (Value::from_bit_string(tokens[2]), Some(array_index))
+        let array_index = ScalarValue::from_bit_string(&index_str[1..index_str.len() - 1]);
+        (ScalarValue::from_bit_string(tokens[2]), Some(array_index))
     } else {
-        (Value::from_bit_string(tokens[1]), None)
+        (ScalarValue::from_bit_string(tokens[1]), None)
     };
     (index, name, value, array_index)
 }

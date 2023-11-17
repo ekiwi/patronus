@@ -3,7 +3,7 @@
 // author: Kevin Laeufer <laeufer@berkeley.edu>
 
 use crate::ir::*;
-use crate::sim::{Value, ValueStore};
+use crate::sim::{ScalarValue, ValueStore};
 
 /// Specifies how to initialize states that do not have
 #[derive(Debug, PartialEq, Copy, Clone)]
@@ -20,7 +20,7 @@ pub trait Simulator {
     fn step(&mut self);
 
     /// Change the value of an input
-    fn set_input(&mut self, input_id: usize, value: Value);
+    fn set_input(&mut self, input_id: usize, value: ScalarValue);
 }
 
 /// Interpreter based simulator for a transition system.
@@ -66,7 +66,7 @@ impl<'a> Simulator for Interpreter<'a> {
         todo!()
     }
 
-    fn set_input(&mut self, input_id: usize, value: Value) {
+    fn set_input(&mut self, input_id: usize, value: ScalarValue) {
         todo!()
     }
 }

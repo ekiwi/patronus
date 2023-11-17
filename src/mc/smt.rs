@@ -7,7 +7,7 @@ use crate::ir::{Expr, ExprRef, GetNode, SignalInfo, SignalKind, Type, TypeCheck}
 use std::borrow::Cow;
 
 use crate::ir::SignalKind::Input;
-use crate::sim::{Value, ValueStore, Witness};
+use crate::sim::{ScalarValue, ValueStore, Witness};
 use easy_smt as smt;
 
 #[derive(Debug, Clone, Copy)]
@@ -173,7 +173,7 @@ impl SmtModelChecker {
     }
 }
 
-fn get_smt_value(smt_ctx: &mut smt::Context, expr: smt::SExpr) -> Result<Value> {
+fn get_smt_value(smt_ctx: &mut smt::Context, expr: smt::SExpr) -> Result<ScalarValue> {
     let smt_value = smt_ctx.get_value(vec![expr])?[0].1;
     let atom = smt_ctx.get(smt_value);
     match atom {
@@ -190,17 +190,17 @@ fn get_smt_value(smt_ctx: &mut smt::Context, expr: smt::SExpr) -> Result<Value> 
     }
 }
 
-fn smt_bit_vec_str_to_value(a: &str) -> Value {
+fn smt_bit_vec_str_to_value(a: &str) -> ScalarValue {
     if let Some(suffix) = a.strip_prefix("#b") {
-        Value::from_bit_string(suffix)
+        ScalarValue::from_bit_string(suffix)
     } else if let Some(suffix) = a.strip_prefix("#x") {
-        Value::from_hex_string(suffix)
+        ScalarValue::from_hex_string(suffix)
     } else if a == "true" {
-        Value::Long(1)
+        ScalarValue::Long(1)
     } else if a == "false" {
-        Value::Long(0)
+        ScalarValue::Long(0)
     } else {
-        Value::from_decimal_string(a)
+        ScalarValue::from_decimal_string(a)
     }
 }
 
