@@ -3,7 +3,7 @@
 // author: Kevin Laeufer <laeufer@berkeley.edu>
 
 use crate::ir::*;
-use crate::mc::ValueStore;
+use crate::sim::ValueStore;
 
 /// Interpreter based simulator for a transition system.
 pub struct Simulator<'a> {

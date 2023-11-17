@@ -7,7 +7,7 @@ use crate::ir::{Expr, ExprRef, GetNode, SignalInfo, SignalKind, Type, TypeCheck}
 use std::borrow::Cow;
 
 use crate::ir::SignalKind::Input;
-use crate::mc::{Value, ValueStore, Witness};
+use crate::sim::{Value, ValueStore, Witness};
 use easy_smt as smt;
 
 #[derive(Debug, Clone, Copy)]

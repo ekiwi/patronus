@@ -5,7 +5,7 @@
 use crate::btor2::parse::tokenize_line;
 use crate::ir;
 use crate::ir::{SignalKind, TypeCheck};
-use crate::mc::{Value, ValueStore, Witness};
+use crate::sim::{Value, ValueStore, Witness};
 use std::io::{BufRead, Write};
 
 enum ParserState {
