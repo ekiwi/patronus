@@ -322,13 +322,15 @@ impl IntoValueRef for BigUint {
     }
 }
 
-pub trait ArrayValue: Debug {
+/// Common interface for different implementation of an array value.
+pub trait ArrayValueImpl: Debug {
     fn update(&mut self, index: ScalarValue, value: ScalarValue);
     fn get(&self, index: ScalarValue) -> ScalarValueRef;
 }
 
+/// Implements an array value through a default value and a hash map that contains any updates.
 #[derive(Debug)]
-pub struct SparseArray<I, D>
+pub struct SparseArrayImpl<I, D>
 where
     I: PartialEq + TryFromValue + Debug + Hash + Eq,
     D: TryFromValue + IntoValueRef + Debug,
@@ -337,7 +339,7 @@ where
     updated: HashMap<I, D>,
 }
 
-impl<I, D> SparseArray<I, D>
+impl<I, D> SparseArrayImpl<I, D>
 where
     I: PartialEq + TryFromValue + Debug + Hash + Eq,
     D: TryFromValue + IntoValueRef + Debug,
@@ -350,7 +352,7 @@ where
     }
 }
 
-impl<I, D> ArrayValue for SparseArray<I, D>
+impl<I, D> ArrayValueImpl for SparseArrayImpl<I, D>
 where
     I: PartialEq + TryFromValue + Debug + Hash + Eq,
     D: TryFromValue + IntoValueRef + Debug,
@@ -368,27 +370,23 @@ where
 }
 
 #[derive(Debug, PartialEq)]
-pub struct DenseArray<D>
+struct DenseArrayImpl<D>
 where
     D: TryFromValue + IntoValueRef + Debug,
 {
     values: Vec<D>,
 }
 
-impl<D> DenseArray<D>
+impl<D> DenseArrayImpl<D>
 where
     D: TryFromValue + IntoValueRef + Debug,
 {
-    pub fn new(values: Vec<D>) -> Self {
+    fn new(values: Vec<D>) -> Self {
         Self { values }
-    }
-
-    pub fn len(&self) -> usize {
-        self.values.len()
     }
 }
 
-impl<D> ArrayValue for DenseArray<D>
+impl<D> ArrayValueImpl for DenseArrayImpl<D>
 where
     D: TryFromValue + IntoValueRef + Debug,
 {
@@ -400,6 +398,53 @@ where
     fn get(&self, index: ScalarValue) -> ScalarValueRef {
         let ii = <u64 as TryFromValue>::try_from(index).unwrap() as usize;
         (&self.values[ii]).into()
+    }
+}
+
+pub struct ArrayValue {
+    inner: Box<dyn ArrayValueImpl>,
+}
+
+impl ArrayValue {
+    pub fn new_sparse(index_tpe: Type, default: ScalarValue) -> Self {
+        let index_store = smt_tpe_to_storage_tpe(index_tpe);
+        let inner: Box<dyn ArrayValueImpl> = match (index_store, default) {
+            (StorageType::Long, ScalarValue::Long(d)) => {
+                Box::new(SparseArrayImpl::<u64, _>::new(d))
+            }
+            (StorageType::Big, ScalarValue::Long(d)) => {
+                Box::new(SparseArrayImpl::<BigUint, _>::new(d))
+            }
+            (StorageType::Long, ScalarValue::Big(d)) => Box::new(SparseArrayImpl::<u64, _>::new(d)),
+            (StorageType::Big, ScalarValue::Big(d)) => {
+                Box::new(SparseArrayImpl::<BigUint, _>::new(d))
+            }
+        };
+        Self { inner }
+    }
+
+    pub fn new_dense(len: usize, default: ScalarValue) -> Self {
+        let inner: Box<dyn ArrayValueImpl> = match default {
+            ScalarValue::Long(d) => {
+                let mut values = Vec::with_capacity(len);
+                values.resize(len, d);
+                Box::new(DenseArrayImpl::new(values))
+            }
+            ScalarValue::Big(d) => {
+                let mut values = Vec::with_capacity(len);
+                values.resize(len, d);
+                Box::new(DenseArrayImpl::new(values))
+            }
+        };
+        Self { inner }
+    }
+
+    fn update(&mut self, index: ScalarValue, value: ScalarValue) {
+        self.inner.update(index, value)
+    }
+
+    fn get(&self, index: ScalarValue) -> ScalarValueRef {
+        self.inner.get(index)
     }
 }
 
@@ -418,5 +463,17 @@ mod tests {
         // We store 4 bytes of meta-data for every item in the storage
         assert_eq!(std::mem::size_of::<StorageMetaData>(), 4);
         assert_eq!(std::mem::size_of::<Option<StorageMetaData>>(), 4);
+
+        // a dense array is just a Vec
+        assert_eq!(std::mem::size_of::<DenseArrayImpl<u64>>(), 24);
+        assert_eq!(std::mem::size_of::<DenseArrayImpl<BigUint>>(), 24);
+
+        // a sparse array contains a default value + a hashmap
+        assert_eq!(std::mem::size_of::<HashMap<u64, u64>>(), 48);
+        assert_eq!(std::mem::size_of::<SparseArrayImpl<u64, u64>>(), 48 + 8);
+        assert_eq!(
+            std::mem::size_of::<SparseArrayImpl<u64, BigUint>>(),
+            48 + 24
+        );
     }
 }
