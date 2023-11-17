@@ -574,4 +574,9 @@ mod tests {
             "a b"
         );
     }
+
+    #[test]
+    fn test_reading_smt_scalar() {
+        let ctx = ContextBuilder::new().build().unwrap();
+    }
 }

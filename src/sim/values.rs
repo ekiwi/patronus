@@ -5,7 +5,9 @@
 use crate::ir::{Type, WidthInt};
 use num_bigint::BigUint;
 use num_traits::{Num, ToPrimitive, Zero};
+use std::collections::HashMap;
 use std::fmt::Debug;
+use std::hash::Hash;
 
 /// Contains the initial state and the inputs over `len` cycles.
 #[derive(Debug, Default)]
@@ -325,49 +327,79 @@ pub trait ArrayValue: Debug {
     fn get(&self, index: ScalarValue) -> ScalarValueRef;
 }
 
-#[derive(Debug, PartialEq)]
-pub struct SparseArrayValue<I, D>
+#[derive(Debug)]
+pub struct SparseArray<I, D>
 where
-    I: PartialEq + TryFromValue + Debug,
+    I: PartialEq + TryFromValue + Debug + Hash + Eq,
     D: TryFromValue + IntoValueRef + Debug,
 {
     default: D,
-    updates: Vec<(I, D)>,
+    updated: HashMap<I, D>,
 }
 
-impl<I, D> SparseArrayValue<I, D>
+impl<I, D> SparseArray<I, D>
 where
-    I: PartialEq + TryFromValue + Debug,
+    I: PartialEq + TryFromValue + Debug + Hash + Eq,
     D: TryFromValue + IntoValueRef + Debug,
 {
     fn new(default: D) -> Self {
         Self {
             default,
-            updates: Vec::new(),
+            updated: HashMap::new(),
         }
     }
 }
 
-impl<I, D> ArrayValue for SparseArrayValue<I, D>
+impl<I, D> ArrayValue for SparseArray<I, D>
 where
-    I: PartialEq + TryFromValue + Debug,
+    I: PartialEq + TryFromValue + Debug + Hash + Eq,
     D: TryFromValue + IntoValueRef + Debug,
 {
     fn update(&mut self, index: ScalarValue, value: ScalarValue) {
-        self.updates
-            .push((I::try_from(index).unwrap(), D::try_from(value).unwrap()));
+        self.updated
+            .insert(I::try_from(index).unwrap(), D::try_from(value).unwrap());
     }
 
     fn get(&self, index: ScalarValue) -> ScalarValueRef {
-        // find the latest update
         let raw_index = I::try_from(index).unwrap();
-        for (ii, dd) in self.updates.iter().rev() {
-            if *ii == raw_index {
-                return dd.into();
-            }
-        }
-        // no update found
-        (&self.default).into()
+        let value = self.updated.get(&raw_index).unwrap_or(&self.default);
+        value.into()
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub struct DenseArray<D>
+where
+    D: TryFromValue + IntoValueRef + Debug,
+{
+    values: Vec<D>,
+}
+
+impl<D> DenseArray<D>
+where
+    D: TryFromValue + IntoValueRef + Debug,
+{
+    pub fn new(values: Vec<D>) -> Self {
+        Self { values }
+    }
+
+    pub fn len(&self) -> usize {
+        self.values.len()
+    }
+}
+
+impl<D> ArrayValue for DenseArray<D>
+where
+    D: TryFromValue + IntoValueRef + Debug,
+{
+    fn update(&mut self, index: ScalarValue, value: ScalarValue) {
+        let ii = <u64 as TryFromValue>::try_from(index).unwrap() as usize;
+        self.values[ii] = D::try_from(value).unwrap();
+    }
+
+    fn get(&self, index: ScalarValue) -> ScalarValueRef {
+        let ii = <u64 as TryFromValue>::try_from(index).unwrap() as usize;
+        (&self.values[ii]).into()
     }
 }
 
