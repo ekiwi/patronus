@@ -125,7 +125,7 @@ impl<'a> Parser<'a> {
         } else {
             self.require_at_least_n_tokens(line, tokens, 3)?;
             match op {
-                "ite" => {
+                "ite" | "write" => {
                     // ternary ops
                     Some(self.parse_ternary_op(line, tokens)?)
                 }
@@ -335,6 +335,7 @@ impl<'a> Parser<'a> {
                 self.check_expr_type(inner, line, tpe)?;
                 self.ctx.not(inner)
             }
+            "read" => self.ctx.array_read(a, b),
             other => panic!("unexpected binary op: {other}"),
         };
         self.check_expr_type(e, line, tpe)
@@ -354,6 +355,7 @@ impl<'a> Parser<'a> {
                     todo!("Array ITE")
                 }
             }
+            "write" => self.ctx.array_store(a, b, c),
             other => panic!("unexpected binary op: {other}"),
         };
         self.check_expr_type(res, line, tpe)
@@ -574,8 +576,10 @@ impl<'a> Parser<'a> {
             }
             "array" => {
                 self.require_at_least_n_tokens(line, tokens, 5)?;
-                let index_width = self.parse_width_int(line, tokens[3], "array index width")?;
-                let data_width = self.parse_width_int(line, tokens[4], "array data width")?;
+                let index_tpe = self.get_tpe_from_id(line, tokens[3])?;
+                let data_tpe = self.get_tpe_from_id(line, tokens[4])?;
+                let index_width = index_tpe.get_bit_vector_width().unwrap();
+                let data_width = data_tpe.get_bit_vector_width().unwrap();
                 self.type_map.insert(
                     line_id,
                     Type::Array(ArrayType {
@@ -776,11 +780,11 @@ fn str_offset(needle: &str, haystack: &str) -> usize {
 const UNARY_OPS: [&str; 10] = [
     "not", "inc", "dec", "neg", "redand", "redor", "redxor", "slice", "uext", "sext",
 ];
-const BINARY_OPS: [&str; 40] = [
+const BINARY_OPS: [&str; 41] = [
     "iff", "implies", "sgt", "ugt", "sgte", "ugte", "slt", "ult", "slte", "ulte", "and", "nand",
     "nor", "or", "xnor", "xor", "rol", "ror", "sll", "sra", "srl", "add", "mul", "sdiv", "udiv",
     "smod", "srem", "urem", "sub", "saddo", "uaddo", "sdivo", "udivo", "smulo", "umulo", "ssubo",
-    "usubo", "concat", "eq", "neq",
+    "usubo", "concat", "eq", "neq", "read",
 ];
 const TERNARY_OPS: [&str; 1] = ["ite"];
 const OTHER_OPS: [&str; 17] = [

@@ -136,6 +136,19 @@ pub trait ExprNodeConstruction:
         let width = e.get_bv_type(self).unwrap() + by;
         self.add_node(Expr::BVSignExt { e, by, width })
     }
+
+    fn array_store(&mut self, array: ExprRef, index: ExprRef, data: ExprRef) -> ExprRef {
+        self.add_node(Expr::ArrayStore { array, index, data })
+    }
+
+    fn array_read(&mut self, array: ExprRef, index: ExprRef) -> ExprRef {
+        let width = array.get_type(self).get_array_data_width().unwrap();
+        self.add_node(Expr::BVArrayRead {
+            array,
+            index,
+            width,
+        })
+    }
 }
 
 pub fn bv_value_fits_width(value: BVLiteralInt, width: WidthInt) -> bool {
@@ -438,6 +451,20 @@ impl Type {
         match &self {
             Type::BV(width) => Some(*width),
             Type::Array(_) => None,
+        }
+    }
+
+    pub fn get_array_data_width(&self) -> Option<WidthInt> {
+        match &self {
+            Type::BV(_) => None,
+            Type::Array(a) => Some(a.data_width),
+        }
+    }
+
+    pub fn get_array_index_width(&self) -> Option<WidthInt> {
+        match &self {
+            Type::BV(_) => None,
+            Type::Array(a) => Some(a.index_width),
         }
     }
 }

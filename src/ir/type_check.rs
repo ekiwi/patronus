@@ -36,8 +36,8 @@ impl Type {
     }
     fn expect_array(&self, op: &str) -> Result<ArrayType, TypeCheckError> {
         match self {
-            Type::BV(_) => Err(TypeCheckError {
-                msg: format!("{op} only works on arrays, not bit-vectors."),
+            Type::BV(w) => Err(TypeCheckError {
+                msg: format!("{op} needs to be an array, not a bv<{w}>."),
             }),
             Type::Array(tpe) => Ok(*tpe),
         }
@@ -215,7 +215,9 @@ impl TypeCheck for Expr {
                 index,
                 width,
             } => {
-                let array_tpe = array.get_type(ctx).expect_array("array read")?;
+                let array_tpe = array
+                    .get_type(ctx)
+                    .expect_array("the first argument to the read operation")?;
                 let index_width = index.get_type(ctx).expect_bv("array read index")?;
                 if array_tpe.index_width != index_width {
                     Err(TypeCheckError {
@@ -259,11 +261,13 @@ impl TypeCheck for Expr {
                 }))
             }
             Expr::ArrayEqual(a, b) => {
-                expect_same_size_arrays(ctx, "array equals", a, b)?;
+                expect_same_size_arrays(ctx, "the array equals operation", a, b)?;
                 Ok(Type::BV(1))
             }
             Expr::ArrayStore { array, index, data } => {
-                let tpe = array.get_type(ctx).expect_array("array store")?;
+                let tpe = array
+                    .get_type(ctx)
+                    .expect_array("the first argument to the store operation")?;
                 index
                     .get_type(ctx)
                     .expect_bv_of(tpe.index_width, "array store index")?;
@@ -273,7 +277,7 @@ impl TypeCheck for Expr {
             }
             Expr::ArrayIte { cond, tru, fals } => {
                 cond.get_type(ctx).expect_bv_of(1, "ite condition")?;
-                expect_same_size_arrays(ctx, "ite branches", tru, fals)
+                expect_same_size_arrays(ctx, "both ite branches", tru, fals)
             }
         }
     }

@@ -361,7 +361,11 @@ where
         Expr::BVReduceOr(_) => todo!(),
         Expr::BVReduceAnd(_) => todo!(),
         Expr::BVReduceXor(_) => todo!(),
-        Expr::BVEqual(_, _) => todo!(),
+        Expr::BVEqual(a_ref, b_ref) => {
+            let a = convert_expr(smt_ctx, ctx, *a_ref, rename_sym);
+            let b = convert_expr(smt_ctx, ctx, *b_ref, rename_sym);
+            smt_ctx.eq(a, b)
+        }
         Expr::BVImplies(a_ref, b_ref) => {
             let a = convert_expr(smt_ctx, ctx, *a_ref, rename_sym);
             let b = convert_expr(smt_ctx, ctx, *b_ref, rename_sym);
@@ -398,7 +402,11 @@ where
         Expr::BVSignedRem(_, _, _) => todo!(),
         Expr::BVUnsignedRem(_, _, _) => todo!(),
         Expr::BVSub(_, _, _) => todo!(),
-        Expr::BVArrayRead { .. } => todo!(),
+        Expr::BVArrayRead { array, index, .. } => {
+            let a = convert_expr(smt_ctx, ctx, *array, rename_sym);
+            let i = convert_expr(smt_ctx, ctx, *index, rename_sym);
+            smt_ctx.select(a, i)
+        }
         Expr::BVIte { cond, tru, fals } => {
             let c = convert_expr(smt_ctx, ctx, *cond, rename_sym);
             let t = convert_expr(smt_ctx, ctx, *tru, rename_sym);
@@ -411,7 +419,12 @@ where
         }
         Expr::ArrayConstant { .. } => todo!(),
         Expr::ArrayEqual(_, _) => todo!(),
-        Expr::ArrayStore { .. } => todo!(),
+        Expr::ArrayStore { array, index, data } => {
+            let a = convert_expr(smt_ctx, ctx, *array, rename_sym);
+            let i = convert_expr(smt_ctx, ctx, *index, rename_sym);
+            let d = convert_expr(smt_ctx, ctx, *data, rename_sym);
+            smt_ctx.store(a, i, d)
+        }
         Expr::ArrayIte { .. } => todo!(),
     }
 }

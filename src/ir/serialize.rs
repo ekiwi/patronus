@@ -4,8 +4,7 @@
 
 use super::{Context, Expr, ExprRef, GetNode};
 use crate::ir::{
-    count_expr_uses, is_usage_root_signal, SignalInfo, SignalKind, TransitionSystem, Type,
-    TypeCheck,
+    count_expr_uses, is_usage_root_signal, SignalKind, TransitionSystem, Type, TypeCheck,
 };
 use std::io::Write;
 
@@ -441,7 +440,7 @@ impl SerializableIrNode for Type {
     }
 }
 
-fn inline_expr_for_transition_system(expr: &Expr, use_count: u32) -> bool {
+fn inline_expr_for_transition_system(expr: &Expr, _use_count: u32) -> bool {
     let always_inline = expr.is_symbol() || expr.is_bv_lit();
     // TODO: re-enable using the use_count for inlining decisions after we add a way to turn it off
     always_inline // || use_count <= 1
