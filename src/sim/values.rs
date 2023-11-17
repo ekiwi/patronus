@@ -2,11 +2,11 @@
 // released under BSD 3-Clause License
 // author: Kevin Laeufer <laeufer@berkeley.edu>
 
-use crate::ir::{Type, WidthInt};
+use crate::ir::{ArrayType, Type, WidthInt};
 use num_bigint::BigUint;
 use num_traits::{Num, ToPrimitive, Zero};
 use std::collections::HashMap;
-use std::fmt::Debug;
+use std::fmt::{Debug, Formatter};
 use std::hash::Hash;
 
 /// Contains the initial state and the inputs over `len` cycles.
@@ -27,9 +27,34 @@ impl Witness {
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-enum StorageType {
+enum ScalarStorageType {
     Long,
     Big,
+}
+
+impl ScalarStorageType {
+    fn from_width(width: WidthInt) -> Self {
+        if width <= 64 {
+            ScalarStorageType::Long
+        } else {
+            ScalarStorageType::Big
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+enum StorageType {
+    Scalar(ScalarStorageType),
+    Array(ScalarStorageType, ScalarStorageType),
+}
+
+impl StorageType {
+    fn as_scalar(&self) -> ScalarStorageType {
+        match self {
+            StorageType::Scalar(t) => *t,
+            StorageType::Array(_, _) => panic!("not a scalar storage type"),
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -44,30 +69,24 @@ struct StorageMetaData {
 
 fn smt_tpe_to_storage_tpe(tpe: Type) -> StorageType {
     match tpe {
-        Type::BV(len) if len <= 64 => StorageType::Long,
-        Type::BV(_) => StorageType::Big,
-        Type::Array(_) => todo!("add array support"),
+        Type::BV(width) => StorageType::Scalar(ScalarStorageType::from_width(width)),
+        Type::Array(ArrayType {
+            index_width,
+            data_width,
+        }) => StorageType::Array(
+            ScalarStorageType::from_width(index_width),
+            ScalarStorageType::from_width(data_width),
+        ),
     }
 }
 
 /// Represents concrete values which can be updated.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct ValueStore {
     meta: Vec<Option<StorageMetaData>>,
     longs: Vec<u64>,
     bigs: Vec<BigUint>,
-    // TODO: add array support
-    //arrays: Vec<ArrayValue>,
-}
-
-impl Default for ValueStore {
-    fn default() -> Self {
-        ValueStore {
-            meta: Vec::default(),
-            longs: Vec::default(),
-            bigs: Vec::default(),
-        }
-    }
+    arrays: Vec<Option<ArrayValue>>,
 }
 
 impl ValueStore {
@@ -75,16 +94,21 @@ impl ValueStore {
         let mut state = ValueStore::default();
         let mut long_count = 0;
         let mut big_count = 0;
+        let mut array_count = 0;
         for tpe in types {
             let storage_tpe = smt_tpe_to_storage_tpe(tpe);
             let index = match storage_tpe {
-                StorageType::Long => {
+                StorageType::Scalar(ScalarStorageType::Long) => {
                     long_count += 1;
                     long_count - 1
                 }
-                StorageType::Big => {
+                StorageType::Scalar(ScalarStorageType::Big) => {
                     big_count += 1;
                     big_count - 1
+                }
+                StorageType::Array(_, _) => {
+                    array_count += 1;
+                    array_count - 1
                 }
             };
             let meta = StorageMetaData {
@@ -97,6 +121,7 @@ impl ValueStore {
         // initialize arrays with default data
         state.longs.resize(long_count, u64::default());
         state.bigs.resize(big_count, BigUint::default());
+        state.arrays.resize(array_count, None);
 
         state
     }
@@ -111,8 +136,13 @@ impl ValueStore {
             return None;
         }
         let res: ScalarValueRef = match meta.tpe {
-            StorageType::Long => ScalarValueRef::Long(self.longs[meta.index as usize]),
-            StorageType::Big => ScalarValueRef::Big(&self.bigs[meta.index as usize]),
+            StorageType::Scalar(ScalarStorageType::Long) => {
+                ScalarValueRef::Long(self.longs[meta.index as usize])
+            }
+            StorageType::Scalar(ScalarStorageType::Big) => {
+                ScalarValueRef::Big(&self.bigs[meta.index as usize])
+            }
+            StorageType::Array(_, _) => todo!(),
         };
         Some(res)
     }
@@ -121,13 +151,13 @@ impl ValueStore {
         let meta = self.meta.get_mut(index).unwrap().as_mut().unwrap();
         meta.is_valid = true;
         match (meta.tpe, value) {
-            (StorageType::Long, ScalarValue::Long(value)) => {
+            (StorageType::Scalar(ScalarStorageType::Long), ScalarValue::Long(value)) => {
                 self.longs[meta.index as usize] = value;
             }
-            (StorageType::Big, ScalarValue::Big(value)) => {
+            (StorageType::Scalar(ScalarStorageType::Big), ScalarValue::Big(value)) => {
                 self.bigs[meta.index as usize] = value;
             }
-            (StorageType::Big, ScalarValue::Long(value)) => {
+            (StorageType::Scalar(ScalarStorageType::Big), ScalarValue::Long(value)) => {
                 self.bigs[meta.index as usize] = BigUint::from(value);
             }
             _ => panic!("Incompatible value for storage type: {:?}", meta.tpe),
@@ -150,15 +180,15 @@ impl ValueStore {
         let (tpe, index) = match value {
             ScalarValue::Long(val) => {
                 self.longs.push(val);
-                (StorageType::Long, self.longs.len() - 1)
+                (ScalarStorageType::Long, self.longs.len() - 1)
             }
             ScalarValue::Big(val) => {
                 self.bigs.push(val);
-                (StorageType::Big, self.bigs.len() - 1)
+                (ScalarStorageType::Big, self.bigs.len() - 1)
             }
         };
         StorageMetaData {
-            tpe,
+            tpe: StorageType::Scalar(tpe),
             index: index as u16,
             is_valid: true,
         }
@@ -201,6 +231,12 @@ impl<'a> Iterator for ValueStoreIter<'a> {
 pub enum ScalarValue {
     Long(u64),
     Big(BigUint),
+}
+
+#[derive(Debug)]
+pub enum Value {
+    Scalar(ScalarValue),
+    Array(ArrayValue),
 }
 
 impl ScalarValue {
@@ -326,14 +362,15 @@ impl IntoValueRef for BigUint {
 pub trait ArrayValueImpl: Debug {
     fn update(&mut self, index: ScalarValue, value: ScalarValue);
     fn get(&self, index: ScalarValue) -> ScalarValueRef;
+    fn clone_boxed(&self) -> Box<dyn ArrayValueImpl>;
 }
 
 /// Implements an array value through a default value and a hash map that contains any updates.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SparseArrayImpl<I, D>
 where
-    I: PartialEq + TryFromValue + Debug + Hash + Eq,
-    D: TryFromValue + IntoValueRef + Debug,
+    I: PartialEq + TryFromValue + Debug + Hash + Eq + Clone + 'static,
+    D: TryFromValue + IntoValueRef + Debug + Clone + 'static,
 {
     default: D,
     updated: HashMap<I, D>,
@@ -341,8 +378,8 @@ where
 
 impl<I, D> SparseArrayImpl<I, D>
 where
-    I: PartialEq + TryFromValue + Debug + Hash + Eq,
-    D: TryFromValue + IntoValueRef + Debug,
+    I: PartialEq + TryFromValue + Debug + Hash + Eq + Clone + 'static,
+    D: TryFromValue + IntoValueRef + Debug + Clone + 'static,
 {
     fn new(default: D) -> Self {
         Self {
@@ -354,8 +391,8 @@ where
 
 impl<I, D> ArrayValueImpl for SparseArrayImpl<I, D>
 where
-    I: PartialEq + TryFromValue + Debug + Hash + Eq,
-    D: TryFromValue + IntoValueRef + Debug,
+    I: PartialEq + TryFromValue + Debug + Hash + Eq + Clone + 'static,
+    D: TryFromValue + IntoValueRef + Debug + Clone + 'static,
 {
     fn update(&mut self, index: ScalarValue, value: ScalarValue) {
         self.updated
@@ -367,19 +404,23 @@ where
         let value = self.updated.get(&raw_index).unwrap_or(&self.default);
         value.into()
     }
+
+    fn clone_boxed(&self) -> Box<dyn ArrayValueImpl> {
+        Box::new(self.clone())
+    }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 struct DenseArrayImpl<D>
 where
-    D: TryFromValue + IntoValueRef + Debug,
+    D: TryFromValue + IntoValueRef + Debug + Clone + 'static,
 {
     values: Vec<D>,
 }
 
 impl<D> DenseArrayImpl<D>
 where
-    D: TryFromValue + IntoValueRef + Debug,
+    D: TryFromValue + IntoValueRef + Debug + Clone + 'static,
 {
     fn new(values: Vec<D>) -> Self {
         Self { values }
@@ -388,7 +429,7 @@ where
 
 impl<D> ArrayValueImpl for DenseArrayImpl<D>
 where
-    D: TryFromValue + IntoValueRef + Debug,
+    D: TryFromValue + IntoValueRef + Debug + Clone + 'static,
 {
     fn update(&mut self, index: ScalarValue, value: ScalarValue) {
         let ii = <u64 as TryFromValue>::try_from(index).unwrap() as usize;
@@ -399,24 +440,44 @@ where
         let ii = <u64 as TryFromValue>::try_from(index).unwrap() as usize;
         (&self.values[ii]).into()
     }
+
+    fn clone_boxed(&self) -> Box<dyn ArrayValueImpl> {
+        Box::new(self.clone())
+    }
 }
 
 pub struct ArrayValue {
     inner: Box<dyn ArrayValueImpl>,
 }
 
+impl Debug for ArrayValue {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "ArrayValue(...)")
+    }
+}
+
+impl Clone for ArrayValue {
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone_boxed(),
+        }
+    }
+}
+
 impl ArrayValue {
     pub fn new_sparse(index_tpe: Type, default: ScalarValue) -> Self {
-        let index_store = smt_tpe_to_storage_tpe(index_tpe);
+        let index_store = smt_tpe_to_storage_tpe(index_tpe).as_scalar();
         let inner: Box<dyn ArrayValueImpl> = match (index_store, default) {
-            (StorageType::Long, ScalarValue::Long(d)) => {
+            (ScalarStorageType::Long, ScalarValue::Long(d)) => {
                 Box::new(SparseArrayImpl::<u64, _>::new(d))
             }
-            (StorageType::Big, ScalarValue::Long(d)) => {
+            (ScalarStorageType::Big, ScalarValue::Long(d)) => {
                 Box::new(SparseArrayImpl::<BigUint, _>::new(d))
             }
-            (StorageType::Long, ScalarValue::Big(d)) => Box::new(SparseArrayImpl::<u64, _>::new(d)),
-            (StorageType::Big, ScalarValue::Big(d)) => {
+            (ScalarStorageType::Long, ScalarValue::Big(d)) => {
+                Box::new(SparseArrayImpl::<u64, _>::new(d))
+            }
+            (ScalarStorageType::Big, ScalarValue::Big(d)) => {
                 Box::new(SparseArrayImpl::<BigUint, _>::new(d))
             }
         };
@@ -460,9 +521,9 @@ mod tests {
         // Not sure how we are fitting that, but it's nice that Value is no bigger than a BigUInt
         assert_eq!(std::mem::size_of::<ScalarValue>(), 24);
 
-        // We store 4 bytes of meta-data for every item in the storage
-        assert_eq!(std::mem::size_of::<StorageMetaData>(), 4);
-        assert_eq!(std::mem::size_of::<Option<StorageMetaData>>(), 4);
+        // We store 6 bytes of meta-data for every item in the storage
+        assert_eq!(std::mem::size_of::<StorageMetaData>(), 6);
+        assert_eq!(std::mem::size_of::<Option<StorageMetaData>>(), 6);
 
         // a dense array is just a Vec
         assert_eq!(std::mem::size_of::<DenseArrayImpl<u64>>(), 24);
@@ -475,5 +536,13 @@ mod tests {
             std::mem::size_of::<SparseArrayImpl<u64, BigUint>>(),
             48 + 24
         );
+
+        // an ArrayValue is just a pointer to an implementation + the vtable
+        assert_eq!(std::mem::size_of::<Box<dyn ArrayValueImpl>>(), 16);
+        assert_eq!(std::mem::size_of::<ArrayValue>(), 16);
+
+        // an enum that combines scalar and array values for when we want to transparently deal
+        // with both
+        assert_eq!(std::mem::size_of::<Value>(), 32);
     }
 }
