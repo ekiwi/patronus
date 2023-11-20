@@ -250,7 +250,7 @@ fn parse_smt_store(
     let mut inner = parse_smt_array(smt_ctx, array)?;
     let (index_val, _) = parse_smt_bit_vec(smt_ctx, index)?;
     let (data_val, _) = parse_smt_bit_vec(smt_ctx, value)?;
-    inner.updates.push((index_val, data_val));
+    inner.add_update(index_val, data_val);
     Some(inner)
 }
 
@@ -708,11 +708,13 @@ mod tests {
         let default = ctx.binary(data_width, default_value);
 
         // check the base expression
+        // ((as const (Array (_ BitVec 5) (_ BitVec 32))) #b00000000000000000000000000110011)
         let base = ctx.const_array(tpe, default);
         let base_val = parse_smt_array(&ctx, base).unwrap();
         assert_eq!(base_val.default, Some(BigUint::from(default_value)));
 
         // store
+        // (store <base> #b01110 #x00000000)
         let store_index: usize = 14;
         let store_data: usize = 0;
         let store = ctx.store(
@@ -728,8 +730,9 @@ mod tests {
         );
 
         // two stores
+        // (store <store> #b01110 #x00000011)
         let store2_index: usize = 14;
-        let store2_data: usize = 0;
+        let store2_data: usize = 3;
         let store2 = ctx.store(
             store,
             ctx.binary(index_width, store2_index),
@@ -740,7 +743,7 @@ mod tests {
         assert_eq!(
             store2_val.updates,
             vec![
-                (BigUint::from(store_index), BigUint::from(store_data)),
+                // should be overwritten
                 (BigUint::from(store2_index), BigUint::from(store2_data))
             ]
         );

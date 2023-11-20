@@ -49,6 +49,15 @@ pub struct WitnessArray {
     pub updates: Vec<(BigUint, BigUint)>,
 }
 
+impl WitnessArray {
+    pub fn add_update(&mut self, index: BigUint, value: BigUint) {
+        // delete any previous update that mapped to the same index
+        self.updates.retain(|(i, _)| !i.eq(&index));
+        // add new update
+        self.updates.push((index, value));
+    }
+}
+
 pub fn parse_big_uint_from_bit_string(value: &str) -> (BigUint, WidthInt) {
     let int_val = BigUint::from_str_radix(value, 2).unwrap();
     (int_val, value.len() as WidthInt)
