@@ -22,6 +22,7 @@ pub fn serialize_to_str(ctx: &Context, sys: &TransitionSystem) -> String {
 }
 
 struct Serializer<'a, W: Write> {
+    #[allow(dead_code)] // TODO: implement serializer which will use the ctx!
     ctx: &'a Context,
     writer: &'a mut W,
 }

@@ -9,23 +9,6 @@ use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 use std::hash::Hash;
 
-/// Contains the initial state and the inputs over `len` cycles.
-#[derive(Debug, Default)]
-pub struct Witness {
-    /// The starting state. Contains an optional value for each state.
-    pub init: ValueStore,
-    /// The inputs over time. Each entry contains an optional value for each input.
-    pub inputs: Vec<ValueStore>,
-    /// Index of all safety properties (bad state predicates) that are violated by this witness.
-    pub failed_safety: Vec<u32>,
-}
-
-impl Witness {
-    pub fn len(&self) -> usize {
-        self.inputs.len()
-    }
-}
-
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 enum ScalarStorageType {
     Long,
@@ -246,7 +229,7 @@ pub enum ScalarValue {
 }
 
 impl PartialEq for ScalarValue {
-    fn eq(&self, other: &Self) -> bool {
+    fn eq(&self, _other: &Self) -> bool {
         todo!()
     }
 }
@@ -314,25 +297,6 @@ impl ScalarValue {
             ScalarValue::Big(value) => value.is_zero(),
         }
     }
-
-    /// Returns the value as a fixed with bit string. Returns None if the value is an array.
-    pub fn to_bit_string(&self, width: WidthInt) -> Option<String> {
-        let base_str = match &self {
-            ScalarValue::Long(value) => format!("{value:b}"),
-            ScalarValue::Big(value) => value.to_str_radix(2),
-        };
-        let base_len = base_str.len();
-        if base_len == width as usize {
-            Some(base_str)
-        } else {
-            // pad with zeros
-            assert!(base_len < width as usize);
-            let zeros = width as usize - base_len;
-            let mut out = "0".repeat(zeros);
-            out.push_str(&base_str);
-            Some(out)
-        }
-    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -354,11 +318,6 @@ impl<'a> ScalarValueRef<'a> {
             ScalarValueRef::Long(value) => *value == 0,
             ScalarValueRef::Big(value) => value.is_zero(),
         }
-    }
-
-    /// Returns the value as a fixed with bit string. Returns None if the value is an array.
-    pub fn to_bit_string(&self, width: WidthInt) -> Option<String> {
-        self.cloned().to_bit_string(width) // TODO: optimize
     }
 }
 
@@ -509,11 +468,10 @@ impl Clone for ArrayValue {
 }
 
 impl PartialEq for ArrayValue {
-    fn eq(&self, other: &Self) -> bool {
+    fn eq(&self, _other: &Self) -> bool {
         todo!()
     }
 }
-
 
 impl ArrayValue {
     pub fn new_sparse(index_tpe: Type, default: ScalarValue) -> Self {

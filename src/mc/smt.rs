@@ -3,12 +3,12 @@
 // author: Kevin Laeufer <laeufer@berkeley.edu>
 
 use crate::ir;
-use crate::ir::{Expr, ExprRef, GetNode, SignalInfo, SignalKind, Type, TypeCheck};
-use std::borrow::Cow;
-
-use crate::ir::SignalKind::Input;
-use crate::sim::{ArrayValue, ScalarValue, Value, ValueStore, Witness};
+use crate::ir::{Expr, ExprRef, GetNode, SignalInfo, Type, TypeCheck, WidthInt};
+use crate::mc::{parse_big_uint_from_bit_string, Witness, WitnessValue};
 use easy_smt as smt;
+use num_bigint::BigUint;
+use num_traits::{One, Zero};
+use std::borrow::Cow;
 
 #[derive(Debug, Clone, Copy)]
 pub struct SmtSolverCmd {
@@ -104,7 +104,7 @@ impl SmtModelChecker {
                     let res = smt_ctx.check_assuming([expr])?;
 
                     if res == smt::Response::Sat {
-                        let wit = self.get_witness(sys, &mut smt_ctx, &enc, k, &bad_states)?;
+                        let wit = self.get_witness(sys, ctx, &mut smt_ctx, &enc, k, &bad_states)?;
                         return Ok(ModelCheckResult::Fail(wit));
                     }
                 }
@@ -117,7 +117,7 @@ impl SmtModelChecker {
                 let res = smt_ctx.check_assuming([any_bad])?;
 
                 if res == smt::Response::Sat {
-                    let wit = self.get_witness(sys, &mut smt_ctx, &enc, k, &bad_states)?;
+                    let wit = self.get_witness(sys, ctx, &mut smt_ctx, &enc, k, &bad_states)?;
                     return Ok(ModelCheckResult::Fail(wit));
                 }
             }
@@ -133,6 +133,7 @@ impl SmtModelChecker {
     fn get_witness(
         &self,
         sys: &ir::TransitionSystem,
+        ctx: &ir::Context,
         smt_ctx: &mut smt::Context,
         enc: &UnrollSmtEncoding,
         k_max: u64,
@@ -154,17 +155,29 @@ impl SmtModelChecker {
         for (state_idx, state) in sys.states().enumerate() {
             let sym_at = enc.get_at(smt_ctx, state.symbol, 0);
             let value = get_smt_value(smt_ctx, sym_at)?;
-            wit.init.insert(state_idx, value);
+            // we assume that state ids are monotonically increasing with +1
+            assert_eq!(wit.init.len(), state_idx);
+            wit.init.push(Some(value));
+            // also save state name
+            wit.init_names
+                .push(Some(state.symbol.get_symbol_name(ctx).unwrap().to_string()))
         }
 
         // collect all inputs
-        let inputs = sys.get_signals(|s| s.kind == SignalKind::Input);
+        let inputs = sys.get_signals(|s| s.kind == ir::SignalKind::Input);
+
+        // save input names
+        for (input, _) in inputs.iter() {
+            wit.input_names
+                .push(Some(input.get_symbol_name(ctx).unwrap().to_string()));
+        }
+
         for k in 0..=k_max {
-            let mut input_values = ValueStore::default();
-            for (input_idx, (input, _)) in inputs.iter().enumerate() {
+            let mut input_values = Vec::default();
+            for (input, _) in inputs.iter() {
                 let sym_at = enc.get_at(smt_ctx, *input, k);
                 let value = get_smt_value(smt_ctx, sym_at)?;
-                input_values.insert(input_idx, value);
+                input_values.push(Some(value));
             }
             wit.inputs.push(input_values);
         }
@@ -173,13 +186,13 @@ impl SmtModelChecker {
     }
 }
 
-fn get_smt_value(smt_ctx: &mut smt::Context, expr: smt::SExpr) -> Result<Value> {
+fn get_smt_value(smt_ctx: &mut smt::Context, expr: smt::SExpr) -> Result<WitnessValue> {
     let smt_value = smt_ctx.get_value(vec![expr])?[0].1;
     let atom = smt_ctx.get(smt_value);
     match atom {
         smt::SExprData::Atom(a) => {
-            let value = smt_bit_vec_str_to_value(a);
-            Ok(Value::Scalar(value))
+            let (value, width) = smt_bit_vec_str_to_value(a);
+            Ok(WitnessValue::Scalar(value, width))
         }
         smt::SExprData::List(_elements) => {
             todo!(
@@ -190,17 +203,17 @@ fn get_smt_value(smt_ctx: &mut smt::Context, expr: smt::SExpr) -> Result<Value> 
     }
 }
 
-fn smt_bit_vec_str_to_value(a: &str) -> ScalarValue {
+fn smt_bit_vec_str_to_value(a: &str) -> (BigUint, WidthInt) {
     if let Some(suffix) = a.strip_prefix("#b") {
-        ScalarValue::from_bit_string(suffix)
-    } else if let Some(suffix) = a.strip_prefix("#x") {
-        ScalarValue::from_hex_string(suffix)
+        parse_big_uint_from_bit_string(suffix)
+    } else if let Some(_suffix) = a.strip_prefix("#x") {
+        todo!("hex string: {a}")
     } else if a == "true" {
-        ScalarValue::Long(1)
+        (BigUint::one(), 1)
     } else if a == "false" {
-        ScalarValue::Long(0)
+        (BigUint::zero(), 1)
     } else {
-        ScalarValue::from_decimal_string(a)
+        todo!("decimal string: {a}")
     }
 }
 
@@ -229,7 +242,7 @@ pub struct UnrollSmtEncoding<'a> {
 impl<'a> UnrollSmtEncoding<'a> {
     pub fn new(ctx: &'a ir::Context, sys: &'a ir::TransitionSystem) -> Self {
         // remember inputs instead of constantly re-filtering them
-        let inputs = sys.get_signals(|s| s.kind == Input);
+        let inputs = sys.get_signals(|s| s.kind == ir::SignalKind::Input);
         // name all constraints and bad states
         let mut signals = Vec::new();
         for (ii, (expr, _)) in sys.constraints().iter().enumerate() {

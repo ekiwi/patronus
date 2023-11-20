@@ -4,8 +4,10 @@
 
 use crate::btor2::parse::tokenize_line;
 use crate::ir;
-use crate::ir::{SignalKind, TypeCheck};
-use crate::sim::{ScalarValue, ValueRef, ValueStore, Witness};
+use crate::ir::WidthInt;
+use crate::mc::{parse_big_uint_from_bit_string, Witness, WitnessValue};
+use num_bigint::BigUint;
+use std::borrow::Cow;
 use std::io::{BufRead, Write};
 
 enum ParserState {
@@ -28,7 +30,7 @@ pub fn parse_witnesses(input: &mut impl BufRead, parse_max: usize) -> Result<Vec
     let mut state = ParserState::Start;
     let mut out = Vec::with_capacity(1);
     let mut wit = Witness::default();
-    let mut inputs = ValueStore::default();
+    let mut inputs = Vec::default();
 
     let finish_witness = |out: &mut Vec<Witness>, wit: &mut Witness| {
         out.push(std::mem::replace(wit, Witness::default()));
@@ -43,9 +45,8 @@ pub fn parse_witnesses(input: &mut impl BufRead, parse_max: usize) -> Result<Vec
         assert_eq!(at as usize, wit.inputs.len());
         ParserState::ParsingInputsAt(at)
     };
-    let finish_inputs = |wit: &mut Witness, inputs: &mut ValueStore| {
-        wit.inputs
-            .push(std::mem::replace(inputs, ValueStore::default()));
+    let finish_inputs = |wit: &mut Witness, inputs: &mut Vec<_>| {
+        wit.inputs.push(std::mem::replace(inputs, Vec::default()));
     };
     let start_state = |line: &str| {
         let at = u64::from_str_radix(&line[1..], 10).unwrap();
@@ -133,7 +134,14 @@ pub fn parse_witnesses(input: &mut impl BufRead, parse_max: usize) -> Result<Vec
     Ok(out)
 }
 
-fn parse_assignment<'a>(tokens: &'a [&'a str]) -> (u64, &'a str, ScalarValue, Option<ScalarValue>) {
+fn parse_assignment<'a>(
+    tokens: &'a [&'a str],
+) -> (
+    u64,
+    &'a str,
+    (BigUint, WidthInt),
+    Option<(BigUint, WidthInt)>,
+) {
     let is_array = match tokens.len() {
         3 => false, // its a bit vector
         4 => true,
@@ -148,30 +156,21 @@ fn parse_assignment<'a>(tokens: &'a [&'a str]) -> (u64, &'a str, ScalarValue, Op
     let (value, array_index) = if is_array {
         let index_str = tokens[1];
         assert!(index_str.starts_with("[") && index_str.ends_with("]"));
-        let array_index = ScalarValue::from_bit_string(&index_str[1..index_str.len() - 1]);
-        (ScalarValue::from_bit_string(tokens[2]), Some(array_index))
+        let array_index = parse_big_uint_from_bit_string(&index_str[1..index_str.len() - 1]);
+        (parse_big_uint_from_bit_string(tokens[2]), Some(array_index))
     } else {
-        (ScalarValue::from_bit_string(tokens[1]), None)
+        (parse_big_uint_from_bit_string(tokens[1]), None)
     };
     (index, name, value, array_index)
 }
 
-pub fn witness_to_string(
-    witness: &Witness,
-    sys: &ir::TransitionSystem,
-    ctx: &ir::Context,
-) -> String {
+pub fn witness_to_string(witness: &Witness) -> String {
     let mut buf = Vec::new();
-    print_witness(&mut buf, witness, sys, ctx).expect("Failed to write to string!");
+    print_witness(&mut buf, witness).expect("Failed to write to string!");
     String::from_utf8(buf).expect("Failed to read string we wrote!")
 }
 
-pub fn print_witness(
-    out: &mut impl Write,
-    witness: &Witness,
-    sys: &ir::TransitionSystem,
-    ctx: &ir::Context,
-) -> std::io::Result<()> {
+pub fn print_witness(out: &mut impl Write, witness: &Witness) -> std::io::Result<()> {
     writeln!(out, "sat")?;
 
     // declare failed properties
@@ -187,21 +186,37 @@ pub fn print_witness(
 
     // print starting state (if non-empty)
     if !witness.init.is_empty() {
+        assert_eq!(witness.init.len(), witness.init_names.len());
         writeln!(out, "#0")?;
-        for (id, (maybe_value, state)) in witness.init.iter().zip(sys.states()).enumerate() {
+        for (id, (maybe_value, maybe_name)) in witness
+            .init
+            .iter()
+            .zip(witness.init_names.iter())
+            .enumerate()
+        {
             if let Some(value) = maybe_value {
-                print_witness_value(out, ctx, value, &state.symbol, id, 0)?;
+                let name = maybe_name
+                    .as_ref()
+                    .map(Cow::from)
+                    .unwrap_or(Cow::from(format!("state_{}", id)));
+                print_witness_value(out, value, &name, id, 0)?;
             }
         }
     }
 
     // print inputs
-    let inputs = sys.get_signals(|s| s.kind == SignalKind::Input);
     for (k, values) in witness.inputs.iter().enumerate() {
+        assert_eq!(values.len(), witness.input_names.len());
         writeln!(out, "@{k}")?;
-        for (id, (maybe_value, (input_sym, _))) in values.iter().zip(inputs.iter()).enumerate() {
+        for (id, (maybe_value, maybe_name)) in
+            values.iter().zip(witness.input_names.iter()).enumerate()
+        {
             if let Some(value) = maybe_value {
-                print_witness_value(out, ctx, value, input_sym, id, k)?;
+                let name = maybe_name
+                    .as_ref()
+                    .map(Cow::from)
+                    .unwrap_or(Cow::from(format!("input_{}", id)));
+                print_witness_value(out, value, &name, id, k)?;
             }
         }
     }
@@ -211,26 +226,39 @@ pub fn print_witness(
     Ok(())
 }
 
+/// Returns the value as a fixed with bit string.
+fn to_bit_string(value: &BigUint, width: ir::WidthInt) -> Option<String> {
+    let base_str = value.to_str_radix(2);
+    let base_len = base_str.len();
+    if base_len == width as usize {
+        Some(base_str)
+    } else {
+        // pad with zeros
+        assert!(base_len < width as usize);
+        let zeros = width as usize - base_len;
+        let mut out = "0".repeat(zeros);
+        out.push_str(&base_str);
+        Some(out)
+    }
+}
+
 fn print_witness_value(
     out: &mut impl Write,
-    ctx: &ir::Context,
-    value: ValueRef,
-    symbol: &ir::ExprRef,
+    value: &WitnessValue,
+    name: &str,
     id: usize,
     k: usize,
 ) -> std::io::Result<()> {
-    let name = symbol.get_symbol_name(ctx).unwrap();
     match value {
-        ValueRef::Scalar(scalar) => {
-            let width = symbol.get_type(ctx).get_bit_vector_width().unwrap();
+        WitnessValue::Scalar(value, width) => {
             writeln!(
                 out,
                 "{id} {} {}@{k}",
-                scalar.to_bit_string(width).unwrap(),
+                to_bit_string(value, *width).unwrap(),
                 name
             )
         }
-        ValueRef::Array(_) => {
+        WitnessValue::Array(_) => {
             todo!("serialize array")
         }
     }

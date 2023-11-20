@@ -49,7 +49,7 @@ fn main() {
             println!("unsat");
         }
         mc::ModelCheckResult::Fail(wit) => {
-            btor2::print_witness(&mut std::io::stdout(), &wit, &sys, &ctx).unwrap();
+            btor2::print_witness(&mut std::io::stdout(), &wit).unwrap();
         }
     }
 }
