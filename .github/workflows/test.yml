@@ -43,7 +43,13 @@ jobs:
       - name: Build
         run: cargo build --verbose --examples --release
       - name: bmc Quiz1
-        run: cargo run --release --example bmc -- inputs/Quiz1.btor
+        run: |
+          cargo run --release --example bmc -- inputs/Quiz1.btor > Quiz1.wit
+          btorsim inputs/Quiz1.btor Quiz1.wit
+      - name: bmc const array example
+        run: |
+          cargo run --release --example bmc -- inputs/const_array_example.btor > const_array_example.wit
+          btorsim inputs/const_array_example.btor const_array_example.wit 
 
 
   semver:
