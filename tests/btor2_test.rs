@@ -36,12 +36,12 @@ fn serialize_count2() {
 
 #[test]
 fn parse_quiz1() {
-    let (ctx, sys) = btor2::parse_file("inputs/Quiz1.btor").unwrap();
+    let (ctx, sys) = btor2::parse_file("inputs/chiseltest/Quiz1.btor").unwrap();
     insta::assert_snapshot!(sys.serialize_to_str(&ctx));
 }
 
 #[test]
 fn serialize_quiz1() {
-    let (ctx, sys) = btor2::parse_file("inputs/Quiz1.btor").unwrap();
+    let (ctx, sys) = btor2::parse_file("inputs/chiseltest/Quiz1.btor").unwrap();
     insta::assert_snapshot!(btor2::serialize_to_str(&ctx, &sys));
 }
