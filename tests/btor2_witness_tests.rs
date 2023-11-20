@@ -26,6 +26,13 @@ fn test_const_array_example_witness() {
 }
 
 #[test]
+fn test_const_array_example_witness_2() {
+    let wit = btor2::parse_witness(&mut CONST_ARRAY_EXAMPLE_2.as_bytes()).unwrap();
+    let serialized = btor2::witness_to_string(&wit);
+    assert_eq!(serialized.trim(), CONST_ARRAY_EXAMPLE_2.trim());
+}
+
+#[test]
 fn test_multiple_witnesses() {
     let wit = btor2::parse_witness(&mut MULTIPLE.as_bytes()).unwrap();
     let serialized = btor2::witness_to_string(&wit);
@@ -67,6 +74,20 @@ b0
 0 11111 addr#0
 1 11111111111111111111111111111111 data#0
 2 [11111] 11111111111111111111111111111110 mem@0
+4 11111 a#0
+@0
+.
+"#;
+
+// modified version of the original, to test multiple array updates
+const CONST_ARRAY_EXAMPLE_2: &str = r#"
+sat
+b0
+#0
+0 11111 addr#0
+1 11111111111111111111111111111111 data#0
+2 [11111] 11111111111111111111111111111110 mem#0
+2 [11110] 11111111111111111111111111111110 mem#0
 4 11111 a#0
 @0
 .

@@ -107,7 +107,7 @@ pub fn parse_witnesses(input: &mut impl BufRead, parse_max: usize) -> Result<Vec
                         // we ignore anything but the starting state
                         let (ii, name, value) = parse_assignment(&tok.tokens);
                         ensure_space(&mut wit.init, ii);
-                        wit.init[ii] = Some(value);
+                        wit.init[ii] = Some(update_value(&wit.init[ii], value));
                         ensure_space(&mut wit.init_names, ii);
                         wit.init_names[ii] = Some(name.to_string());
                     }
@@ -129,7 +129,7 @@ pub fn parse_witnesses(input: &mut impl BufRead, parse_max: usize) -> Result<Vec
                     let tok = tokenize_line(line);
                     let (ii, name, value) = parse_assignment(&tok.tokens);
                     ensure_space(&mut inputs, ii);
-                    inputs[ii] = Some(value);
+                    inputs[ii] = Some(update_value(&inputs[ii], value));
                     if wit.inputs.is_empty() {
                         // the first time around, we save the names
                         ensure_space(&mut wit.input_names, ii);
@@ -143,6 +143,25 @@ pub fn parse_witnesses(input: &mut impl BufRead, parse_max: usize) -> Result<Vec
     }
 
     Ok(out)
+}
+
+// combines witness values (this is mostly relevant for arrays which might have several updates)
+fn update_value(old: &Option<WitnessValue>, new: WitnessValue) -> WitnessValue {
+    match (old, new) {
+        (None, n) => n,
+        (Some(WitnessValue::Array(oa)), WitnessValue::Array(mut na)) => {
+            assert!(na.default.is_none(), "cannot overwrite the default value!");
+            assert_eq!(oa.tpe, na.tpe);
+            let mut updates = oa.updates.clone();
+            updates.append(&mut na.updates);
+            WitnessValue::Array(WitnessArray {
+                tpe: oa.tpe,
+                default: oa.default.clone(),
+                updates,
+            })
+        }
+        (o, n) => panic!("Unexpected combination: {o:?} {n:?}"),
+    }
 }
 
 /// Expands the vector `v` if necessary to ensure that `index` is a valid entry.
