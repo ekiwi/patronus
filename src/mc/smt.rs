@@ -469,19 +469,55 @@ where
                 smt_ctx.false_()
             }
         }
-        Expr::BVLiteral { value, width } => smt_ctx.binary(*width as usize, *value),
+        Expr::BVLiteral { value, width } => {
+            if *width == 1 {
+                if *value == 1 {
+                    smt_ctx.true_()
+                } else {
+                    smt_ctx.false_()
+                }
+            } else {
+                smt_ctx.binary(*width as usize, *value)
+            }
+        }
         Expr::BVZeroExt { e, by, .. } => {
             let e_expr = convert_expr(smt_ctx, ctx, *e, rename_sym);
-            smt_ctx.zext(e_expr, *by as usize)
+            match e.get_type(ctx) {
+                Type::BV(width) => {
+                    if width == 1 {
+                        let res_size = (by + 1) as usize;
+                        // in the one bit case, the underlying expression is represented as a Bool in SMT
+                        smt_ctx.ite(
+                            e_expr,
+                            smt_ctx.binary(res_size, 1),
+                            smt_ctx.binary(res_size, 0),
+                        )
+                    } else {
+                        smt_ctx.zext(e_expr, *by as usize)
+                    }
+                }
+                Type::Array(_) => {
+                    panic!("Mall-formed expression: zext should never be applied to an array!")
+                }
+            }
         }
         Expr::BVSignExt { .. } => todo!(),
         Expr::BVSlice { e, hi, lo } => {
             let e_expr = convert_expr(smt_ctx, ctx, *e, rename_sym);
-            smt_ctx.extract(*hi as i32, *lo as i32, e_expr)
+            // skip no-op bit extracts (this helps us avoid slices on boolean values)
+            if *lo == 0 && e.get_type(ctx).get_bit_vector_width().unwrap() - 1 == *hi {
+                e_expr
+            } else {
+                smt_ctx.extract(*hi as i32, *lo as i32, e_expr)
+            }
         }
         Expr::BVNot(e_ref, _) => {
             let e = convert_expr(smt_ctx, ctx, *e_ref, rename_sym);
-            smt_ctx.not(e)
+            if e_ref.get_type(ctx).is_bool() {
+                smt_ctx.not(e)
+            } else {
+                smt_ctx.bvnot(e)
+            }
         }
         Expr::BVNegate(_, _) => todo!(),
         Expr::BVReduceOr(_) => todo!(),
@@ -493,41 +529,64 @@ where
             smt_ctx.eq(a, b)
         }
         Expr::BVImplies(a_ref, b_ref) => {
+            assert!(a_ref.get_type(ctx).is_bool());
             let a = convert_expr(smt_ctx, ctx, *a_ref, rename_sym);
             let b = convert_expr(smt_ctx, ctx, *b_ref, rename_sym);
             smt_ctx.imp(a, b)
         }
         Expr::BVGreater(a_ref, b_ref) => {
-            let a = convert_expr(smt_ctx, ctx, *a_ref, rename_sym);
-            let b = convert_expr(smt_ctx, ctx, *b_ref, rename_sym);
-            smt_ctx.bvugt(a, b)
+            convert_simple_binop(smt_ctx, ctx, "bvugt", a_ref, b_ref, rename_sym)
         }
         Expr::BVGreaterSigned(_, _) => todo!(),
         Expr::BVGreaterEqual(a_ref, b_ref) => {
-            let a = convert_expr(smt_ctx, ctx, *a_ref, rename_sym);
-            let b = convert_expr(smt_ctx, ctx, *b_ref, rename_sym);
-            smt_ctx.bvuge(a, b)
+            convert_simple_binop(smt_ctx, ctx, "bvuge", a_ref, b_ref, rename_sym)
         }
         Expr::BVGreaterEqualSigned(_, _) => todo!(),
         Expr::BVConcat(_, _, _) => todo!(),
-        Expr::BVAnd(_, _, _) => todo!(),
-        Expr::BVOr(_, _, _) => todo!(),
-        Expr::BVXor(_, _, _) => todo!(),
+        Expr::BVAnd(a_ref, b_ref, _) => {
+            let a = convert_expr(smt_ctx, ctx, *a_ref, rename_sym);
+            let b = convert_expr(smt_ctx, ctx, *b_ref, rename_sym);
+            if let Some(1) = a_ref.get_type(ctx).get_bit_vector_width() {
+                smt_ctx.and(a, b)
+            } else {
+                smt_ctx.bvand(a, b)
+            }
+        }
+        Expr::BVOr(a_ref, b_ref, _) => {
+            let a = convert_expr(smt_ctx, ctx, *a_ref, rename_sym);
+            let b = convert_expr(smt_ctx, ctx, *b_ref, rename_sym);
+            if let Some(1) = a_ref.get_type(ctx).get_bit_vector_width() {
+                smt_ctx.or(a, b)
+            } else {
+                smt_ctx.bvor(a, b)
+            }
+        }
+        Expr::BVXor(a_ref, b_ref, _) => {
+            let a = convert_expr(smt_ctx, ctx, *a_ref, rename_sym);
+            let b = convert_expr(smt_ctx, ctx, *b_ref, rename_sym);
+            if let Some(1) = a_ref.get_type(ctx).get_bit_vector_width() {
+                smt_ctx.xor(a, b)
+            } else {
+                smt_ctx.bvxor(a, b)
+            }
+        }
         Expr::BVShiftLeft(_, _, _) => todo!(),
         Expr::BVArithmeticShiftRight(_, _, _) => todo!(),
         Expr::BVShiftRight(_, _, _) => todo!(),
         Expr::BVAdd(a_ref, b_ref, _) => {
-            let a = convert_expr(smt_ctx, ctx, *a_ref, rename_sym);
-            let b = convert_expr(smt_ctx, ctx, *b_ref, rename_sym);
-            smt_ctx.bvadd(a, b)
+            convert_simple_binop(smt_ctx, ctx, "bvadd", a_ref, b_ref, rename_sym)
         }
-        Expr::BVMul(_, _, _) => todo!(),
+        Expr::BVMul(a_ref, b_ref, _) => {
+            convert_simple_binop(smt_ctx, ctx, "bvmul", a_ref, b_ref, rename_sym)
+        }
         Expr::BVSignedDiv(_, _, _) => todo!(),
         Expr::BVUnsignedDiv(_, _, _) => todo!(),
         Expr::BVSignedMod(_, _, _) => todo!(),
         Expr::BVSignedRem(_, _, _) => todo!(),
         Expr::BVUnsignedRem(_, _, _) => todo!(),
-        Expr::BVSub(_, _, _) => todo!(),
+        Expr::BVSub(a_ref, b_ref, _) => {
+            convert_simple_binop(smt_ctx, ctx, "bvsub", a_ref, b_ref, rename_sym)
+        }
         Expr::BVArrayRead { array, index, .. } => {
             let a = convert_expr(smt_ctx, ctx, *array, rename_sym);
             let i = convert_expr(smt_ctx, ctx, *index, rename_sym);
@@ -552,6 +611,52 @@ where
             smt_ctx.store(a, i, d)
         }
         Expr::ArrayIte { .. } => todo!(),
+    }
+}
+
+fn convert_simple_binop<'a, 'f, F>(
+    smt_ctx: &smt::Context,
+    ctx: &'a ir::Context,
+    op: &str,
+    a_ref: &ExprRef,
+    b_ref: &ExprRef,
+    rename_sym: &F,
+) -> smt::SExpr
+where
+    F: Fn(&'f str) -> Cow<'f, str>,
+    'a: 'f,
+{
+    let a = ensure_bit_vec(
+        smt_ctx,
+        ctx,
+        *a_ref,
+        convert_expr(smt_ctx, ctx, *a_ref, rename_sym),
+    );
+    let b = ensure_bit_vec(
+        smt_ctx,
+        ctx,
+        *b_ref,
+        convert_expr(smt_ctx, ctx, *b_ref, rename_sym),
+    );
+    smt_ctx.list(vec![smt_ctx.atom(op), a, b])
+}
+
+// adds a cast if the underlying value is 1-bit and thus represented as a Bool in SMT
+fn ensure_bit_vec(
+    smt_ctx: &smt::Context,
+    ctx: &ir::Context,
+    e_ref: ExprRef,
+    e: smt::SExpr,
+) -> smt::SExpr {
+    match e_ref.get_type(ctx) {
+        Type::BV(width) => {
+            if width == 1 {
+                smt_ctx.ite(e, smt_ctx.binary(1, 1), smt_ctx.binary(1, 0))
+            } else {
+                e
+            }
+        }
+        Type::Array(_) => panic!("This function should never be called on an array!"),
     }
 }
 

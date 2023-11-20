@@ -447,6 +447,13 @@ impl Type {
         }
     }
 
+    pub fn is_bool(&self) -> bool {
+        match &self {
+            Type::BV(width) => *width == 1,
+            Type::Array(_) => false,
+        }
+    }
+
     pub fn get_bit_vector_width(&self) -> Option<WidthInt> {
         match &self {
             Type::BV(width) => Some(*width),
