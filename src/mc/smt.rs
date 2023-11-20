@@ -3,7 +3,9 @@
 // author: Kevin Laeufer <laeufer@berkeley.edu>
 
 use crate::ir;
-use crate::ir::{ArrayType, Expr, ExprRef, GetNode, SignalInfo, Type, TypeCheck, WidthInt};
+use crate::ir::{
+    count_expr_uses, ArrayType, Expr, ExprRef, GetNode, SignalInfo, Type, TypeCheck, WidthInt,
+};
 use crate::mc::{parse_big_uint_from_bit_string, Witness, WitnessArray, WitnessValue};
 use easy_smt as smt;
 use num_bigint::BigUint;
@@ -72,6 +74,10 @@ impl SmtModelChecker {
         };
         smt_ctx.set_logic(logic)?;
 
+        // count expression uses
+        let use_counts = count_expr_uses(ctx, sys);
+        // TODO: use this data in order to optimize the way we print smt expressions!
+
         // TODO: maybe add support for the more compact SMT encoding
         let mut enc = UnrollSmtEncoding::new(ctx, sys);
         enc.define_header(&mut smt_ctx)?;
@@ -104,7 +110,15 @@ impl SmtModelChecker {
                     let res = smt_ctx.check_assuming([expr])?;
 
                     if res == smt::Response::Sat {
-                        let wit = self.get_witness(sys, ctx, &mut smt_ctx, &enc, k, &bad_states)?;
+                        let wit = self.get_witness(
+                            sys,
+                            ctx,
+                            &use_counts,
+                            &mut smt_ctx,
+                            &enc,
+                            k,
+                            &bad_states,
+                        )?;
                         return Ok(ModelCheckResult::Fail(wit));
                     }
                 }
@@ -117,7 +131,15 @@ impl SmtModelChecker {
                 let res = smt_ctx.check_assuming([any_bad])?;
 
                 if res == smt::Response::Sat {
-                    let wit = self.get_witness(sys, ctx, &mut smt_ctx, &enc, k, &bad_states)?;
+                    let wit = self.get_witness(
+                        sys,
+                        ctx,
+                        &use_counts,
+                        &mut smt_ctx,
+                        &enc,
+                        k,
+                        &bad_states,
+                    )?;
                     return Ok(ModelCheckResult::Fail(wit));
                 }
             }
@@ -134,6 +156,7 @@ impl SmtModelChecker {
         &self,
         sys: &ir::TransitionSystem,
         ctx: &ir::Context,
+        _use_counts: &[u32], // TODO: analyze array expressions in order to record which indices are accessed
         smt_ctx: &mut smt::Context,
         enc: &UnrollSmtEncoding,
         k_max: u64,
@@ -180,6 +203,17 @@ impl SmtModelChecker {
                 input_values.push(Some(value));
             }
             wit.inputs.push(input_values);
+        }
+
+        // TODO: get rid of default values in a more intelligent fashion,
+        //       e.g., by recording which indices are accessed
+        for init in wit.init.iter_mut() {
+            match init.as_mut() {
+                Some(WitnessValue::Array(a)) => {
+                    a.default = None;
+                }
+                _ => {}
+            }
         }
 
         Ok(wit)
