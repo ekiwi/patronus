@@ -60,7 +60,13 @@ jobs:
       - name: bmc Quiz2 (with counter reset value)
         run: |
           cargo run --release --example bmc -- inputs/Quiz2.unsat.btor
-
+      - name: bmc Quiz4
+        run: |
+          cargo run --release --example bmc -- inputs/Quiz4.sat.btor > Quiz4.sat.wit
+          btorsim inputs/Quiz2.sat.btor Quiz4.sat.wit
+      - name: bmc Quiz4 (with counter reset value)
+        run: |
+          cargo run --release --example bmc -- inputs/Quiz4.unsat.btor
 
   semver:
     name: Check Semantic Versioning
