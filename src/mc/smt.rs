@@ -3,8 +3,8 @@
 // author: Kevin Laeufer <laeufer@berkeley.edu>
 
 use crate::ir;
-use crate::ir::{Expr, ExprRef, GetNode, SignalInfo, Type, TypeCheck, WidthInt};
-use crate::mc::{parse_big_uint_from_bit_string, Witness, WitnessValue};
+use crate::ir::{ArrayType, Expr, ExprRef, GetNode, SignalInfo, Type, TypeCheck, WidthInt};
+use crate::mc::{parse_big_uint_from_bit_string, Witness, WitnessArray, WitnessValue};
 use easy_smt as smt;
 use num_bigint::BigUint;
 use num_traits::{One, Zero};
@@ -188,18 +188,105 @@ impl SmtModelChecker {
 
 fn get_smt_value(smt_ctx: &mut smt::Context, expr: smt::SExpr) -> Result<WitnessValue> {
     let smt_value = smt_ctx.get_value(vec![expr])?[0].1;
-    let atom = smt_ctx.get(smt_value);
-    match atom {
-        smt::SExprData::Atom(a) => {
-            let (value, width) = smt_bit_vec_str_to_value(a);
-            Ok(WitnessValue::Scalar(value, width))
+    let res = match parse_smt_bit_vec(smt_ctx, smt_value) {
+        Some((value, width)) => WitnessValue::Scalar(value, width),
+        None => WitnessValue::Array(parse_smt_array(smt_ctx, smt_value).unwrap()),
+    };
+    Ok(res)
+}
+
+fn parse_smt_bit_vec(smt_ctx: &smt::Context, expr: smt::SExpr) -> Option<(BigUint, WidthInt)> {
+    let data = smt_ctx.get(expr);
+    match data {
+        smt::SExprData::Atom(value) => Some(smt_bit_vec_str_to_value(value)),
+        _ => None,
+    }
+}
+
+fn parse_smt_array(smt_ctx: &smt::Context, expr: smt::SExpr) -> Option<WitnessArray> {
+    let data = smt_ctx.get(expr);
+    match data {
+        smt::SExprData::List([p0, p1]) => {
+            let as_const = parse_smt_as_const(smt_ctx, *p0, *p1);
+            as_const
         }
-        smt::SExprData::List(_elements) => {
-            todo!(
-                "Deal with list value: {}",
-                smt_ctx.display(smt_value).to_string()
-            )
+        smt::SExprData::List([id, array, index, value]) => {
+            let as_const = parse_smt_store(smt_ctx, *id, *array, *index, *value);
+            as_const
         }
+        _ => todo!("Unexpected array expression: {}", smt_ctx.display(expr)),
+    }
+}
+
+fn parse_smt_as_const(
+    smt_ctx: &smt::Context,
+    p0: smt::SExpr,
+    p1: smt::SExpr,
+) -> Option<WitnessArray> {
+    match smt_ctx.get(p0) {
+        smt::SExprData::List([as_str, const_str, array_tpe]) => {
+            let _is_as = parse_smt_id(smt_ctx, *as_str, "as")?;
+            let _is_const = parse_smt_id(smt_ctx, *const_str, "const")?;
+            let tpe = parse_smt_array_tpe(smt_ctx, *array_tpe)?;
+            let (default_value, _width) = parse_smt_bit_vec(smt_ctx, p1)?;
+            Some(WitnessArray {
+                tpe,
+                default: Some(default_value),
+                updates: Vec::new(),
+            })
+        }
+        _ => None,
+    }
+}
+
+fn parse_smt_store(
+    smt_ctx: &smt::Context,
+    id: smt::SExpr,
+    array: smt::SExpr,
+    index: smt::SExpr,
+    value: smt::SExpr,
+) -> Option<WitnessArray> {
+    let _is_store = parse_smt_id(smt_ctx, id, "store")?;
+    let mut inner = parse_smt_array(smt_ctx, array)?;
+    let (index_val, _) = parse_smt_bit_vec(smt_ctx, index)?;
+    let (data_val, _) = parse_smt_bit_vec(smt_ctx, value)?;
+    inner.updates.push((index_val, data_val));
+    Some(inner)
+}
+
+fn parse_smt_array_tpe(smt_ctx: &smt::Context, expr: smt::SExpr) -> Option<ArrayType> {
+    match smt_ctx.get(expr) {
+        smt::SExprData::List([array, index, data]) => {
+            let _is_array = parse_smt_id(smt_ctx, *array, "Array")?;
+            let index_width = parse_smt_bit_vec_tpe(smt_ctx, *index)?;
+            let data_width = parse_smt_bit_vec_tpe(smt_ctx, *data)?;
+            Some(ArrayType {
+                index_width,
+                data_width,
+            })
+        }
+        _ => None,
+    }
+}
+
+fn parse_smt_bit_vec_tpe(smt_ctx: &smt::Context, expr: smt::SExpr) -> Option<WidthInt> {
+    match smt_ctx.get(expr) {
+        smt::SExprData::List([under_score, bit_vec, width]) => {
+            let _is_us = parse_smt_id(smt_ctx, *under_score, "_")?;
+            let _is_bit_vec = parse_smt_id(smt_ctx, *bit_vec, "BitVec")?;
+            match smt_ctx.get(*width) {
+                smt::SExprData::Atom(val) => Some(WidthInt::from_str_radix(val, 10).unwrap()),
+                _ => None,
+            }
+        }
+        _ => None,
+    }
+}
+
+fn parse_smt_id(smt_ctx: &smt::Context, expr: smt::SExpr, expected: &str) -> Option<()> {
+    match smt_ctx.get(expr) {
+        smt::SExprData::Atom(val) if val == expected => Some(()),
+        _ => None,
     }
 }
 
@@ -351,15 +438,7 @@ where
         Expr::BVLiteral { value, width } => smt_ctx.binary(*width as usize, *value),
         Expr::BVZeroExt { e, by, .. } => {
             let e_expr = convert_expr(smt_ctx, ctx, *e, rename_sym);
-            // TODO: add support to easy_smt
-            smt_ctx.list(vec![
-                smt_ctx.list(vec![
-                    smt_ctx.atoms().und,
-                    smt_ctx.atom("zero_extend"),
-                    smt_ctx.numeral(*by as usize),
-                ]),
-                e_expr,
-            ])
+            smt_ctx.zext(e_expr, *by as usize)
         }
         Expr::BVSignExt { .. } => todo!(),
         Expr::BVSlice { e, hi, lo } => {
@@ -565,6 +644,34 @@ fn unescape_smt_identifier(id: &str) -> &str {
     }
 }
 
+trait PatronSmtHelpers {
+    /// Zero extend a bit-vector.
+    fn zext(&self, e: smt::SExpr, by: usize) -> smt::SExpr;
+
+    /// Declare a constant array (non-standard but supported by many solvers)
+    fn const_array(&self, tpe: smt::SExpr, default: smt::SExpr) -> smt::SExpr;
+}
+
+impl PatronSmtHelpers for smt::Context {
+    fn zext(&self, e: smt::SExpr, by: usize) -> smt::SExpr {
+        self.list(vec![
+            self.list(vec![
+                self.atoms().und,
+                self.atom("zero_extend"),
+                self.numeral(by),
+            ]),
+            e,
+        ])
+    }
+
+    fn const_array(&self, tpe: smt::SExpr, default: smt::SExpr) -> smt::SExpr {
+        self.list(vec![
+            self.list(vec![self.atom("as"), self.atom("const"), tpe]),
+            default,
+        ])
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -589,7 +696,53 @@ mod tests {
     }
 
     #[test]
-    fn test_reading_smt_scalar() {
+    fn test_parse_smt_array_const_and_store() {
         let ctx = ContextBuilder::new().build().unwrap();
+        let data_width = 32usize;
+        let index_width = 5usize;
+        let default_value = 0b110011u64;
+        let tpe = ctx.array_sort(
+            ctx.bit_vec_sort(ctx.numeral(index_width)),
+            ctx.bit_vec_sort(ctx.numeral(data_width)),
+        );
+        let default = ctx.binary(data_width, default_value);
+
+        // check the base expression
+        let base = ctx.const_array(tpe, default);
+        let base_val = parse_smt_array(&ctx, base).unwrap();
+        assert_eq!(base_val.default, Some(BigUint::from(default_value)));
+
+        // store
+        let store_index: usize = 14;
+        let store_data: usize = 0;
+        let store = ctx.store(
+            base,
+            ctx.binary(index_width, store_index),
+            ctx.binary(data_width, store_data),
+        );
+        let store_val = parse_smt_array(&ctx, store).unwrap();
+        assert_eq!(store_val.default, Some(BigUint::from(default_value)));
+        assert_eq!(
+            store_val.updates,
+            vec![(BigUint::from(store_index), BigUint::from(store_data))]
+        );
+
+        // two stores
+        let store2_index: usize = 14;
+        let store2_data: usize = 0;
+        let store2 = ctx.store(
+            store,
+            ctx.binary(index_width, store2_index),
+            ctx.binary(data_width, store2_data),
+        );
+        let store2_val = parse_smt_array(&ctx, store2).unwrap();
+        assert_eq!(store2_val.default, Some(BigUint::from(default_value)));
+        assert_eq!(
+            store2_val.updates,
+            vec![
+                (BigUint::from(store_index), BigUint::from(store_data)),
+                (BigUint::from(store2_index), BigUint::from(store2_data))
+            ]
+        );
     }
 }
