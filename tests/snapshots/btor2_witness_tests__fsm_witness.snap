@@ -1,0 +1,16 @@
+---
+source: tests/btor2_witness_tests.rs
+expression: serialized
+---
+sat
+b0
+#0
+0 00 state#0
+@0
+0 1 reset@0
+1 1 in@0
+@1
+0 0 reset@1
+1 1 in@1
+.
+

@@ -1,0 +1,32 @@
+---
+source: tests/btor2_witness_tests.rs
+expression: serialized
+---
+sat
+b0
+#0
+0 0 state0#0
+2 0 state2#0
+3 0 state3#0
+4 0 state4#0
+6 1 state6#0
+7 0 state7#0
+8 0 state8#0
+9 0 state9#0
+10 0 state10#0
+11 0 state11#0
+12 1 state12#0
+@0
+0 0 clock@0
+1 1 in@0
+2 1 reset@0
+@1
+0 0 clock@1
+1 0 in@1
+2 0 reset@1
+@2
+0 0 clock@2
+1 0 in@2
+2 0 reset@2
+.
+

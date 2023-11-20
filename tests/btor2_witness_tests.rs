@@ -6,22 +6,30 @@ use libpatron::btor2;
 
 #[test]
 fn test_no_state_witness() {
-    let _wit = btor2::parse_witness(&mut NO_STATE.as_bytes()).unwrap();
+    let wit = btor2::parse_witness(&mut NO_STATE.as_bytes()).unwrap();
+    let serialized = btor2::witness_to_string(&wit);
+    insta::assert_snapshot!(serialized);
 }
 
 #[test]
 fn test_fsm_witness() {
-    let _wit = btor2::parse_witness(&mut FSM.as_bytes()).unwrap();
+    let wit = btor2::parse_witness(&mut FSM.as_bytes()).unwrap();
+    let serialized = btor2::witness_to_string(&wit);
+    insta::assert_snapshot!(serialized);
 }
 
 #[test]
 fn test_const_array_example_witness() {
-    let _wit = btor2::parse_witness(&mut CONST_ARRAY_EXAMPLE.as_bytes()).unwrap();
+    let wit = btor2::parse_witness(&mut CONST_ARRAY_EXAMPLE.as_bytes()).unwrap();
+    let serialized = btor2::witness_to_string(&wit);
+    insta::assert_snapshot!(serialized);
 }
 
 #[test]
 fn test_multiple_witnesses() {
-    let _wit = btor2::parse_witness(&mut MULTIPLE.as_bytes()).unwrap();
+    let wit = btor2::parse_witness(&mut MULTIPLE.as_bytes()).unwrap();
+    let serialized = btor2::witness_to_string(&wit);
+    insta::assert_snapshot!(serialized);
     let _wits = btor2::parse_witnesses(&mut MULTIPLE.as_bytes(), 30).unwrap();
 }
 

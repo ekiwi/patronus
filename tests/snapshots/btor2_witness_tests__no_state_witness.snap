@@ -1,0 +1,12 @@
+---
+source: tests/btor2_witness_tests.rs
+expression: serialized
+---
+sat
+b0
+@0
+0 0 reset@0
+1 11111011 a@0
+2 00000101 b@0
+.
+

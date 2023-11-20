@@ -27,7 +27,7 @@ impl Witness {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum WitnessValue {
     Scalar(BigUint, WidthInt),
     Array(WitnessArray),
@@ -42,10 +42,10 @@ impl WitnessValue {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct WitnessArray {
     pub tpe: ArrayType,
-    pub default: BigUint,
+    pub default: Option<BigUint>,
     pub updates: Vec<(BigUint, BigUint)>,
 }
 

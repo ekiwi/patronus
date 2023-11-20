@@ -4,8 +4,7 @@
 
 use crate::btor2::parse::tokenize_line;
 use crate::ir;
-use crate::ir::WidthInt;
-use crate::mc::{parse_big_uint_from_bit_string, Witness, WitnessValue};
+use crate::mc::{parse_big_uint_from_bit_string, Witness, WitnessArray, WitnessValue};
 use num_bigint::BigUint;
 use std::borrow::Cow;
 use std::io::{BufRead, Write};
@@ -104,8 +103,14 @@ pub fn parse_witnesses(input: &mut impl BufRead, parse_max: usize) -> Result<Vec
                     start_inputs(line, &wit)
                 } else {
                     let tok = tokenize_line(line);
-                    let (ii, _, data, _index) = parse_assignment(&tok.tokens);
-                    println!("TODO: {ii} = {data:?}");
+                    if at == 0 {
+                        // we ignore anything but the starting state
+                        let (ii, name, value) = parse_assignment(&tok.tokens);
+                        ensure_space(&mut wit.init, ii);
+                        wit.init[ii] = Some(value);
+                        ensure_space(&mut wit.init_names, ii);
+                        wit.init_names[ii] = Some(name.to_string());
+                    }
                     // continue reading in state
                     ParserState::ParsingStatesAt(at)
                 }
@@ -122,8 +127,14 @@ pub fn parse_witnesses(input: &mut impl BufRead, parse_max: usize) -> Result<Vec
                     start_state(line)
                 } else {
                     let tok = tokenize_line(line);
-                    let (ii, _, data, _index) = parse_assignment(&tok.tokens);
-                    println!("TODO: {ii} = {data:?}");
+                    let (ii, name, value) = parse_assignment(&tok.tokens);
+                    ensure_space(&mut inputs, ii);
+                    inputs[ii] = Some(value);
+                    if wit.inputs.is_empty() {
+                        // the first time around, we save the names
+                        ensure_space(&mut wit.input_names, ii);
+                        wit.input_names[ii] = Some(name.to_string());
+                    }
                     // continue reading in inputs
                     ParserState::ParsingInputsAt(at)
                 }
@@ -134,14 +145,14 @@ pub fn parse_witnesses(input: &mut impl BufRead, parse_max: usize) -> Result<Vec
     Ok(out)
 }
 
-fn parse_assignment<'a>(
-    tokens: &'a [&'a str],
-) -> (
-    u64,
-    &'a str,
-    (BigUint, WidthInt),
-    Option<(BigUint, WidthInt)>,
-) {
+/// Expands the vector `v` if necessary to ensure that `index` is a valid entry.
+fn ensure_space<T: Default + Clone>(v: &mut Vec<T>, index: usize) {
+    if index >= v.len() {
+        v.resize(index + 1, T::default());
+    }
+}
+
+fn parse_assignment<'a>(tokens: &'a [&'a str]) -> (usize, &'a str, WitnessValue) {
     let is_array = match tokens.len() {
         3 => false, // its a bit vector
         4 => true,
@@ -151,17 +162,38 @@ fn parse_assignment<'a>(
         ),
     };
     // index of the state or input
-    let index = u64::from_str_radix(tokens[0], 10).unwrap();
-    let name = *tokens.last().unwrap();
-    let (value, array_index) = if is_array {
+    let index = u64::from_str_radix(tokens[0], 10).unwrap() as usize;
+    // often the real name is followed by `@0` or `#0`, etc.
+    // while `#` is generally used for states, it is not 100% consistent, e.g., btormc
+    // might use `@0` instead of `#0` for arrays
+    let name = tokens
+        .last()
+        .unwrap()
+        .split("@")
+        .next()
+        .unwrap()
+        .split("#")
+        .next()
+        .unwrap();
+    if is_array {
         let index_str = tokens[1];
         assert!(index_str.starts_with("[") && index_str.ends_with("]"));
-        let array_index = parse_big_uint_from_bit_string(&index_str[1..index_str.len() - 1]);
-        (parse_big_uint_from_bit_string(tokens[2]), Some(array_index))
+        let (index_value, index_width) =
+            parse_big_uint_from_bit_string(&index_str[1..index_str.len() - 1]);
+        let (data_value, data_width) = parse_big_uint_from_bit_string(tokens[2]);
+        let value = WitnessArray {
+            tpe: ir::ArrayType {
+                index_width,
+                data_width,
+            },
+            default: None,
+            updates: vec![(index_value, data_value)],
+        };
+        (index, name, WitnessValue::Array(value))
     } else {
-        (parse_big_uint_from_bit_string(tokens[1]), None)
-    };
-    (index, name, value, array_index)
+        let (value, width) = parse_big_uint_from_bit_string(tokens[1]);
+        (index, name, WitnessValue::Scalar(value, width))
+    }
 }
 
 pub fn witness_to_string(witness: &Witness) -> String {
@@ -199,7 +231,7 @@ pub fn print_witness(out: &mut impl Write, witness: &Witness) -> std::io::Result
                     .as_ref()
                     .map(Cow::from)
                     .unwrap_or(Cow::from(format!("state_{}", id)));
-                print_witness_value(out, value, &name, id, 0)?;
+                print_witness_value(out, value, &name, id, "#0")?;
             }
         }
     }
@@ -208,6 +240,7 @@ pub fn print_witness(out: &mut impl Write, witness: &Witness) -> std::io::Result
     for (k, values) in witness.inputs.iter().enumerate() {
         assert_eq!(values.len(), witness.input_names.len());
         writeln!(out, "@{k}")?;
+        let suffix = format!("@{k}");
         for (id, (maybe_value, maybe_name)) in
             values.iter().zip(witness.input_names.iter()).enumerate()
         {
@@ -216,7 +249,7 @@ pub fn print_witness(out: &mut impl Write, witness: &Witness) -> std::io::Result
                     .as_ref()
                     .map(Cow::from)
                     .unwrap_or(Cow::from(format!("input_{}", id)));
-                print_witness_value(out, value, &name, id, k)?;
+                print_witness_value(out, value, &name, id, &suffix)?;
             }
         }
     }
@@ -247,19 +280,32 @@ fn print_witness_value(
     value: &WitnessValue,
     name: &str,
     id: usize,
-    k: usize,
+    suffix: &str,
 ) -> std::io::Result<()> {
     match value {
         WitnessValue::Scalar(value, width) => {
             writeln!(
                 out,
-                "{id} {} {}@{k}",
+                "{id} {} {}{suffix}",
                 to_bit_string(value, *width).unwrap(),
                 name
             )
         }
-        WitnessValue::Array(_) => {
-            todo!("serialize array")
+        WitnessValue::Array(a) => {
+            match a.default {
+                None => {} // nothing to do
+                Some(_) => todo!("serialize array default value in witness"),
+            }
+            for (index, value) in a.updates.iter() {
+                writeln!(
+                    out,
+                    "{id} [{}] {} {}{suffix}",
+                    to_bit_string(index, a.tpe.index_width).unwrap(),
+                    to_bit_string(value, a.tpe.data_width).unwrap(),
+                    name
+                )?;
+            }
+            Ok(())
         }
     }
 }

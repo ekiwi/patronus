@@ -1,0 +1,14 @@
+---
+source: tests/btor2_witness_tests.rs
+expression: serialized
+---
+sat
+b0
+#0
+0 11111 addr#0
+1 11111111111111111111111111111111 data#0
+2 [11111] 11111111111111111111111111111110 mem#0
+4 11111 a#0
+@0
+.
+
