@@ -245,6 +245,12 @@ pub enum ScalarValue {
     Big(BigUint),
 }
 
+impl PartialEq for ScalarValue {
+    fn eq(&self, other: &Self) -> bool {
+        todo!()
+    }
+}
+
 #[derive(Debug)]
 pub enum Value {
     Scalar(ScalarValue),
@@ -256,6 +262,17 @@ impl Value {
         match self {
             Value::Scalar(v) => v.is_zero(),
             _ => false,
+        }
+    }
+}
+
+impl PartialEq for Value {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Value::Scalar(us), Value::Scalar(other)) => us == other,
+            (Value::Array(us), Value::Array(other)) => us == other,
+            // arrays and scalars always compare as unequal
+            (_, _) => false,
         }
     }
 }
@@ -490,6 +507,13 @@ impl Clone for ArrayValue {
         }
     }
 }
+
+impl PartialEq for ArrayValue {
+    fn eq(&self, other: &Self) -> bool {
+        todo!()
+    }
+}
+
 
 impl ArrayValue {
     pub fn new_sparse(index_tpe: Type, default: ScalarValue) -> Self {
