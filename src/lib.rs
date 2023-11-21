@@ -7,4 +7,4 @@ extern crate lazy_static;
 pub mod btor2;
 pub mod ir;
 pub mod mc;
-mod sim;
+pub mod sim;

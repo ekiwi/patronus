@@ -2,8 +2,8 @@
 // released under BSD 3-Clause License
 // author: Kevin Laeufer <laeufer@berkeley.edu>
 
+use super::values::{ScalarValue, ValueStore};
 use crate::ir::*;
-use crate::sim::{ScalarValue, ValueStore};
 
 /// Specifies how to initialize states that do not have
 #[derive(Debug, PartialEq, Copy, Clone)]

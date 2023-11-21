@@ -6,5 +6,3 @@ mod values;
 // released under BSD 3-Clause License
 // author: Kevin Laeufer <laeufer@berkeley.edu>
 pub mod interpreter;
-
-pub use values::{ArrayValue, ScalarValue, ScalarValueRef, Value, ValueRef, ValueStore};

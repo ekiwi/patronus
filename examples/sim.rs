@@ -33,11 +33,12 @@ fn main() {
     }
 
     let input_name_to_ref: HashMap<String, usize> = HashMap::from_iter(
-        sys.get_signals(|s| s.kind == ir::SignalKind::Input)
+        sys.get_signals(|s| s.kind == SignalKind::Input)
             .iter()
             .enumerate()
             .map(|(idx, (e, _))| (e.get_symbol_name(&ctx).unwrap().to_string(), idx)),
     );
-
     println!("{:?}", input_name_to_ref);
+
+    let sim = libpatron::sim::interpreter::Interpreter::new(&ctx, &sys);
 }
