@@ -136,18 +136,6 @@ impl TypeCheck for Expr {
             }
             Expr::BVNot(e, width) => Ok(e.get_type(ctx).expect_bv_of(width, "not")?),
             Expr::BVNegate(e, width) => Ok(e.get_type(ctx).expect_bv_of(width, "not")?),
-            Expr::BVReduceOr(e) => {
-                e.get_type(ctx).expect_bv("or reduction")?;
-                Ok(Type::BV(1))
-            }
-            Expr::BVReduceAnd(e) => {
-                e.get_type(ctx).expect_bv("and reduction")?;
-                Ok(Type::BV(1))
-            }
-            Expr::BVReduceXor(e) => {
-                e.get_type(ctx).expect_bv("xor reduction")?;
-                Ok(Type::BV(1))
-            }
             Expr::BVEqual(a, b) => {
                 expect_same_width_bvs(ctx, "bit-vector equality", a, b)?;
                 Ok(Type::BV(1))
@@ -291,9 +279,6 @@ impl TypeCheck for Expr {
             Expr::BVSlice { e: _, hi, lo } => Type::BV(hi - lo + 1),
             Expr::BVNot(_, width) => Type::BV(width),
             Expr::BVNegate(_, width) => Type::BV(width),
-            Expr::BVReduceOr(_) => Type::BV(1),
-            Expr::BVReduceAnd(_) => Type::BV(1),
-            Expr::BVReduceXor(_) => Type::BV(1),
             Expr::BVEqual(_, _) => Type::BV(1),
             Expr::BVImplies(_, _) => Type::BV(1),
             Expr::BVGreater(_, _) => Type::BV(1),

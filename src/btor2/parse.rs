@@ -175,13 +175,9 @@ impl<'a> Parser<'a> {
         expected_type: Type,
     ) -> ParseLineResult<ExprRef> {
         // first we check for internal consitency
-        match expr.type_check(self.ctx) {
-            Err(e) => {
-                let _ =
-                    self.add_error(line, line, format!("Failed to type check: {}", e.get_msg()));
-                return Err(());
-            }
-            Ok(_) => {}
+        if let Err(e) = expr.type_check(self.ctx) {
+            self.add_error(line, line, format!("Failed to type check: {}", e.get_msg()));
+            return Err(());
         }
         // then we make sure that the type of the expression is actually the type that was
         // declared in the btor2 line
@@ -251,7 +247,28 @@ impl<'a> Parser<'a> {
                 let by = self.parse_width_int(line, tokens[4], "extension amount")?;
                 self.ctx.sign_extend(e, by)
             }
-            other => panic!("unexpected binary op: {other}"),
+            "redor" => {
+                let width = e.get_type(self.ctx).get_bit_vector_width().unwrap();
+                if width == 1 {
+                    e
+                } else {
+                    // redor is true iff at least one bit is a one
+                    let zero = self.ctx.zero(width);
+                    let eq_zero = self.ctx.bv_equal(e, zero);
+                    self.ctx.not(eq_zero)
+                }
+            }
+            "redand" => {
+                let width = e.get_type(self.ctx).get_bit_vector_width().unwrap();
+                if width == 1 {
+                    e
+                } else {
+                    // redand is true iff all bits are one
+                    let mask = self.ctx.mask(width);
+                    self.ctx.bv_equal(e, mask)
+                }
+            }
+            other => panic!("unexpected unary op: {other}"),
         };
         self.check_expr_type(res, line, tpe)
     }

@@ -520,9 +520,6 @@ where
             }
         }
         Expr::BVNegate(_, _) => todo!(),
-        Expr::BVReduceOr(_) => todo!(),
-        Expr::BVReduceAnd(_) => todo!(),
-        Expr::BVReduceXor(_) => todo!(),
         Expr::BVEqual(a_ref, b_ref) => {
             let a = convert_expr(smt_ctx, ctx, *a_ref, rename_sym);
             let b = convert_expr(smt_ctx, ctx, *b_ref, rename_sym);

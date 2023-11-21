@@ -83,27 +83,6 @@ where
             }
             write!(writer, ")")
         }
-        Expr::BVReduceOr(e) => {
-            write!(writer, "redor(")?;
-            if (serialize_child)(e, ctx, writer)? {
-                serialize_expr_ref(e, ctx, writer, serialize_child)?;
-            }
-            write!(writer, ")")
-        }
-        Expr::BVReduceAnd(e) => {
-            write!(writer, "redand(")?;
-            if (serialize_child)(e, ctx, writer)? {
-                serialize_expr_ref(e, ctx, writer, serialize_child)?;
-            }
-            write!(writer, ")")
-        }
-        Expr::BVReduceXor(e) => {
-            write!(writer, "redxor(")?;
-            if (serialize_child)(e, ctx, writer)? {
-                serialize_expr_ref(e, ctx, writer, serialize_child)?;
-            }
-            write!(writer, ")")
-        }
         Expr::BVEqual(a, b) => {
             write!(writer, "eq(")?;
             if (serialize_child)(a, ctx, writer)? {

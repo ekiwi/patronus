@@ -113,15 +113,6 @@ impl ForEachChild<ExprRef> for Expr {
             Expr::BVNegate(e, _) => {
                 (visitor)(e);
             }
-            Expr::BVReduceOr(e) => {
-                (visitor)(e);
-            }
-            Expr::BVReduceAnd(e) => {
-                (visitor)(e);
-            }
-            Expr::BVReduceXor(e) => {
-                (visitor)(e);
-            }
             Expr::BVEqual(a, b) => {
                 (visitor)(a);
                 (visitor)(b);

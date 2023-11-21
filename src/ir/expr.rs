@@ -46,6 +46,10 @@ pub trait ExprNodeConstruction:
     fn zero(&mut self, width: WidthInt) -> ExprRef {
         self.bv_lit(0, width)
     }
+    fn mask(&mut self, width: WidthInt) -> ExprRef {
+        let value = ((1 as BVLiteralInt) << width) - 1;
+        self.bv_lit(value, width)
+    }
     fn one(&mut self, width: WidthInt) -> ExprRef {
         self.bv_lit(1, width)
     }
@@ -180,7 +184,7 @@ impl Context {
     pub fn add_unique_str(&mut self, value: &str) -> StringRef {
         let mut name: String = value.to_string();
         let mut count: usize = 0;
-        while self.is_interned(value) {
+        while self.is_interned(&name) {
             name = format!("{value}_{count}");
             count += 1;
         }
@@ -290,9 +294,6 @@ pub enum Expr {
     },
     BVNot(ExprRef, WidthInt),
     BVNegate(ExprRef, WidthInt),
-    BVReduceOr(ExprRef),
-    BVReduceAnd(ExprRef),
-    BVReduceXor(ExprRef),
     // binary operations
     BVEqual(ExprRef, ExprRef),
     BVImplies(ExprRef, ExprRef),
