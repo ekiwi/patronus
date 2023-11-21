@@ -5,6 +5,7 @@
 use clap::Parser;
 use libpatron::ir::*;
 use libpatron::*;
+use std::collections::HashMap;
 use std::io::BufRead;
 
 #[derive(Parser, Debug)]
@@ -30,4 +31,13 @@ fn main() {
         println!();
         println!();
     }
+
+    let input_name_to_ref: HashMap<String, usize> = HashMap::from_iter(
+        sys.get_signals(|s| s.kind == ir::SignalKind::Input)
+            .iter()
+            .enumerate()
+            .map(|(idx, (e, _))| (e.get_symbol_name(&ctx).unwrap().to_string(), idx)),
+    );
+
+    println!("{:?}", input_name_to_ref);
 }
