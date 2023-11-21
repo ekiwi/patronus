@@ -118,6 +118,7 @@ impl<'a> Parser<'a> {
 
         // check op
         let mut label = SignalKind::Node;
+        let mut name: Option<StringRef> = None;
         let expr: Option<ExprRef> = if UNARY_OPS_SET.contains(op) {
             Some(self.parse_unary_op(line, tokens)?)
         } else if BINARY_OPS_SET.contains(op) {
@@ -151,6 +152,7 @@ impl<'a> Parser<'a> {
                 }
                 "output" | "bad" | "constraint" | "fair" => {
                     label = SignalKind::from_str(op).unwrap();
+                    name = Some(self.get_label_name(&cont, op));
                     Some(self.get_expr_from_line_id(line, tokens[2])?)
                 }
                 other => {
@@ -163,7 +165,7 @@ impl<'a> Parser<'a> {
             }
         };
         if let Some(e) = expr {
-            self.add_signal(line_id, e, label, None)?;
+            self.add_signal(line_id, e, label, name)?;
         }
         Ok(())
     }

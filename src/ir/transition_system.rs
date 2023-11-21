@@ -2,8 +2,8 @@
 // released under BSD 3-Clause License
 // author: Kevin Laeufer <laeufer@berkeley.edu>
 
-use super::{Expr, ExprRef, GetNode};
-use crate::ir::StringRef;
+use super::{Context, Expr, ExprRef, GetNode, StringRef};
+use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 
 #[derive(Debug, PartialEq, Eq, Clone, Hash)]
@@ -152,6 +152,21 @@ impl TransitionSystem {
 
     pub fn bad_states(&self) -> Vec<(ExprRef, SignalInfo)> {
         self.get_signals(|info| info.kind == SignalKind::Bad)
+    }
+
+    /// Uses signal names to generate a lookup map from name to the expression that represents it.
+    pub fn generate_name_to_ref(&self, ctx: &Context) -> HashMap<String, ExprRef> {
+        let mut out = HashMap::new();
+        for (idx, maybe_signal) in self.signals.iter().enumerate() {
+            if let Some(signal) = maybe_signal {
+                if let Some(name) = signal.name {
+                    let name_str = ctx.get(name).to_string();
+                    out.insert(name_str, ExprRef::from_index(idx));
+                }
+            }
+        }
+
+        out
     }
 }
 

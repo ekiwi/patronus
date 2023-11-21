@@ -465,7 +465,11 @@ fn serialize_transition_system<W: Write>(
         let expr = ctx.get(ii);
 
         // skip any expressions that not used multiple times, unless it us a usage root signal
-        if inline_expr_for_transition_system(expr, use_count) && !is_usage_root_signal(&signal) {
+        let is_input = signal.kind == SignalKind::Input;
+        if !is_input
+            && inline_expr_for_transition_system(expr, use_count)
+            && !is_usage_root_signal(&signal)
+        {
             continue;
         }
 
