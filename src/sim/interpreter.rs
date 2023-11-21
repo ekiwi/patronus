@@ -59,7 +59,7 @@ impl<'a> Interpreter<'a> {
 
 impl<'a> Simulator for Interpreter<'a> {
     fn init(&mut self, kind: InitKind) {
-        todo!()
+        println!("TODO: init")
     }
 
     fn step(&mut self) {

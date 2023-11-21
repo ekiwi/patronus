@@ -7,6 +7,8 @@ use libpatron::ir::*;
 use libpatron::*;
 use std::collections::HashMap;
 use std::io::BufRead;
+use libpatron::mc::Simulator;
+use libpatron::sim::interpreter::{InitKind, Interpreter};
 
 #[derive(Parser, Debug)]
 #[command(name = "sim")]
@@ -31,6 +33,7 @@ fn main() {
         println!();
         println!();
     }
+    let mut tb = std::io::BufReader::new(std::fs::File::open(args.testbench).expect("Failed to load testbench file"));
 
     let input_name_to_ref: HashMap<String, usize> = HashMap::from_iter(
         sys.get_signals(|s| s.kind == SignalKind::Input)
@@ -40,5 +43,30 @@ fn main() {
     );
     println!("{:?}", input_name_to_ref);
 
-    let sim = libpatron::sim::interpreter::Interpreter::new(&ctx, &sys);
+    let mut sim = Interpreter::new(&ctx, &sys);
+    sim.init(InitKind::Zero);
+    let input_ids = read_header(&mut tb, &input_name_to_ref).expect("Failed to read testbench header");
+    println!("Input ids: {input_ids:?}")
+}
+
+fn read_header(input: &mut impl BufRead, input_name_to_ref: &HashMap<String, usize>) -> std::io::Result<Vec<usize>> {
+    let mut line = String::new();
+    input.read_line(&mut line)?;
+    let mut out = Vec::new();
+    for cell in line.split(",") {
+        let name = cell.trim();
+        if let Some(input_id) = input_name_to_ref.get(name) {
+            out.push(*input_id);
+        }
+    }
+    Ok(out)
+}
+
+fn get_ref_by_name(sys: &TransitionSystem, ctx: &Context) -> HashMap<String, usize> {
+    HashMap::from_iter(
+        sys.get_signals(|s| s.kind == SignalKind::Input)
+            .iter()
+            .enumerate()
+            .map(|(idx, (e, _))| (e.get_symbol_name(ctx).unwrap().to_string(), idx)),
+    )
 }
