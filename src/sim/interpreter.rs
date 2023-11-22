@@ -243,8 +243,14 @@ fn update_signal(inst: &Instruction, data: &mut [Word], instructions: &[Option<I
         Expr::BVSignExt { .. } => {
             todo!("sext")
         }
-        Expr::BVSlice { .. } => {
-            todo!("slice")
+        Expr::BVSlice { e, hi, lo } => {
+            let e_range = instructions[e.index()].as_ref().unwrap().range();
+            let width = hi - lo + 1;
+            if width <= 64 {
+                data[inst.range()][0] = exec::slice_to_word(&data[e_range], hi, lo);
+            } else {
+                todo!("deal with larger slices")
+            }
         }
         Expr::BVConcat(_, _, _) => {
             todo!("concat")

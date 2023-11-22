@@ -4,12 +4,10 @@
 
 // contains implementations of our smt operations
 
+use crate::ir::WidthInt;
 use std::ops::Range;
 
 pub(crate) type Word = u64;
-
-#[inline]
-pub(crate) fn add(dst: &mut [Word], a: &[Word], b: &[Word]) {}
 
 #[inline]
 pub(crate) fn clear(dst: &mut [Word]) {
@@ -22,6 +20,33 @@ pub(crate) fn clear(dst: &mut [Word]) {
 pub(crate) fn assign(dst: &mut [Word], source: &[Word]) {
     for (d, s) in dst.iter_mut().zip(source.iter()) {
         *d = *s;
+    }
+}
+
+#[inline]
+pub(crate) fn mask(bits: WidthInt) -> Word {
+    if bits == Word::BITS {
+        Word::MAX
+    } else {
+        assert!(bits < Word::BITS);
+        (1 as Word) << bits
+    }
+}
+
+#[inline]
+pub(crate) fn slice_to_word(source: &[Word], hi: WidthInt, lo: WidthInt) -> Word {
+    let lo_word = lo / Word::BITS;
+    let lo_offset = lo - (lo_word * Word::BITS);
+    let hi_word = hi / Word::BITS;
+    let hi_offset = hi - (hi_word * Word::BITS);
+
+    let lsb = source[lo_word as usize] >> lo_offset;
+    if hi_word == lo_word {
+        lsb & mask(hi - lo + 1)
+    } else {
+        let lo_width = Word::BITS - lo_offset;
+        let msb = source[hi_word as usize] & mask(hi_offset + 1);
+        lsb | (msb << lo_width)
     }
 }
 
