@@ -26,6 +26,13 @@ pub(crate) fn assign(dst: &mut [Word], source: &[Word]) {
 }
 
 #[inline]
+pub(crate) fn not(dst: &mut [Word], source: &[Word]) {
+    for (d, s) in dst.iter_mut().zip(source.iter()) {
+        *d = !(*s);
+    }
+}
+
+#[inline]
 pub(crate) fn cmp_equal(a: &[Word], b: &[Word]) -> bool {
     a.iter().zip(b.iter()).all(|(a, b)| a == b)
 }

@@ -47,9 +47,11 @@ fn main() {
     let mut sim = Interpreter::new(&ctx, &sys);
     sim.init(InitKind::Zero);
 
+    let mut step_id = 0;
     for line_res in tb.lines() {
         if let Ok(line) = line_res {
-            do_step(&mut sim, &line, &inputs, &outputs);
+            do_step(step_id, &mut sim, &line, &inputs, &outputs);
+            step_id += 1;
         }
     }
 }
@@ -59,7 +61,7 @@ fn read_header(
     input: &mut impl BufRead,
     name_to_ref: &HashMap<String, ExprRef>,
     sys: &TransitionSystem,
-) -> std::io::Result<(Vec<(usize, ExprRef)>, Vec<(usize, ExprRef)>)> {
+) -> std::io::Result<(Vec<(usize, ExprRef, String)>, Vec<(usize, ExprRef, String)>)> {
     let mut line = String::new();
     input.read_line(&mut line)?;
     let mut inputs = Vec::new();
@@ -69,8 +71,8 @@ fn read_header(
         if let Some(signal_ref) = name_to_ref.get(name) {
             let signal = sys.get_signal(*signal_ref).unwrap();
             match signal.kind {
-                SignalKind::Input => inputs.push((cell_id, *signal_ref)),
-                SignalKind::Output => outputs.push((cell_id, *signal_ref)),
+                SignalKind::Input => inputs.push((cell_id, *signal_ref, name.to_string())),
+                SignalKind::Output => outputs.push((cell_id, *signal_ref, name.to_string())),
                 _ => {} // ignore
             }
         }
@@ -80,11 +82,13 @@ fn read_header(
 
 /// Reads one line in the CSV, applies inputs, checks outputs and finally steps the system.
 fn do_step(
+    step_id: usize,
     sim: &mut impl Simulator,
     line: &str,
-    inputs: &[(usize, ExprRef)],
-    outputs: &[(usize, ExprRef)],
+    inputs: &[(usize, ExprRef, String)],
+    outputs: &[(usize, ExprRef, String)],
 ) {
+    // apply inputs
     let mut input_iter = inputs.iter();
     if let Some(mut input) = input_iter.next() {
         for (cell_id, cell) in line.split(",").enumerate() {
@@ -105,4 +109,30 @@ fn do_step(
             }
         }
     }
+
+    // check outputs
+    let mut output_iter = outputs.iter();
+    if let Some(mut output) = output_iter.next() {
+        for (cell_id, cell) in line.split(",").enumerate() {
+            if cell_id == output.0 {
+                // apply input
+                let trimmed = cell.trim();
+                if trimmed.to_ascii_lowercase() != "x" {
+                    let expected = u64::from_str_radix(trimmed, 10).unwrap();
+                    let actual = sim.get(output.1).unwrap();
+                    assert_eq!(expected, actual, "{}@{step_id}", output.2);
+                }
+
+                // get next output
+                if let Some(next_output) = output_iter.next() {
+                    output = next_output;
+                } else {
+                    break;
+                }
+            }
+        }
+    }
+
+    // advance simulation
+    sim.step();
 }

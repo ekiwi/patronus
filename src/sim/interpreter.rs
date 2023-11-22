@@ -22,6 +22,8 @@ pub trait Simulator {
 
     /// Change the value or an expression in the simulator. Be careful!
     fn set(&mut self, expr: ExprRef, value: u64);
+
+    fn get(&mut self, expr: ExprRef) -> Option<u64>;
 }
 
 /// Interpreter based simulator for a transition system.
@@ -34,8 +36,7 @@ pub struct Interpreter {
 impl Interpreter {
     pub fn new(ctx: &Context, sys: &TransitionSystem) -> Self {
         let (meta, data_len) = compile(ctx, sys);
-        let mut data = Vec::with_capacity(data_len);
-        data.resize(data_len, 0);
+        let data = vec![0; data_len];
         let states = sys.states().map(|s| s.clone()).collect::<Vec<_>>();
         Self { meta, data, states }
     }
@@ -134,6 +135,19 @@ impl Simulator for Interpreter {
             }
         }
     }
+
+    fn get(&mut self, expr: ExprRef) -> Option<u64> {
+        if let Some(m) = &self.meta[expr.index()] {
+            let data = &self.data[m.range()];
+            let res = data[0];
+            for other in data.iter().skip(1) {
+                assert_eq!(*other, 0, "missing MSB!");
+            }
+            Some(res)
+        } else {
+            None
+        }
+    }
 }
 
 impl Interpreter {
@@ -182,9 +196,10 @@ macro_rules! exec_cmp {
 fn update_signal(inst: &Instruction, data: &mut [Word], instructions: &[Option<Instruction>]) {
     match inst.expr {
         Expr::BVSymbol { .. } => {} // nothing to do, value will be set externally
-        Expr::BVLiteral { .. } => {
+        Expr::BVLiteral { value, width } => {
             // TODO: optimize by only calculating once!
-            todo!("literal")
+            assert!(width <= BVLiteralInt::BITS);
+            data[inst.range()][0] = value;
         }
         // operations that change the bit-width
         Expr::BVZeroExt { e, by, width } => {
@@ -226,8 +241,9 @@ fn update_signal(inst: &Instruction, data: &mut [Word], instructions: &[Option<I
         }
 
         // operations that keep the size
-        Expr::BVNot(_, _) => {
-            todo!("not")
+        Expr::BVNot(e, _) => {
+            let src = instructions[e.index()].as_ref().unwrap().range();
+            exec_unary!(exec::not, data, inst.range(), src);
         }
         Expr::BVNegate(_, _) => {
             todo!("negate")

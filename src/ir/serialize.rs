@@ -439,23 +439,25 @@ fn serialize_transition_system<W: Write>(
     // this closure allows us to use node names instead of serializing all sub-expressions
     let serialize_child =
         |expr_ref: &ExprRef, ctx: &Context, writer: &mut W| -> std::io::Result<bool> {
-            // we inline, if the expression has only one use
-            let use_count = uses.get(expr_ref.index()).map(|v| *v).unwrap_or_default();
-            assert!(use_count > 0, "{:?}", ctx.get(*expr_ref));
-            let expr = ctx.get(*expr_ref);
-            if inline_expr_for_transition_system(expr, use_count) {
-                Ok(true) // recurse to child
+            // for signals we need to decide whether to inline them
+            if let Some(signal_info) = sys.get_signal(*expr_ref) {
+                // we inline, if the expression has only one use
+                let use_count = uses.get(expr_ref.index()).cloned().unwrap_or_default();
+                assert!(use_count > 0, "{:?}", ctx.get(*expr_ref));
+                let expr = ctx.get(*expr_ref);
+                if inline_expr_for_transition_system(expr, use_count) {
+                    Ok(true) // recurse to child
+                } else {
+                    // print the name of the signal
+                    let maybe_name: Option<&str> = signal_info.name.map(|r| ctx.get(r));
+                    match maybe_name {
+                        None => write!(writer, "%{}", expr_ref.index())?,
+                        Some(name) => write!(writer, "{}", name)?,
+                    };
+                    Ok(false)
+                }
             } else {
-                // print the name of the signal
-                let maybe_name: Option<&str> = sys
-                    .get_signal(*expr_ref)
-                    .and_then(|s| s.name)
-                    .map(|r| ctx.get(r));
-                match maybe_name {
-                    None => write!(writer, "%{}", expr_ref.index())?,
-                    Some(name) => write!(writer, "{}", name)?,
-                };
-                Ok(false)
+                Ok(true) // recurse to child
             }
         };
 
@@ -489,11 +491,11 @@ fn serialize_transition_system<W: Write>(
 
         // do not print simple symbols
         if expr.is_symbol() {
-            writeln!(writer, "")?;
+            writeln!(writer)?;
         } else {
             write!(writer, " = ")?;
             serialize_expr(expr, ctx, writer, &serialize_child)?;
-            writeln!(writer, "",)?;
+            writeln!(writer)?;
         }
     }
 
@@ -509,12 +511,12 @@ fn serialize_transition_system<W: Write>(
         if let Some(expr) = &state.init {
             write!(writer, "  [init] ")?;
             serialize_expr_ref(expr, ctx, writer, &serialize_child)?;
-            writeln!(writer, "",)?;
+            writeln!(writer)?;
         }
         if let Some(expr) = &state.next {
             write!(writer, "  [next] ")?;
             serialize_expr_ref(expr, ctx, writer, &serialize_child)?;
-            writeln!(writer, "",)?;
+            writeln!(writer)?;
         }
     }
 
