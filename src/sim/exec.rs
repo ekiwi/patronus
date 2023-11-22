@@ -59,6 +59,30 @@ pub(crate) fn concat(dst: &mut [Word], msb: &[Word], lsb: &[Word], lsb_width: Wi
     }
     //
     let msb_shift = lsb_width % Word::BITS;
+    if msb_shift == 0 {
+        assert_eq!(msb.len(), lsb_offset);
+        for (d, m) in dst.iter_mut().zip(msb.iter()) {
+            *d = *m;
+        }
+    } else {
+        let top_shift = Word::BITS - msb_shift;
+        //                         msb_shift
+        //         |-----m-----|<-------->
+        // |- dst[ii] -| |- dst[ii + 1] -|
+        for (ii, m) in msb.iter().enumerate() {
+            if ii == 0 {
+                dst[ii] = m >> top_shift;
+            } else {
+                dst[ii] |= m >> top_shift;
+            }
+            let is_last = ii + 1 == msb.len();
+            if is_last {
+                dst[ii + 1] |= m << msb_shift; // merge with lsb
+            } else {
+                dst[ii + 1] = m << msb_shift; // overwrite any prior value
+            }
+        }
+    }
 }
 
 #[inline]
