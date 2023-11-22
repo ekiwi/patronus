@@ -17,6 +17,9 @@ pub trait Simulator {
     /// Load the initial state values.
     fn init(&mut self, kind: InitKind);
 
+    /// Recalculate signals.
+    fn update(&mut self);
+
     /// Advance the state.
     fn step(&mut self);
 
@@ -24,6 +27,8 @@ pub trait Simulator {
     fn set(&mut self, expr: ExprRef, value: u64);
 
     fn get(&mut self, expr: ExprRef) -> Option<u64>;
+
+    fn step_count(&self) -> u64;
 }
 
 /// Interpreter based simulator for a transition system.
@@ -31,14 +36,20 @@ pub struct Interpreter {
     meta: Vec<Option<Instruction>>,
     states: Vec<State>,
     data: Vec<Word>,
+    step_count: u64,
 }
 
 impl Interpreter {
     pub fn new(ctx: &Context, sys: &TransitionSystem) -> Self {
         let (meta, data_len) = compile(ctx, sys);
         let data = vec![0; data_len];
-        let states = sys.states().map(|s| s.clone()).collect::<Vec<_>>();
-        Self { meta, data, states }
+        let states = sys.states().cloned().collect::<Vec<_>>();
+        Self {
+            meta,
+            data,
+            states,
+            step_count: 0,
+        }
     }
 }
 
@@ -79,7 +90,9 @@ fn compile_expr(
                 offset,
                 words,
                 expr: expr.clone(),
+                result_width: width,
                 kind,
+                expr_ref,
             }
         }
     }
@@ -122,8 +135,20 @@ impl Simulator for Interpreter {
         }
     }
 
+    fn update(&mut self) {
+        self.update_all_signals();
+    }
+
     fn step(&mut self) {
-        todo!()
+        // assign next expressions to state
+        for state in self.states.iter() {
+            if let Some(next) = state.next {
+                let dst = self.meta[state.symbol.index()].as_ref().unwrap().range();
+                let src = self.meta[next.index()].as_ref().unwrap().range();
+                exec_unary!(exec::assign, &mut self.data, dst, src);
+            }
+        }
+        self.step_count += 1;
     }
 
     fn set(&mut self, expr: ExprRef, value: u64) {
@@ -133,13 +158,15 @@ impl Simulator for Interpreter {
             for other in data.iter_mut().skip(1) {
                 *other = 0;
             }
+            // println!("Set [{}] = {}", expr.index(), data[0]);
         }
     }
 
     fn get(&mut self, expr: ExprRef) -> Option<u64> {
         if let Some(m) = &self.meta[expr.index()] {
             let data = &self.data[m.range()];
-            let res = data[0];
+            let mask = (1u64 << m.result_width) - 1;
+            let res = data[0] & mask;
             for other in data.iter().skip(1) {
                 assert_eq!(*other, 0, "missing MSB!");
             }
@@ -148,13 +175,17 @@ impl Simulator for Interpreter {
             None
         }
     }
+
+    fn step_count(&self) -> u64 {
+        self.step_count
+    }
 }
 
 impl Interpreter {
     /// Eagerly re-computes all signals in the system.
     fn update_all_signals(&mut self) {
         for inst in self.meta.iter().flatten() {
-            update_signal(&inst, &mut self.data, &self.meta);
+            update_signal(inst, &mut self.data, &self.meta);
         }
     }
 }
@@ -169,6 +200,9 @@ struct Instruction {
     /// Expression that we are executing.
     expr: Expr,
     kind: SignalKind,
+    result_width: WidthInt,
+    // for debugging
+    expr_ref: ExprRef,
 }
 
 impl Instruction {
@@ -194,6 +228,7 @@ macro_rules! exec_cmp {
 }
 
 fn update_signal(inst: &Instruction, data: &mut [Word], instructions: &[Option<Instruction>]) {
+    // print!("Executing: {} {:?}", inst.expr_ref.index(), inst.expr);
     match inst.expr {
         Expr::BVSymbol { .. } => {} // nothing to do, value will be set externally
         Expr::BVLiteral { value, width } => {
@@ -319,6 +354,7 @@ fn update_signal(inst: &Instruction, data: &mut [Word], instructions: &[Option<I
             todo!("array ite")
         }
     }
+    // println!("  --> {:?}", &data[inst.range()]);
 }
 
 #[cfg(test)]
@@ -330,7 +366,7 @@ mod tests {
         // 16-bytes for the expression + 8 bytes for storage details
         assert_eq!(
             std::mem::size_of::<Instruction>(),
-            std::mem::size_of::<Expr>() + 8
+            std::mem::size_of::<Expr>() + 8 + 8 // debugging data
         );
     }
 }

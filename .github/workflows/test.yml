@@ -67,9 +67,9 @@ jobs:
       - name: bmc Quiz4 (with counter reset value)
         run: |
           cargo run --release --example bmc -- inputs/chiseltest/Quiz4.unsat.btor
-      - name: simulate keccak
+      - name: simulate mux
         run: |
-          cargo run --release --example sim -- --testbench=inputs/repair/keccak.original.tb.csv inputs/repair/keccak.original.btor
+          cargo run --release --example sim -- --testbench=inputs/repair/mux_4_1.original.tb.csv inputs/repair/mux_4_1.original.btor
 
   semver:
     name: Check Semantic Versioning

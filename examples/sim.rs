@@ -2,7 +2,7 @@
 // released under BSD 3-Clause License
 // author: Kevin Laeufer <laeufer@berkeley.edu>
 
-use clap::Parser;
+use clap::{arg, Parser};
 use libpatron::ir::*;
 use libpatron::mc::Simulator;
 use libpatron::sim::interpreter::{InitKind, Interpreter};
@@ -40,28 +40,31 @@ fn main() {
     let name_to_ref = sys.generate_name_to_ref(&ctx);
     let (inputs, outputs) =
         read_header(&mut tb, &name_to_ref, &sys).expect("Failed to read testbench header");
-    println!("Inputs: {inputs:?}");
-    println!("Outputs: {outputs:?}");
+    if args.verbose {
+        println!("Inputs: {inputs:?}");
+        println!("Outputs: {outputs:?}");
+    }
 
     // start execution
+    let start = std::time::Instant::now();
     let mut sim = Interpreter::new(&ctx, &sys);
     sim.init(InitKind::Zero);
 
-    let mut step_id = 0;
-    for line_res in tb.lines() {
-        if let Ok(line) = line_res {
-            do_step(step_id, &mut sim, &line, &inputs, &outputs);
-            step_id += 1;
-        }
+    for (step_id, line) in tb.lines().flatten().enumerate() {
+        do_step(step_id, &mut sim, &line, &inputs, &outputs);
     }
+    let delta = std::time::Instant::now() - start;
+    println!("Executed {} steps in {:?}", sim.step_count(), delta);
 }
+
+type IOInfo = Vec<(usize, ExprRef, String)>;
 
 /// Correlates the header with the inputs and outputs of the system.
 fn read_header(
     input: &mut impl BufRead,
     name_to_ref: &HashMap<String, ExprRef>,
     sys: &TransitionSystem,
-) -> std::io::Result<(Vec<(usize, ExprRef, String)>, Vec<(usize, ExprRef, String)>)> {
+) -> std::io::Result<(IOInfo, IOInfo)> {
     let mut line = String::new();
     input.read_line(&mut line)?;
     let mut inputs = Vec::new();
@@ -109,6 +112,8 @@ fn do_step(
             }
         }
     }
+
+    sim.update();
 
     // check outputs
     let mut output_iter = outputs.iter();
