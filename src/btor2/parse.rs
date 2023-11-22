@@ -169,10 +169,7 @@ impl<'a> Parser<'a> {
                 .tokens
                 .get(token_count)
                 .map(|s| self.ctx.add_unique_str(s));
-            // only create a node if it has a name
-            if !(label == SignalKind::Node) || name.is_some() {
-                self.sys.add_signal(e, label, name);
-            }
+            self.sys.add_signal(e, label, name);
         }
         Ok(())
     }

@@ -4,11 +4,29 @@ expression: sys.serialize_to_str(&ctx)
 ---
 Quiz1
 input reset : bv<1>
-bad %18 : bv<1> = not(implies(not(reset), not(ugt(counter, zext(4'b1010, 12)))))
-constraint %19 : bv<1> = implies(not(ugte(_resetCount, 1'b1)), reset)
+node %4 : bv<17> = zext(counter, 1)
+node %6 : bv<17> = zext(1'b1, 16)
+node %7 : bv<17> = add(%4, %6)
+node %8 : bv<16> = %7[15:0]
+node %10 : bv<16> = zext(4'b1010, 12)
+node %11 : bv<1> = ugt(counter, %10)
+node %12 : bv<1> = not(%11)
+node %13 : bv<1> = not(reset)
+node %14 : bv<1> = not(%12)
+node %15 : bv<1> = ugte(_resetCount, 1'b1)
+node %16 : bv<1> = not(%15)
+node %17 : bv<1> = implies(%13, %12)
+bad %18 : bv<1> = not(%17)
+constraint %19 : bv<1> = implies(%16, reset)
+node %21 : bv<16> = ite(reset, 16'x0, %8)
+node %22 : bv<2> = zext(_resetCount, 1)
+node %23 : bv<2> = zext(1'b1, 1)
+node %24 : bv<2> = add(%22, %23)
+node %25 : bv<1> = %24[0]
+node %26 : bv<1> = ite(%16, %25, _resetCount)
 state counter : bv<16>
-  [next] ite(reset, 16'x0, add(zext(counter, 1), zext(1'b1, 16))[15:0])
+  [next] ite(reset, 16'x0, %8)
 state _resetCount : bv<1>
   [init] 1'b0
-  [next] ite(not(ugte(_resetCount, 1'b1)), add(zext(_resetCount, 1), zext(1'b1, 1))[0], _resetCount)
+  [next] ite(%16, %25, _resetCount)
 
