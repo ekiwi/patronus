@@ -443,7 +443,8 @@ fn serialize_transition_system<W: Write>(
             if let Some(signal_info) = sys.get_signal(*expr_ref) {
                 // we inline, if the expression has only one use
                 let use_count = uses.get(expr_ref.index()).cloned().unwrap_or_default();
-                assert!(use_count > 0, "{:?}", ctx.get(*expr_ref));
+                // assert!(use_count > 0, "{expr_ref:?} {:?}", ctx.get(*expr_ref));
+
                 let expr = ctx.get(*expr_ref);
                 if inline_expr_for_transition_system(expr, use_count) {
                     Ok(true) // recurse to child

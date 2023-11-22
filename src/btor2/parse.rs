@@ -118,8 +118,7 @@ impl<'a> Parser<'a> {
 
         // check op
         let mut label = SignalKind::Node;
-        let mut name: Option<StringRef> = None;
-        let expr: Option<ExprRef> = if UNARY_OPS_SET.contains(op) {
+        let expr = if UNARY_OPS_SET.contains(op) {
             Some(self.parse_unary_op(line, tokens)?)
         } else if BINARY_OPS_SET.contains(op) {
             Some(self.parse_bin_op(line, tokens)?)
@@ -152,8 +151,7 @@ impl<'a> Parser<'a> {
                 }
                 "output" | "bad" | "constraint" | "fair" => {
                     label = SignalKind::from_str(op).unwrap();
-                    name = Some(self.get_label_name(&cont, op));
-                    Some(self.get_expr_from_line_id(line, tokens[2])?)
+                    Some((self.get_expr_from_line_id(line, tokens[2])?, 3))
                 }
                 other => {
                     if OTHER_OPS_SET.contains(other) {
@@ -164,8 +162,17 @@ impl<'a> Parser<'a> {
                 }
             }
         };
-        if let Some(e) = expr {
-            self.add_signal(line_id, e, label, name)?;
+        if let Some((e, token_count)) = expr {
+            self.signal_map.insert(line_id, e);
+            // try to find a name
+            let name = cont
+                .tokens
+                .get(token_count)
+                .map(|s| self.ctx.add_unique_str(s));
+            // only create a node if it has a name
+            if !(label == SignalKind::Node) || name.is_some() {
+                self.sys.add_signal(e, label, name);
+            }
         }
         Ok(())
     }
@@ -178,7 +185,7 @@ impl<'a> Parser<'a> {
     ) -> ParseLineResult<ExprRef> {
         // first we check for internal consitency
         if let Err(e) = expr.type_check(self.ctx) {
-            self.add_error(line, line, format!("Failed to type check: {}", e.get_msg()));
+            let _ = self.add_error(line, line, format!("Failed to type check: {}", e.get_msg()));
             return Err(());
         }
         // then we make sure that the type of the expression is actually the type that was
@@ -208,74 +215,65 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn add_signal(
-        &mut self,
-        line_id: LineId,
-        expr: ExprRef,
-        kind: SignalKind,
-        name: Option<StringRef>,
-    ) -> ParseLineResult {
-        self.sys.add_signal(expr, kind, name);
-        self.signal_map.insert(line_id, expr);
-        Ok(())
-    }
-
     fn get_label_name(&mut self, cont: &LineTokens, default: &str) -> StringRef {
+        // look at last token and see if it is not a
+
         let base_str: &str = cont.tokens.get(3).unwrap_or(&default);
         // TODO: look into comment for better names
         self.ctx.add_unique_str(base_str)
     }
 
-    fn parse_unary_op(&mut self, line: &str, tokens: &[&str]) -> ParseLineResult<ExprRef> {
+    fn parse_unary_op(&mut self, line: &str, tokens: &[&str]) -> ParseLineResult<(ExprRef, usize)> {
         self.require_at_least_n_tokens(line, tokens, 4)?;
         let tpe = self.get_tpe_from_id(line, tokens[2])?;
         let e = self.get_expr_from_line_id(line, tokens[3])?;
-        let res: ExprRef = match tokens[1] {
+        let (res, token_count) = match tokens[1] {
             "slice" => {
                 // slice has two integer attributes
                 self.require_at_least_n_tokens(line, tokens, 6)?;
                 let msb = self.parse_width_int(line, tokens[4], "slice msb")?;
                 let lsb = self.parse_width_int(line, tokens[5], "slice lsb")?;
-                self.ctx.slice(e, msb, lsb)
+                (self.ctx.slice(e, msb, lsb), 6)
             }
-            "not" => self.ctx.not(e),
+            "not" => (self.ctx.not(e), 4),
             "uext" => {
                 self.require_at_least_n_tokens(line, tokens, 5)?;
                 let by = self.parse_width_int(line, tokens[4], "extension amount")?;
-                self.ctx.zero_extend(e, by)
+                (self.ctx.zero_extend(e, by), 5)
             }
             "sext" => {
                 self.require_at_least_n_tokens(line, tokens, 5)?;
                 let by = self.parse_width_int(line, tokens[4], "extension amount")?;
-                self.ctx.sign_extend(e, by)
+                (self.ctx.sign_extend(e, by), 5)
             }
             "redor" => {
                 let width = e.get_type(self.ctx).get_bit_vector_width().unwrap();
                 if width == 1 {
-                    e
+                    (e, 4)
                 } else {
                     // redor is true iff at least one bit is a one
                     let zero = self.ctx.zero(width);
                     let eq_zero = self.ctx.bv_equal(e, zero);
-                    self.ctx.not(eq_zero)
+                    (self.ctx.not(eq_zero), 4)
                 }
             }
             "redand" => {
                 let width = e.get_type(self.ctx).get_bit_vector_width().unwrap();
                 if width == 1 {
-                    e
+                    (e, 4)
                 } else {
                     // redand is true iff all bits are one
                     let mask = self.ctx.mask(width);
-                    self.ctx.bv_equal(e, mask)
+                    (self.ctx.bv_equal(e, mask), 4)
                 }
             }
             other => panic!("unexpected unary op: {other}"),
         };
-        self.check_expr_type(res, line, tpe)
+        let checked = self.check_expr_type(res, line, tpe)?;
+        Ok((checked, token_count))
     }
 
-    fn parse_bin_op(&mut self, line: &str, tokens: &[&str]) -> ParseLineResult<ExprRef> {
+    fn parse_bin_op(&mut self, line: &str, tokens: &[&str]) -> ParseLineResult<(ExprRef, usize)> {
         self.require_at_least_n_tokens(line, tokens, 5)?;
         let tpe = self.get_tpe_from_id(line, tokens[2])?;
         let a = self.get_expr_from_line_id(line, tokens[3])?;
@@ -357,10 +355,15 @@ impl<'a> Parser<'a> {
             "read" => self.ctx.array_read(a, b),
             other => panic!("unexpected binary op: {other}"),
         };
-        self.check_expr_type(e, line, tpe)
+        let checked = self.check_expr_type(e, line, tpe)?;
+        Ok((checked, 5))
     }
 
-    fn parse_ternary_op(&mut self, line: &str, tokens: &[&str]) -> ParseLineResult<ExprRef> {
+    fn parse_ternary_op(
+        &mut self,
+        line: &str,
+        tokens: &[&str],
+    ) -> ParseLineResult<(ExprRef, usize)> {
         self.require_at_least_n_tokens(line, tokens, 6)?;
         let tpe = self.get_tpe_from_id(line, tokens[2])?;
         let a = self.get_expr_from_line_id(line, tokens[3])?;
@@ -377,7 +380,8 @@ impl<'a> Parser<'a> {
             "write" => self.ctx.array_store(a, b, c),
             other => panic!("unexpected binary op: {other}"),
         };
-        self.check_expr_type(res, line, tpe)
+        let checked = self.check_expr_type(res, line, tpe)?;
+        Ok((checked, 6))
     }
 
     fn parse_state(
@@ -461,10 +465,11 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_ones(&mut self, line: &str, tokens: &[&str]) -> ParseLineResult<ExprRef> {
+    fn parse_ones(&mut self, line: &str, tokens: &[&str]) -> ParseLineResult<(ExprRef, usize)> {
+        self.require_at_least_n_tokens(line, tokens, 3)?;
         // derive width from type
         let width = self.get_bv_width(line, tokens[2])?;
-        if width > BVLiteralInt::BITS {
+        let res = if width > BVLiteralInt::BITS {
             todo!("Add support for literals of size: {width}")
         } else {
             let value = if width == BVLiteralInt::BITS {
@@ -472,22 +477,30 @@ impl<'a> Parser<'a> {
             } else {
                 ((1 as BVLiteralInt) << width) - 1
             };
-            Ok(self.ctx.bv_lit(value, width))
-        }
+            self.ctx.bv_lit(value, width)
+        };
+        Ok((res, 3))
     }
 
-    fn parse_format(&mut self, line: &str, tokens: &[&str], op: &str) -> ParseLineResult<ExprRef> {
+    fn parse_format(
+        &mut self,
+        line: &str,
+        tokens: &[&str],
+        op: &str,
+    ) -> ParseLineResult<(ExprRef, usize)> {
+        self.require_at_least_n_tokens(line, tokens, 3)?;
         // derive width from type
         let width = self.get_bv_width(line, tokens[2])?;
 
-        match op {
+        let res = match op {
             "zero" => Ok(self.ctx.zero(width)),
             "one" => Ok(self.ctx.one(width)),
             "const" => self.parse_bv_lit_str(line, tokens[3], 2, width),
             "constd" => self.parse_bv_lit_str(line, tokens[3], 10, width),
             "consth" => self.parse_bv_lit_str(line, tokens[3], 16, width),
             other => panic!("Did not expect {other} as a possible format op!"),
-        }
+        }?;
+        Ok((res, 3))
     }
 
     fn parse_bv_lit_str(
