@@ -51,6 +51,17 @@ pub(crate) fn slice_to_word(source: &[Word], hi: WidthInt, lo: WidthInt) -> Word
 }
 
 #[inline]
+pub(crate) fn concat(dst: &mut [Word], msb: &[Word], lsb: &[Word], lsb_width: WidthInt) {
+    let lsb_offset = dst.len() - lsb.len();
+    // copy lsb to dst
+    for (d, l) in dst.iter_mut().zip(lsb.iter()) {
+        *d = *l;
+    }
+    //
+    let msb_shift = lsb_width % Word::BITS;
+}
+
+#[inline]
 pub(crate) fn not(dst: &mut [Word], source: &[Word]) {
     for (d, s) in dst.iter_mut().zip(source.iter()) {
         *d = !(*s);
@@ -85,6 +96,54 @@ pub(crate) fn split_borrow_1(
 mod tests {
     use super::*;
 
+    fn from_bit_str(bits: &str) -> (Vec<Word>, WidthInt) {
+        let width = bits.len() as WidthInt;
+        let mut out: Vec<Word> = Vec::new();
+        let mut word = 0 as Word;
+
+        for (ii, cc) in bits.chars().enumerate() {
+            let ii_rev = width as usize - ii - 1;
+            if ii_rev > 0 && (ii_rev % Word::BITS as usize) == 0 {
+                out.push(word);
+                word = 0;
+            }
+
+            let value = match cc {
+                '1' => 1,
+                '0' => 0,
+                other => panic!("Unexpected character: {other}"),
+            };
+            word = (word << 1) | value;
+        }
+        out.push(word);
+
+        (out, width)
+    }
+
+    fn to_bit_str(values: &[Word], width: WidthInt) -> String {
+        let start_bit = (width - 1) % Word::BITS;
+        let mut out = String::with_capacity(width as usize);
+        for ii in (0..(start_bit + 1)).rev() {
+            let value = (values[0] >> ii) & 1;
+            if value == 1 {
+                out.push('1');
+            } else {
+                out.push('0');
+            }
+        }
+        for word in values.iter().skip(1) {
+            for ii in (0..Word::BITS).rev() {
+                let value = (values[0] >> ii) & 1;
+                if value == 1 {
+                    out.push('1');
+                } else {
+                    out.push('0');
+                }
+            }
+        }
+        out
+    }
+
     #[test]
     fn test_split_borrow() {
         let data: &mut [Word] = &mut [0, 1, 2, 3];
@@ -94,5 +153,44 @@ mod tests {
         let (dst2, src2) = split_borrow_1(data, 2..4, 0..2).unwrap();
         assert_eq!(dst2, &[2, 3]);
         assert_eq!(src2, &[0, 1]);
+    }
+
+    #[test]
+    fn test_bit_string_conversion() {
+        let a = "01100";
+        let (a_vec, a_width) = from_bit_str(a);
+        assert_eq!(a_width, 5);
+        assert_eq!(a_vec, vec![0b1100]);
+
+        let b = "10100001101000100000001010101010101000101010";
+        let (b_vec, b_width) = from_bit_str(b);
+        assert_eq!(b_width, 44);
+        assert_eq!(b_vec, vec![0b10100001101000100000001010101010101000101010]);
+
+        assert_eq!(to_bit_str(&b_vec, b_width), b);
+
+        let c = "1010000110100010000000101010101010100010101010100001101000100000001010101010101000101010";
+        let (c_vec, c_width) = from_bit_str(c);
+        assert_eq!(c_width, 88);
+        assert_eq!(
+            c_vec,
+            vec![
+                0b101000011010001000000010,
+                0b1010101010100010101010100001101000100000001010101010101000101010
+            ]
+        );
+    }
+
+    #[test]
+    fn test_concat() {
+        let a = "10101010100000001010101010101000101010";
+        let b = "10100001101000100000001010101010101000101010";
+        let (a_vec, a_width) = from_bit_str(a);
+        let (b_vec, b_width) = from_bit_str(b);
+        let c_width = a_width + b_width;
+        let mut c_vec = vec![0 as Word; c_width.div_ceil(Word::BITS) as usize];
+        concat(&mut c_vec, &a_vec, &b_vec, b_width);
+        let expected = format!("{a}{b}");
+        assert_eq!(to_bit_str(&c_vec, c_width), expected);
     }
 }
