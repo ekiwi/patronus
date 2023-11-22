@@ -103,7 +103,7 @@ mod tests {
 
         for (ii, cc) in bits.chars().enumerate() {
             let ii_rev = width as usize - ii - 1;
-            if ii_rev > 0 && (ii_rev % Word::BITS as usize) == 0 {
+            if ii_rev > 0 && ((ii_rev + 1) % Word::BITS as usize) == 0 {
                 out.push(word);
                 word = 0;
             }
@@ -133,7 +133,7 @@ mod tests {
         }
         for word in values.iter().skip(1) {
             for ii in (0..Word::BITS).rev() {
-                let value = (values[0] >> ii) & 1;
+                let value = (word >> ii) & 1;
                 if value == 1 {
                     out.push('1');
                 } else {
@@ -179,6 +179,8 @@ mod tests {
                 0b1010101010100010101010100001101000100000001010101010101000101010
             ]
         );
+
+        assert_eq!(to_bit_str(&c_vec, c_width), c);
     }
 
     #[test]
