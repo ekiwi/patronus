@@ -54,7 +54,7 @@ pub(crate) fn slice_to_word(source: &[Word], hi: WidthInt, lo: WidthInt) -> Word
 pub(crate) fn concat(dst: &mut [Word], msb: &[Word], lsb: &[Word], lsb_width: WidthInt) {
     let lsb_offset = dst.len() - lsb.len();
     // copy lsb to dst
-    for (d, l) in dst.iter_mut().zip(lsb.iter()) {
+    for (d, l) in dst.iter_mut().skip(lsb_offset).zip(lsb.iter()) {
         *d = *l;
     }
     //
