@@ -102,18 +102,47 @@ pub(crate) fn split_borrow_1(
     data: &mut [Word],
     dst: Range<usize>,
     src: Range<usize>,
-) -> Option<(&mut [Word], &mut [Word])> {
-    if dst.end >= src.start {
-        let (a, b) = data.split_at_mut(src.end);
-        let adjusted_dst = (dst.start - src.end)..(dst.end - src.end);
-        Some((&mut b[adjusted_dst], &mut a[src.start..]))
-    } else if src.end >= dst.start {
-        let (a, b) = data.split_at_mut(dst.end);
-        let adjusted_src = (src.start - dst.end)..(src.end - dst.end);
-        Some((&mut a[dst.start..], &mut b[adjusted_src]))
+) -> (&mut [Word], &[Word]) {
+    let (before_dst, after_dst_start) = data.split_at_mut(dst.start);
+    let (dst_words, after_dst) = after_dst_start.split_at_mut(dst.end - dst.start);
+    let after_dst_offset = dst.end;
+    let src_words = if src.start >= after_dst_offset {
+        &after_dst[move_range(src, after_dst_offset)]
     } else {
-        None // overlap
+        &before_dst[src]
+    };
+    (dst_words, src_words)
+}
+
+#[inline]
+fn move_range(rng: Range<usize>, offset: usize) -> Range<usize> {
+    Range {
+        start: rng.start - offset,
+        end: rng.end - offset,
     }
+}
+
+#[inline]
+pub(crate) fn split_borrow_2(
+    data: &mut [Word],
+    dst: Range<usize>,
+    src_a: Range<usize>,
+    src_b: Range<usize>,
+) -> (&mut [Word], &[Word], &[Word]) {
+    let (before_dst, after_dst_start) = data.split_at_mut(dst.start);
+    let (dst_words, after_dst) = after_dst_start.split_at_mut(dst.end - dst.start);
+    let after_dst_offset = dst.end;
+    let a_words = if src_a.start >= after_dst_offset {
+        &after_dst[move_range(src_a, after_dst_offset)]
+    } else {
+        &before_dst[src_a]
+    };
+    let b_words = if src_b.start >= after_dst_offset {
+        &after_dst[move_range(src_b, after_dst_offset)]
+    } else {
+        &before_dst[src_b]
+    };
+    (dst_words, a_words, b_words)
 }
 
 #[cfg(test)]
@@ -171,12 +200,17 @@ mod tests {
     #[test]
     fn test_split_borrow() {
         let data: &mut [Word] = &mut [0, 1, 2, 3];
-        let (dst, src) = split_borrow_1(data, 0..1, 2..4).unwrap();
+        let (dst, src) = split_borrow_1(data, 0..1, 2..4);
         assert_eq!(dst, &[0]);
         assert_eq!(src, &[2, 3]);
-        let (dst2, src2) = split_borrow_1(data, 2..4, 0..2).unwrap();
+        let (dst2, src2) = split_borrow_1(data, 2..4, 0..2);
         assert_eq!(dst2, &[2, 3]);
         assert_eq!(src2, &[0, 1]);
+
+        let (dst3, src_a_3, src_b_3) = split_borrow_2(data, 2..4, 1..2, 0..2);
+        assert_eq!(dst3, &[2, 3]);
+        assert_eq!(src_a_3, &[1]);
+        assert_eq!(src_b_3, &[0, 1]);
     }
 
     #[test]

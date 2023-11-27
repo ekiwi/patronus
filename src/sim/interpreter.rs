@@ -105,8 +105,7 @@ macro_rules! exec_unary {
             let _src_val = $data[$s][0];
             $f(&mut $data[$d], &[_src_val])
         } else {
-            let (_dst_ref, _src_ref) =
-                $crate::sim::exec::split_borrow_1($data, $d, $s).expect("aliasing");
+            let (_dst_ref, _src_ref) = $crate::sim::exec::split_borrow_1($data, $d, $s);
             $f(_dst_ref, _src_ref)
         }
     };
