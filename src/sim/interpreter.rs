@@ -381,10 +381,13 @@ mod tests {
 
     #[test]
     fn type_size() {
-        // 16-bytes for the expression + 8 bytes for storage details
+        // instruction type is twice as large as the expr because it includes all storage details
+        assert_eq!(std::mem::size_of::<InstrType>(), 32);
+
+        // 16-bytes for the instruction type + 16 bytes for storage details and other meta info
         assert_eq!(
-            std::mem::size_of::<OldInstruction>(),
-            std::mem::size_of::<Expr>() + 8 + 8 // debugging data
+            std::mem::size_of::<Instr>(),
+            std::mem::size_of::<InstrType>() + 16
         );
     }
 }
