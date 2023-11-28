@@ -341,8 +341,12 @@ fn exec_instr(instr: &Instr, data: &mut [Word]) {
                 NullaryOp::BVSymbol => {}
                 NullaryOp::BVLiteral(value, width) => {
                     // TODO: optimize by only calculating once!
-                    assert!(*width <= BVLiteralInt::BITS);
-                    data[instr.dst.range()][0] = *value;
+                    let dst = &mut data[instr.dst.range()];
+                    dst[0] = *value;
+                    // zero extend
+                    for other in dst.iter_mut().skip(1) {
+                        *other = 0;
+                    }
                 }
             }
         }

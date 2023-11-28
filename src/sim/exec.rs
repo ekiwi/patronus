@@ -34,6 +34,7 @@ pub(crate) fn mask(bits: WidthInt) -> Word {
 }
 
 #[inline]
+#[allow(dead_code)] // TODO: remove at some point
 pub(crate) fn slice_to_word(source: &[Word], hi: WidthInt, lo: WidthInt) -> Word {
     let lo_word = lo / Word::BITS;
     let lo_offset = lo - (lo_word * Word::BITS);
@@ -55,25 +56,33 @@ pub(crate) fn slice_to_word(source: &[Word], hi: WidthInt, lo: WidthInt) -> Word
 
 #[inline]
 pub(crate) fn slice(dst: &mut [Word], source: &[Word], hi: WidthInt, lo: WidthInt) {
-    if dst.len() == 1 {
-        dst[0] = slice_to_word(source, hi, lo);
-    } else {
-        let skip_lsb_words = (lo / Word::BITS) as usize;
-        let shift_right = lo % Word::BITS;
+    let lo_offset = lo % Word::BITS;
+    let hi_word = (hi / Word::BITS) as usize;
+    let lo_word = (lo / Word::BITS) as usize;
+    let source_word_count = hi_word - lo_word + 1;
+    let hi_index = source.len() - 1 - hi_word; // big endian
 
-        let skip_msb_words = source.len() - dst.len() - skip_lsb_words;
-        if shift_right == 0 {
-            let skip_msb_words = source.len() - dst.len() - skip_lsb_words;
-            assign(dst, &source[skip_msb_words..(skip_msb_words + dst.len())]);
+    let shift_right = lo_offset;
+    let skip_msb_words = hi_index;
+    if shift_right == 0 {
+        assign(
+            dst,
+            &source[skip_msb_words..(skip_msb_words + source_word_count)],
+        );
+    } else {
+        let shift_left = Word::BITS - shift_right;
+        let m = mask(shift_right);
+        let mut source_iter = source.iter().skip(skip_msb_words);
+        let mut prev = if dst.len() < source_word_count {
+            *source_iter.next().unwrap()
         } else {
-            let shift_left = Word::BITS - shift_right;
-            let m = mask(shift_left);
-            let mut prev = 0;
-            for (d, s) in dst.iter_mut().zip(source.iter().skip(skip_msb_words)) {
-                *d = (prev & m) << shift_left;
-                *d |= (*s) >> shift_right;
-                prev = *s;
-            }
+            0
+        };
+        for (d, s) in dst.iter_mut().zip(source_iter) {
+            let d0 = (prev & m) << shift_left;
+            let d1 = d0 | ((*s) >> shift_right);
+            *d = d1;
+            prev = *s;
         }
     }
 }
@@ -92,9 +101,6 @@ pub(crate) fn concat(dst: &mut [Word], msb: &[Word], lsb: &[Word], lsb_width: Wi
         for (d, m) in dst.iter_mut().zip(msb.iter()) {
             *d = *m;
         }
-    } else if dst.len() == 1 {
-        assert_eq!(msb.len(), 1);
-        dst[0] |= msb[0] << msb_shift; // merge with lsb
     } else {
         let top_shift = Word::BITS - msb_shift;
         //                         msb_shift
@@ -330,6 +336,11 @@ mod tests {
         let mut rng = rand_xoshiro::Xoshiro256PlusPlus::seed_from_u64(1);
         do_test_concat(&random_bit_str(38, &mut rng), &random_bit_str(44, &mut rng));
         do_test_concat(&random_bit_str(38, &mut rng), &random_bit_str(8, &mut rng));
+        // test a concat where dst and msb have the same number of words
+        do_test_concat(
+            &random_bit_str(10 + Word::BITS, &mut rng),
+            &random_bit_str(8, &mut rng),
+        );
     }
 
     fn do_test_slice(src: &str, hi: WidthInt, lo: WidthInt) {
@@ -351,19 +362,25 @@ mod tests {
     fn test_slice() {
         let mut rng = rand_xoshiro::Xoshiro256PlusPlus::seed_from_u64(1);
         let in0 = random_bit_str(15, &mut rng);
-        // do_test_slice(&in0, 0, 0);
-        // do_test_slice(&in0, 1, 1);
-        // do_test_slice(&in0, 6, 0);
-        // do_test_slice(&in0, 6, 4);
+        do_test_slice(&in0, 0, 0);
+        do_test_slice(&in0, 1, 1);
+        do_test_slice(&in0, 6, 0);
+        do_test_slice(&in0, 6, 4);
+
+        // test slice across two words
+        let in1 = random_bit_str((2 * Word::BITS) - 5, &mut rng);
+        do_test_slice(&in1, Word::BITS, Word::BITS - 5);
+        do_test_slice(&in1, Word::BITS + 5, Word::BITS - 5);
 
         // test larger slices
-        let in1 = random_bit_str(1354, &mut rng);
-        // do_test_slice(&in1, 400, 400); // 400 = 6 * 64 +  16
-        // do_test_slice(&in1, 400, 400 - 20);
-        // do_test_slice(&in1, 400 + 13, 400 - 20);
+        let in2 = random_bit_str(1354, &mut rng);
+        do_test_slice(&in2, 400, 400); // 400 = 6 * 64 +  16
+        do_test_slice(&in2, 400, 400 - 20);
+        do_test_slice(&in2, 400 + 13, 400 - 20);
+
         // result is larger than one word
-        do_test_slice(&in1, 875, Word::BITS * 13); // aligned to word boundaries
-        do_test_slice(&in1, 3 + (Word::BITS * 2) + 11, 3);
-        do_test_slice(&in1, 875, 875 - (Word::BITS * 2) - 15);
+        do_test_slice(&in2, 875, Word::BITS * 13); // aligned to word boundaries
+        do_test_slice(&in2, 3 + (Word::BITS * 2) + 11, 3);
+        do_test_slice(&in2, 875, 875 - (Word::BITS * 2) - 15);
     }
 }
