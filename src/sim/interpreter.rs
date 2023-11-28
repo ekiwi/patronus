@@ -5,7 +5,6 @@
 use super::exec;
 use super::exec::Word;
 use crate::ir::*;
-use crate::sim::exec::split_borrow_1;
 
 /// Specifies how to initialize states that do not have
 #[derive(Debug, PartialEq, Copy, Clone)]
@@ -121,9 +120,9 @@ fn compile_expr_type(expr: &Expr, locs: &[Option<Loc>], ctx: &Context) -> InstrT
         Expr::BVZeroExt { .. } => todo!("compile zext"),
         Expr::BVSignExt { .. } => todo!("compile sext"),
         Expr::BVSlice { e, hi, lo } => {
-            InstrType::Unary(UnaryOp::BVSlice(*hi, *lo), locs[e.index()].unwrap())
+            InstrType::Unary(UnaryOp::Slice(*hi, *lo), locs[e.index()].unwrap())
         }
-        Expr::BVNot(e, _) => InstrType::Unary(UnaryOp::BVNot, locs[e.index()].unwrap()),
+        Expr::BVNot(e, _) => InstrType::Unary(UnaryOp::Not, locs[e.index()].unwrap()),
         Expr::BVNegate(_, _) => todo!(),
         Expr::BVEqual(a, b) => InstrType::Binary(
             BinaryOp::BVEqual,
@@ -136,13 +135,25 @@ fn compile_expr_type(expr: &Expr, locs: &[Option<Loc>], ctx: &Context) -> InstrT
         Expr::BVGreaterEqual(_, _) => todo!(),
         Expr::BVGreaterEqualSigned(_, _) => todo!(),
         Expr::BVConcat(a, b, _) => InstrType::Binary(
-            BinaryOp::BVConcat(b.get_bv_type(ctx).unwrap()), // LSB width
+            BinaryOp::Concat(b.get_bv_type(ctx).unwrap()), // LSB width
             locs[a.index()].unwrap(),
             locs[b.index()].unwrap(),
         ),
-        Expr::BVAnd(_, _, _) => todo!(),
-        Expr::BVOr(_, _, _) => todo!(),
-        Expr::BVXor(_, _, _) => todo!(),
+        Expr::BVAnd(a, b, _) => InstrType::Binary(
+            BinaryOp::And,
+            locs[a.index()].unwrap(),
+            locs[b.index()].unwrap(),
+        ),
+        Expr::BVOr(a, b, _) => InstrType::Binary(
+            BinaryOp::Or,
+            locs[a.index()].unwrap(),
+            locs[b.index()].unwrap(),
+        ),
+        Expr::BVXor(a, b, _) => InstrType::Binary(
+            BinaryOp::Xor,
+            locs[a.index()].unwrap(),
+            locs[b.index()].unwrap(),
+        ),
         Expr::BVShiftLeft(_, _, _) => todo!(),
         Expr::BVArithmeticShiftRight(_, _, _) => todo!(),
         Expr::BVShiftRight(_, _, _) => todo!(),
@@ -195,7 +206,7 @@ impl Simulator for Interpreter {
                     .unwrap()
                     .dst
                     .range();
-                let (dst, src) = split_borrow_1(&mut self.data, dst_range, src_range);
+                let (dst, src) = exec::split_borrow_1(&mut self.data, dst_range, src_range);
                 exec::assign(dst, src);
             }
         }
@@ -219,7 +230,7 @@ impl Simulator for Interpreter {
                     .unwrap()
                     .dst
                     .range();
-                let (dst, src) = split_borrow_1(&mut self.data, dst_range, src_range);
+                let (dst, src) = exec::split_borrow_1(&mut self.data, dst_range, src_range);
                 exec::assign(dst, src);
             }
         }
@@ -289,14 +300,17 @@ enum NullaryOp {
 
 #[derive(Debug, Clone)]
 enum UnaryOp {
-    BVSlice(WidthInt, WidthInt),
-    BVNot,
+    Slice(WidthInt, WidthInt),
+    Not,
 }
 
 #[derive(Debug, Clone)]
 enum BinaryOp {
     BVEqual,
-    BVConcat(WidthInt), // width of the lsb
+    Concat(WidthInt), // width of the lsb
+    Or,
+    And,
+    Xor,
 }
 
 #[derive(Debug, Clone)]
@@ -335,14 +349,8 @@ fn exec_instr(instr: &Instr, data: &mut [Word]) {
         InstrType::Unary(tpe, a_loc) => {
             let (dst, a) = exec::split_borrow_1(data, instr.dst.range(), a_loc.range());
             match tpe {
-                UnaryOp::BVSlice(hi, lo) => {
-                    if dst.len() == 1 {
-                        dst[0] = exec::slice_to_word(a, *hi, *lo);
-                    } else {
-                        todo!("implement slice with a larger target")
-                    }
-                }
-                UnaryOp::BVNot => exec::not(dst, a),
+                UnaryOp::Slice(hi, lo) => exec::slice(dst, a, *hi, *lo),
+                UnaryOp::Not => exec::not(dst, a),
             }
         }
         InstrType::Binary(tpe, a_loc, b_loc) => {
@@ -352,7 +360,10 @@ fn exec_instr(instr: &Instr, data: &mut [Word]) {
                 BinaryOp::BVEqual => {
                     dst[0] = exec::cmp_equal(a, b);
                 }
-                BinaryOp::BVConcat(lsb_width) => exec::concat(dst, a, b, *lsb_width),
+                BinaryOp::Concat(lsb_width) => exec::concat(dst, a, b, *lsb_width),
+                BinaryOp::Or => exec::or(dst, a, b),
+                BinaryOp::And => exec::and(dst, a, b),
+                BinaryOp::Xor => exec::xor(dst, a, b),
             }
         }
         InstrType::Tertiary(tpe, a_loc, b_loc, c_loc) => {

@@ -29,7 +29,7 @@ pub(crate) fn mask(bits: WidthInt) -> Word {
         Word::MAX
     } else {
         assert!(bits < Word::BITS);
-        (1 as Word) << bits
+        ((1 as Word) << bits) - 1
     }
 }
 
@@ -42,11 +42,21 @@ pub(crate) fn slice_to_word(source: &[Word], hi: WidthInt, lo: WidthInt) -> Word
 
     let lsb = source[lo_word as usize] >> lo_offset;
     if hi_word == lo_word {
-        lsb & mask(hi - lo + 1)
+        let m = mask(hi - lo + 1);
+        lsb & m
     } else {
         let lo_width = Word::BITS - lo_offset;
         let msb = source[hi_word as usize] & mask(hi_offset + 1);
         lsb | (msb << lo_width)
+    }
+}
+
+#[inline]
+pub(crate) fn slice(dst: &mut [Word], source: &[Word], hi: WidthInt, lo: WidthInt) {
+    if dst.len() == 1 {
+        dst[0] = slice_to_word(source, hi, lo);
+    } else {
+        todo!("implement slice with a larger target")
     }
 }
 
@@ -64,6 +74,9 @@ pub(crate) fn concat(dst: &mut [Word], msb: &[Word], lsb: &[Word], lsb_width: Wi
         for (d, m) in dst.iter_mut().zip(msb.iter()) {
             *d = *m;
         }
+    } else if dst.len() == 1 {
+        assert_eq!(msb.len(), 1);
+        dst[0] |= msb[0] << msb_shift; // merge with lsb
     } else {
         let top_shift = Word::BITS - msb_shift;
         //                         msb_shift
@@ -89,6 +102,28 @@ pub(crate) fn concat(dst: &mut [Word], msb: &[Word], lsb: &[Word], lsb_width: Wi
 pub(crate) fn not(dst: &mut [Word], source: &[Word]) {
     for (d, s) in dst.iter_mut().zip(source.iter()) {
         *d = !(*s);
+    }
+}
+
+#[inline]
+pub(crate) fn and(dst: &mut [Word], a: &[Word], b: &[Word]) {
+    bitwise_bin_op(dst, a, b, |a, b| a & b)
+}
+
+#[inline]
+pub(crate) fn or(dst: &mut [Word], a: &[Word], b: &[Word]) {
+    bitwise_bin_op(dst, a, b, |a, b| a | b)
+}
+
+#[inline]
+pub(crate) fn xor(dst: &mut [Word], a: &[Word], b: &[Word]) {
+    bitwise_bin_op(dst, a, b, |a, b| a ^ b)
+}
+
+#[inline]
+fn bitwise_bin_op(dst: &mut [Word], a: &[Word], b: &[Word], foo: fn(Word, Word) -> Word) {
+    for (d, (a, b)) in dst.iter_mut().zip(a.iter().zip(b.iter())) {
+        *d = (foo)(*a, *b);
     }
 }
 
@@ -251,10 +286,7 @@ mod tests {
         assert_eq!(to_bit_str(&c_vec, c_width), c);
     }
 
-    #[test]
-    fn test_concat() {
-        let a = "10101010100000001010101010101000101010";
-        let b = "10100001101000100000001010101010101000101010";
+    fn do_test_concat(a: &str, b: &str) {
         let (a_vec, a_width) = from_bit_str(a);
         let (b_vec, b_width) = from_bit_str(b);
         let c_width = a_width + b_width;
@@ -262,5 +294,37 @@ mod tests {
         concat(&mut c_vec, &a_vec, &b_vec, b_width);
         let expected = format!("{a}{b}");
         assert_eq!(to_bit_str(&c_vec, c_width), expected);
+    }
+
+    #[test]
+    fn test_concat() {
+        do_test_concat(
+            "10101010100000001010101010101000101010",
+            "10100001101000100000001010101010101000101010",
+        );
+        do_test_concat("10101010100000001010101010101000101010", "00101010");
+    }
+
+    fn do_test_slice(src: &str, hi: WidthInt, lo: WidthInt) {
+        let (src_vec, src_width) = from_bit_str(src);
+        assert!(hi >= lo);
+        assert!(hi < src_width);
+        let res_width = hi - lo + 1;
+        let mut res_vec = vec![0 as Word; res_width.div_ceil(Word::BITS) as usize];
+        slice(&mut res_vec, &src_vec, hi, lo);
+        let expected: String = src
+            .chars()
+            .skip((src_width - 1 - hi) as usize)
+            .take(res_width as usize)
+            .collect();
+        assert_eq!(to_bit_str(&res_vec, res_width), expected);
+    }
+
+    #[test]
+    fn test_slice() {
+        do_test_slice("100010101010001", 0, 0);
+        do_test_slice("100010101010001", 1, 1);
+        do_test_slice("100010101010001", 6, 0);
+        do_test_slice("100010101010001", 6, 4);
     }
 }
