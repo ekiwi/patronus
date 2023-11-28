@@ -46,15 +46,18 @@ fn main() {
     }
 
     // start execution
-    let start = std::time::Instant::now();
+    let start_load = std::time::Instant::now();
     let mut sim = Interpreter::new(&ctx, &sys);
     sim.init(InitKind::Zero);
+    let delta_load = std::time::Instant::now() - start_load;
+    println!("Loaded the design into the interpreter in {:?}", delta_load);
 
+    let start_exec = std::time::Instant::now();
     for (step_id, line) in tb.lines().flatten().enumerate() {
         do_step(step_id, &mut sim, &line, &inputs, &outputs);
     }
-    let delta = std::time::Instant::now() - start;
-    println!("Executed {} steps in {:?}", sim.step_count(), delta);
+    let delta_exec = std::time::Instant::now() - start_exec;
+    println!("Executed {} steps in {:?}", sim.step_count(), delta_exec);
 }
 
 type IOInfo = Vec<(usize, ExprRef, String)>;

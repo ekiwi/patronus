@@ -33,7 +33,7 @@ pub trait Simulator {
 
 /// Interpreter based simulator for a transition system.
 pub struct Interpreter {
-    meta: Vec<Option<Instruction>>,
+    meta: Vec<Option<OldInstruction>>,
     states: Vec<State>,
     data: Vec<Word>,
     step_count: u64,
@@ -54,7 +54,7 @@ impl Interpreter {
 }
 
 /// Converts a transitions system into instructions and the number of Words that need to be allocated
-fn compile(ctx: &Context, sys: &TransitionSystem) -> (Vec<Option<Instruction>>, usize) {
+fn compile(ctx: &Context, sys: &TransitionSystem) -> (Vec<Option<OldInstruction>>, usize) {
     let use_counts = count_expr_uses(ctx, sys);
     let mut meta = Vec::with_capacity(use_counts.len());
     let mut word_count = 0u32;
@@ -75,7 +75,7 @@ fn compile_expr(
     sys: &TransitionSystem,
     expr_ref: ExprRef,
     offset: u32,
-) -> Instruction {
+) -> OldInstruction {
     let expr = ctx.get(expr_ref);
     let kind = sys
         .get_signal(expr_ref)
@@ -86,7 +86,7 @@ fn compile_expr(
         None => todo!("array support"),
         Some(width) => {
             let words = width.div_ceil(Word::BITS as WidthInt) as u16;
-            Instruction {
+            OldInstruction {
                 offset,
                 words,
                 expr: expr.clone(),
@@ -184,14 +184,14 @@ impl Interpreter {
     /// Eagerly re-computes all signals in the system.
     fn update_all_signals(&mut self) {
         for inst in self.meta.iter().flatten() {
-            update_signal(inst, &mut self.data, &self.meta);
+            old_update_signal(inst, &mut self.data, &self.meta);
         }
     }
 }
 
 /// Meta data for each expression.
 #[derive(Debug, Clone)]
-struct Instruction {
+struct OldInstruction {
     /// Start of the value in the data array.
     offset: u32,
     /// Number of words.
@@ -204,11 +204,125 @@ struct Instruction {
     expr_ref: ExprRef,
 }
 
-impl Instruction {
+#[derive(Debug, Clone)]
+struct Instr {
+    dst: Loc,
+    tpe: InstrType,
+    // for debugging
+    expr_ref: ExprRef,
+}
+
+#[derive(Debug, Clone)]
+enum InstrType {
+    Nullary(NullaryOp),
+    Unary(UnaryOp, Loc),
+    Binary(BinaryOp, Loc, Loc),
+    Tertiary(TertiaryOp, Loc, Loc, Loc),
+}
+
+#[derive(Debug, Clone)]
+enum NullaryOp {
+    BVSymbol,
+    BVLiteral(BVLiteralInt, WidthInt),
+}
+
+#[derive(Debug, Clone)]
+enum UnaryOp {
+    BVSlice(WidthInt, WidthInt),
+}
+
+#[derive(Debug, Clone)]
+enum BinaryOp {
+    BVNot,
+    BVEqual,
+}
+
+#[derive(Debug, Clone)]
+enum TertiaryOp {
+    BVIte,
+}
+
+#[derive(Debug, Clone)]
+struct Loc {
+    /// Start of the value in the data array.
+    offset: u32,
+    /// Number of words.
+    words: u16,
+}
+
+impl Loc {
     fn range(&self) -> std::ops::Range<usize> {
         let start = self.offset as usize;
         let end = start + self.words as usize;
         start..end
+    }
+}
+
+impl OldInstruction {
+    fn range(&self) -> std::ops::Range<usize> {
+        let start = self.offset as usize;
+        let end = start + self.words as usize;
+        start..end
+    }
+}
+
+fn compile_expr_type(expr: &Expr) -> InstrType {
+    todo!()
+}
+
+fn exec_instr(instr: &Instr, data: &mut [Word]) {
+    match &instr.tpe {
+        InstrType::Nullary(tpe) => {
+            match tpe {
+                NullaryOp::BVSymbol => {}
+                NullaryOp::BVLiteral(value, width) => {
+                    // TODO: optimize by only calculating once!
+                    assert!(*width <= BVLiteralInt::BITS);
+                    data[instr.dst.range()][0] = *value;
+                }
+            }
+        }
+        InstrType::Unary(tpe, a_loc) => {
+            let (dst, a) = exec::split_borrow_1(data, instr.dst.range(), a_loc.range());
+            match tpe {
+                UnaryOp::BVSlice(hi, lo) => {
+                    if dst.len() == 1 {
+                        dst[0] = exec::slice_to_word(a, *hi, *lo);
+                    } else {
+                        todo!("implement slice with a larger target")
+                    }
+                }
+            }
+        }
+        InstrType::Binary(tpe, a_loc, b_loc) => {
+            let (dst, a, b) =
+                exec::split_borrow_2(data, instr.dst.range(), a_loc.range(), b_loc.range());
+            match tpe {
+                BinaryOp::BVNot => {
+                    todo!("not")
+                }
+                BinaryOp::BVEqual => {
+                    dst[0] = exec::cmp_equal(a, b);
+                }
+            }
+        }
+        InstrType::Tertiary(tpe, a_loc, b_loc, c_loc) => {
+            match tpe {
+                TertiaryOp::BVIte => {
+                    // we take advantage of the fact that the condition is always a bool
+                    let cond_value = data[a_loc.range()][0] != 0;
+                    if cond_value {
+                        let (dst, src) =
+                            exec::split_borrow_1(data, instr.dst.range(), b_loc.range());
+                        exec::assign(dst, src);
+                    } else {
+                        let (dst, src) =
+                            exec::split_borrow_1(data, instr.dst.range(), c_loc.range());
+                        exec::assign(dst, src);
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -226,7 +340,11 @@ macro_rules! exec_cmp {
     };
 }
 
-fn update_signal(inst: &Instruction, data: &mut [Word], instructions: &[Option<Instruction>]) {
+fn old_update_signal(
+    inst: &OldInstruction,
+    data: &mut [Word],
+    instructions: &[Option<OldInstruction>],
+) {
     // print!("Executing: {} {:?}", inst.expr_ref.index(), inst.expr);
     match inst.expr {
         Expr::BVSymbol { .. } => {} // nothing to do, value will be set externally
@@ -256,13 +374,7 @@ fn update_signal(inst: &Instruction, data: &mut [Word], instructions: &[Option<I
         }
         // operations that always return a 1-bit value
         Expr::BVEqual(a, b) => {
-            let a_range = instructions[a.index()].as_ref().unwrap().range();
-            let b_range = instructions[b.index()].as_ref().unwrap().range();
-            if exec::cmp_equal(&data[a_range], &data[b_range]) {
-                data[inst.range()][0] = 1;
-            } else {
-                data[inst.range()][0] = 0;
-            }
+            todo!("equal")
         }
         Expr::BVImplies(_, _) => {
             todo!("implies")
@@ -370,7 +482,7 @@ mod tests {
     fn type_size() {
         // 16-bytes for the expression + 8 bytes for storage details
         assert_eq!(
-            std::mem::size_of::<Instruction>(),
+            std::mem::size_of::<OldInstruction>(),
             std::mem::size_of::<Expr>() + 8 + 8 // debugging data
         );
     }

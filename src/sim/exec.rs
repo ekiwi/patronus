@@ -93,8 +93,18 @@ pub(crate) fn not(dst: &mut [Word], source: &[Word]) {
 }
 
 #[inline]
-pub(crate) fn cmp_equal(a: &[Word], b: &[Word]) -> bool {
-    a.iter().zip(b.iter()).all(|(a, b)| a == b)
+pub(crate) fn cmp_equal(a: &[Word], b: &[Word]) -> Word {
+    let bool_res = a.iter().zip(b.iter()).all(|(a, b)| a == b);
+    bool_to_word(bool_res)
+}
+
+#[inline]
+fn bool_to_word(value: bool) -> Word {
+    if value {
+        1
+    } else {
+        0
+    }
 }
 
 #[inline]
