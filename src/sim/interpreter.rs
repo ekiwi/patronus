@@ -381,6 +381,18 @@ mod tests {
 
     #[test]
     fn type_size() {
+        // 4 bytes for offset, 2 bytes for number of words
+        assert_eq!(std::mem::size_of::<Loc>(), 8);
+
+        // contains value and width for literals
+        assert_eq!(std::mem::size_of::<NullaryOp>(), 16);
+
+        // contains a width for concatenation
+        assert_eq!(std::mem::size_of::<BinaryOp>(), 8);
+
+        // currently there is only one option
+        assert_eq!(std::mem::size_of::<TertiaryOp>(), 0);
+
         // instruction type is twice as large as the expr because it includes all storage details
         assert_eq!(std::mem::size_of::<InstrType>(), 32);
 
