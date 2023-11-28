@@ -5,6 +5,7 @@
 use super::exec;
 use super::exec::Word;
 use crate::ir::*;
+use crate::sim::exec::split_borrow_1;
 
 /// Specifies how to initialize states that do not have
 #[derive(Debug, PartialEq, Copy, Clone)]
@@ -33,7 +34,7 @@ pub trait Simulator {
 
 /// Interpreter based simulator for a transition system.
 pub struct Interpreter {
-    meta: Vec<Option<OldInstruction>>,
+    instructions: Vec<Option<Instr>>,
     states: Vec<State>,
     data: Vec<Word>,
     step_count: u64,
@@ -45,7 +46,7 @@ impl Interpreter {
         let data = vec![0; data_len];
         let states = sys.states().cloned().collect::<Vec<_>>();
         Self {
-            meta,
+            instructions: meta,
             data,
             states,
             step_count: 0,
@@ -54,69 +55,126 @@ impl Interpreter {
 }
 
 /// Converts a transitions system into instructions and the number of Words that need to be allocated
-fn compile(ctx: &Context, sys: &TransitionSystem) -> (Vec<Option<OldInstruction>>, usize) {
+fn compile(ctx: &Context, sys: &TransitionSystem) -> (Vec<Option<Instr>>, usize) {
     let use_counts = count_expr_uses(ctx, sys);
-    let mut meta = Vec::with_capacity(use_counts.len());
+    // used to track instruction result allocations
+    let mut locs: Vec<Option<Loc>> = Vec::with_capacity(use_counts.len());
+    let mut instructions = Vec::new();
     let mut word_count = 0u32;
     for (idx, count) in use_counts.iter().enumerate() {
         if *count == 0 {
-            meta.push(None);
+            locs.push(None); // no space needed
+            instructions.push(None); // TODO: we would like to store the instructions compacted
         } else {
-            let inst = compile_expr(ctx, sys, ExprRef::from_index(idx), word_count);
-            word_count += inst.words as u32;
-            meta.push(Some(inst));
+            let expr = ExprRef::from_index(idx);
+            let tpe = expr.get_type(ctx);
+            let (loc, width) = allocate_result_space(tpe, &mut word_count);
+            locs.push(Some(loc));
+            let instr = compile_expr(ctx, sys, expr, loc, &locs, width);
+            instructions.push(Some(instr));
         }
     }
-    (meta, word_count as usize)
+    (instructions, word_count as usize)
+}
+
+fn allocate_result_space(tpe: Type, word_count: &mut u32) -> (Loc, WidthInt) {
+    match tpe.get_bit_vector_width() {
+        None => todo!("array support"),
+        Some(width) => {
+            let words = width.div_ceil(Word::BITS as WidthInt) as u16;
+            let offset = *word_count;
+            *word_count += words as u32;
+            let loc = Loc { offset, words };
+            (loc, width)
+        }
+    }
 }
 
 fn compile_expr(
     ctx: &Context,
     sys: &TransitionSystem,
     expr_ref: ExprRef,
-    offset: u32,
-) -> OldInstruction {
+    dst: Loc,
+    locs: &[Option<Loc>],
+    result_width: WidthInt,
+) -> Instr {
     let expr = ctx.get(expr_ref);
     let kind = sys
         .get_signal(expr_ref)
         .map(|s| s.kind.clone())
         .unwrap_or(SignalKind::Node);
-    let tpe = expr.get_type(ctx);
-    match tpe.get_bit_vector_width() {
-        None => todo!("array support"),
-        Some(width) => {
-            let words = width.div_ceil(Word::BITS as WidthInt) as u16;
-            OldInstruction {
-                offset,
-                words,
-                expr: expr.clone(),
-                result_width: width,
-                kind,
-                expr_ref,
-            }
-        }
+    let tpe = compile_expr_type(expr, locs, ctx);
+    Instr {
+        dst,
+        tpe,
+        kind,
+        result_width,
     }
 }
 
-/// Helps execute a unary operation without borrowing conflicts.
-macro_rules! exec_unary {
-    ($f:path, $data:expr, $d:expr, $s:expr) => {
-        if $d.len() == 1 {
-            let _src_val = $data[$s][0];
-            $f(&mut $data[$d], &[_src_val])
-        } else {
-            let (_dst_ref, _src_ref) = $crate::sim::exec::split_borrow_1($data, $d, $s);
-            $f(_dst_ref, _src_ref)
+fn compile_expr_type(expr: &Expr, locs: &[Option<Loc>], ctx: &Context) -> InstrType {
+    match expr {
+        Expr::BVSymbol { .. } => InstrType::Nullary(NullaryOp::BVSymbol),
+        Expr::BVLiteral { value, width } => {
+            InstrType::Nullary(NullaryOp::BVLiteral(*value, *width))
         }
-    };
+        Expr::BVZeroExt { .. } => todo!("compile zext"),
+        Expr::BVSignExt { .. } => todo!("compile sext"),
+        Expr::BVSlice { e, hi, lo } => {
+            InstrType::Unary(UnaryOp::BVSlice(*hi, *lo), locs[e.index()].unwrap())
+        }
+        Expr::BVNot(e, _) => InstrType::Unary(UnaryOp::BVNot, locs[e.index()].unwrap()),
+        Expr::BVNegate(_, _) => todo!(),
+        Expr::BVEqual(a, b) => InstrType::Binary(
+            BinaryOp::BVEqual,
+            locs[a.index()].unwrap(),
+            locs[b.index()].unwrap(),
+        ),
+        Expr::BVImplies(_, _) => todo!(),
+        Expr::BVGreater(_, _) => todo!(),
+        Expr::BVGreaterSigned(_, _) => todo!(),
+        Expr::BVGreaterEqual(_, _) => todo!(),
+        Expr::BVGreaterEqualSigned(_, _) => todo!(),
+        Expr::BVConcat(a, b, _) => InstrType::Binary(
+            BinaryOp::BVConcat(b.get_bv_type(ctx).unwrap()), // LSB width
+            locs[a.index()].unwrap(),
+            locs[b.index()].unwrap(),
+        ),
+        Expr::BVAnd(_, _, _) => todo!(),
+        Expr::BVOr(_, _, _) => todo!(),
+        Expr::BVXor(_, _, _) => todo!(),
+        Expr::BVShiftLeft(_, _, _) => todo!(),
+        Expr::BVArithmeticShiftRight(_, _, _) => todo!(),
+        Expr::BVShiftRight(_, _, _) => todo!(),
+        Expr::BVAdd(_, _, _) => todo!(),
+        Expr::BVMul(_, _, _) => todo!(),
+        Expr::BVSignedDiv(_, _, _) => todo!(),
+        Expr::BVUnsignedDiv(_, _, _) => todo!(),
+        Expr::BVSignedMod(_, _, _) => todo!(),
+        Expr::BVSignedRem(_, _, _) => todo!(),
+        Expr::BVUnsignedRem(_, _, _) => todo!(),
+        Expr::BVSub(_, _, _) => todo!(),
+        Expr::BVArrayRead { .. } => todo!(),
+        Expr::BVIte { cond, tru, fals } => InstrType::Tertiary(
+            TertiaryOp::BVIte,
+            locs[cond.index()].unwrap(),
+            locs[tru.index()].unwrap(),
+            locs[fals.index()].unwrap(),
+        ),
+        Expr::ArraySymbol { .. } => todo!(),
+        Expr::ArrayConstant { .. } => todo!(),
+        Expr::ArrayEqual(_, _) => todo!(),
+        Expr::ArrayStore { .. } => todo!(),
+        Expr::ArrayIte { .. } => todo!(),
+    }
 }
 
 impl Simulator for Interpreter {
     fn init(&mut self, kind: InitKind) {
         // assign default value to all inputs and states
-        for inst in self.meta.iter().flatten() {
+        for inst in self.instructions.iter().flatten() {
             if matches!(inst.kind, SignalKind::Input | SignalKind::State) {
-                exec::clear(&mut self.data[inst.range()]);
+                exec::clear(&mut self.data[inst.dst.range()]);
             }
         }
 
@@ -127,9 +185,18 @@ impl Simulator for Interpreter {
         // assign init expressions to signals
         for state in self.states.iter() {
             if let Some(init) = state.init {
-                let dst = self.meta[state.symbol.index()].as_ref().unwrap().range();
-                let src = self.meta[init.index()].as_ref().unwrap().range();
-                exec_unary!(exec::assign, &mut self.data, dst, src);
+                let dst_range = self.instructions[state.symbol.index()]
+                    .as_ref()
+                    .unwrap()
+                    .dst
+                    .range();
+                let src_range = self.instructions[init.index()]
+                    .as_ref()
+                    .unwrap()
+                    .dst
+                    .range();
+                let (dst, src) = split_borrow_1(&mut self.data, dst_range, src_range);
+                exec::assign(dst, src);
             }
         }
     }
@@ -142,17 +209,26 @@ impl Simulator for Interpreter {
         // assign next expressions to state
         for state in self.states.iter() {
             if let Some(next) = state.next {
-                let dst = self.meta[state.symbol.index()].as_ref().unwrap().range();
-                let src = self.meta[next.index()].as_ref().unwrap().range();
-                exec_unary!(exec::assign, &mut self.data, dst, src);
+                let dst_range = self.instructions[state.symbol.index()]
+                    .as_ref()
+                    .unwrap()
+                    .dst
+                    .range();
+                let src_range = self.instructions[next.index()]
+                    .as_ref()
+                    .unwrap()
+                    .dst
+                    .range();
+                let (dst, src) = split_borrow_1(&mut self.data, dst_range, src_range);
+                exec::assign(dst, src);
             }
         }
         self.step_count += 1;
     }
 
     fn set(&mut self, expr: ExprRef, value: u64) {
-        if let Some(m) = &self.meta[expr.index()] {
-            let data = &mut self.data[m.range()];
+        if let Some(m) = &self.instructions[expr.index()] {
+            let data = &mut self.data[m.dst.range()];
             data[0] = value;
             for other in data.iter_mut().skip(1) {
                 *other = 0;
@@ -162,8 +238,8 @@ impl Simulator for Interpreter {
     }
 
     fn get(&mut self, expr: ExprRef) -> Option<u64> {
-        if let Some(m) = &self.meta[expr.index()] {
-            let data = &self.data[m.range()];
+        if let Some(m) = &self.instructions[expr.index()] {
+            let data = &self.data[m.dst.range()];
             let mask = (1u64 << m.result_width) - 1;
             let res = data[0] & mask;
             for other in data.iter().skip(1) {
@@ -183,33 +259,18 @@ impl Simulator for Interpreter {
 impl Interpreter {
     /// Eagerly re-computes all signals in the system.
     fn update_all_signals(&mut self) {
-        for inst in self.meta.iter().flatten() {
-            old_update_signal(inst, &mut self.data, &self.meta);
+        for instr in self.instructions.iter().flatten() {
+            exec_instr(instr, &mut self.data);
         }
     }
-}
-
-/// Meta data for each expression.
-#[derive(Debug, Clone)]
-struct OldInstruction {
-    /// Start of the value in the data array.
-    offset: u32,
-    /// Number of words.
-    words: u16,
-    /// Expression that we are executing.
-    expr: Expr,
-    kind: SignalKind,
-    result_width: WidthInt,
-    // for debugging
-    expr_ref: ExprRef,
 }
 
 #[derive(Debug, Clone)]
 struct Instr {
     dst: Loc,
     tpe: InstrType,
-    // for debugging
-    expr_ref: ExprRef,
+    kind: SignalKind,       // TODO: move to symbol meta-data or similar structure
+    result_width: WidthInt, // TODO: move to symbol meta-data
 }
 
 #[derive(Debug, Clone)]
@@ -229,12 +290,13 @@ enum NullaryOp {
 #[derive(Debug, Clone)]
 enum UnaryOp {
     BVSlice(WidthInt, WidthInt),
+    BVNot,
 }
 
 #[derive(Debug, Clone)]
 enum BinaryOp {
-    BVNot,
     BVEqual,
+    BVConcat(WidthInt), // width of the lsb
 }
 
 #[derive(Debug, Clone)]
@@ -242,7 +304,7 @@ enum TertiaryOp {
     BVIte,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 struct Loc {
     /// Start of the value in the data array.
     offset: u32,
@@ -256,18 +318,6 @@ impl Loc {
         let end = start + self.words as usize;
         start..end
     }
-}
-
-impl OldInstruction {
-    fn range(&self) -> std::ops::Range<usize> {
-        let start = self.offset as usize;
-        let end = start + self.words as usize;
-        start..end
-    }
-}
-
-fn compile_expr_type(expr: &Expr) -> InstrType {
-    todo!()
 }
 
 fn exec_instr(instr: &Instr, data: &mut [Word]) {
@@ -292,18 +342,17 @@ fn exec_instr(instr: &Instr, data: &mut [Word]) {
                         todo!("implement slice with a larger target")
                     }
                 }
+                UnaryOp::BVNot => exec::not(dst, a),
             }
         }
         InstrType::Binary(tpe, a_loc, b_loc) => {
             let (dst, a, b) =
                 exec::split_borrow_2(data, instr.dst.range(), a_loc.range(), b_loc.range());
             match tpe {
-                BinaryOp::BVNot => {
-                    todo!("not")
-                }
                 BinaryOp::BVEqual => {
                     dst[0] = exec::cmp_equal(a, b);
                 }
+                BinaryOp::BVConcat(lsb_width) => exec::concat(dst, a, b, *lsb_width),
             }
         }
         InstrType::Tertiary(tpe, a_loc, b_loc, c_loc) => {
@@ -324,154 +373,6 @@ fn exec_instr(instr: &Instr, data: &mut [Word]) {
             }
         }
     }
-}
-
-/// Helps execute a compare in the context of the update_signal function.
-macro_rules! exec_cmp {
-    ($f:path, $data:expr, $d:expr, $s:expr) => {
-        if $d.len() == 1 {
-            let _src_val = $data[$s][0];
-            $f(&mut $data[$d], &[_src_val])
-        } else {
-            let (_dst_ref, _src_ref) =
-                $crate::sim::exec::split_borrow_1(&mut $data, $d, $s).expect("aliasing");
-            $f(_dst_ref, _src_ref)
-        }
-    };
-}
-
-fn old_update_signal(
-    inst: &OldInstruction,
-    data: &mut [Word],
-    instructions: &[Option<OldInstruction>],
-) {
-    // print!("Executing: {} {:?}", inst.expr_ref.index(), inst.expr);
-    match inst.expr {
-        Expr::BVSymbol { .. } => {} // nothing to do, value will be set externally
-        Expr::BVLiteral { value, width } => {
-            // TODO: optimize by only calculating once!
-            assert!(width <= BVLiteralInt::BITS);
-            data[inst.range()][0] = value;
-        }
-        // operations that change the bit-width
-        Expr::BVZeroExt { e, by, width } => {
-            todo!("zext")
-        }
-        Expr::BVSignExt { .. } => {
-            todo!("sext")
-        }
-        Expr::BVSlice { e, hi, lo } => {
-            let e_range = instructions[e.index()].as_ref().unwrap().range();
-            let width = hi - lo + 1;
-            if width <= 64 {
-                data[inst.range()][0] = exec::slice_to_word(&data[e_range], hi, lo);
-            } else {
-                todo!("deal with larger slices")
-            }
-        }
-        Expr::BVConcat(_, _, _) => {
-            todo!("concat")
-        }
-        // operations that always return a 1-bit value
-        Expr::BVEqual(a, b) => {
-            todo!("equal")
-        }
-        Expr::BVImplies(_, _) => {
-            todo!("implies")
-        }
-        Expr::BVGreater(_, _) => {
-            todo!("greater")
-        }
-        Expr::BVGreaterSigned(_, _) => {
-            todo!("greater signed")
-        }
-        Expr::BVGreaterEqual(_, _) => {
-            todo!("greater equal")
-        }
-        Expr::BVGreaterEqualSigned(_, _) => {
-            todo!("greater equal signed")
-        }
-
-        // operations that keep the size
-        Expr::BVNot(e, _) => {
-            let src = instructions[e.index()].as_ref().unwrap().range();
-            exec_unary!(exec::not, data, inst.range(), src);
-        }
-        Expr::BVNegate(_, _) => {
-            todo!("negate")
-        }
-        Expr::BVAnd(_, _, _) => {
-            todo!("and")
-        }
-        Expr::BVOr(_, _, _) => {
-            todo!("or")
-        }
-        Expr::BVXor(_, _, _) => {
-            todo!("xor")
-        }
-        Expr::BVShiftLeft(_, _, _) => {
-            todo!("shift left")
-        }
-        Expr::BVArithmeticShiftRight(_, _, _) => {
-            todo!("arith shift right")
-        }
-        Expr::BVShiftRight(_, _, _) => {
-            todo!("shift right")
-        }
-        Expr::BVAdd(_, _, _) => {
-            todo!("add")
-        }
-        Expr::BVMul(_, _, _) => {
-            todo!("mul")
-        }
-        Expr::BVSignedDiv(_, _, _) => {
-            todo!("signed div")
-        }
-        Expr::BVUnsignedDiv(_, _, _) => {
-            todo!("div")
-        }
-        Expr::BVSignedMod(_, _, _) => {
-            todo!("signed mod")
-        }
-        Expr::BVSignedRem(_, _, _) => {
-            todo!("signed rem")
-        }
-        Expr::BVUnsignedRem(_, _, _) => {
-            todo!("rem")
-        }
-        Expr::BVSub(_, _, _) => {
-            todo!("sub")
-        }
-        Expr::BVArrayRead { .. } => {
-            todo!("array read")
-        }
-        Expr::BVIte { cond, tru, fals } => {
-            let cond_range = instructions[cond.index()].as_ref().unwrap().range();
-            let cond_value = data[cond_range][0] != 0;
-            let dst = inst.range();
-            if cond_value {
-                let src = instructions[tru.index()].as_ref().unwrap().range();
-                exec_unary!(exec::assign, data, dst, src);
-            } else {
-                let src = instructions[fals.index()].as_ref().unwrap().range();
-                exec_unary!(exec::assign, data, dst, src);
-            }
-        }
-        Expr::ArraySymbol { .. } => {} // nothing to do for symbol
-        Expr::ArrayConstant { .. } => {
-            todo!("array const")
-        }
-        Expr::ArrayEqual(_, _) => {
-            todo!("array eq")
-        }
-        Expr::ArrayStore { .. } => {
-            todo!("array store")
-        }
-        Expr::ArrayIte { .. } => {
-            todo!("array ite")
-        }
-    }
-    // println!("  --> {:?}", &data[inst.range()]);
 }
 
 #[cfg(test)]
