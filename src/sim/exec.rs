@@ -37,16 +37,18 @@ pub(crate) fn mask(bits: WidthInt) -> Word {
 pub(crate) fn slice_to_word(source: &[Word], hi: WidthInt, lo: WidthInt) -> Word {
     let lo_word = lo / Word::BITS;
     let lo_offset = lo - (lo_word * Word::BITS);
+    let lo_index = source.len() - 1 - (lo_word as usize); // big endian
     let hi_word = hi / Word::BITS;
     let hi_offset = hi - (hi_word * Word::BITS);
+    let hi_index = source.len() - 1 - (hi_word as usize); // big endian
 
-    let lsb = source[lo_word as usize] >> lo_offset;
+    let lsb = source[lo_index] >> lo_offset;
     if hi_word == lo_word {
         let m = mask(hi - lo + 1);
         lsb & m
     } else {
         let lo_width = Word::BITS - lo_offset;
-        let msb = source[hi_word as usize] & mask(hi_offset + 1);
+        let msb = source[hi_index] & mask(hi_offset + 1);
         lsb | (msb << lo_width)
     }
 }
@@ -193,6 +195,8 @@ pub(crate) fn split_borrow_2(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rand::Rng;
+    use rand_xoshiro::rand_core::SeedableRng;
 
     fn from_bit_str(bits: &str) -> (Vec<Word>, WidthInt) {
         let width = bits.len() as WidthInt;
@@ -286,6 +290,15 @@ mod tests {
         assert_eq!(to_bit_str(&c_vec, c_width), c);
     }
 
+    fn random_bit_str(width: WidthInt, rnd: &mut impl Rng) -> String {
+        let mut out = String::with_capacity(width as usize);
+        for _ in 0..width {
+            let cc = if rnd.gen_bool(0.5) { '1' } else { '0' };
+            out.push(cc);
+        }
+        out
+    }
+
     fn do_test_concat(a: &str, b: &str) {
         let (a_vec, a_width) = from_bit_str(a);
         let (b_vec, b_width) = from_bit_str(b);
@@ -298,11 +311,9 @@ mod tests {
 
     #[test]
     fn test_concat() {
-        do_test_concat(
-            "10101010100000001010101010101000101010",
-            "10100001101000100000001010101010101000101010",
-        );
-        do_test_concat("10101010100000001010101010101000101010", "00101010");
+        let mut rng = rand_xoshiro::Xoshiro256PlusPlus::seed_from_u64(1);
+        do_test_concat(&random_bit_str(38, &mut rng), &random_bit_str(44, &mut rng));
+        do_test_concat(&random_bit_str(38, &mut rng), &random_bit_str(8, &mut rng));
     }
 
     fn do_test_slice(src: &str, hi: WidthInt, lo: WidthInt) {
@@ -322,9 +333,19 @@ mod tests {
 
     #[test]
     fn test_slice() {
-        do_test_slice("100010101010001", 0, 0);
-        do_test_slice("100010101010001", 1, 1);
-        do_test_slice("100010101010001", 6, 0);
-        do_test_slice("100010101010001", 6, 4);
+        let mut rng = rand_xoshiro::Xoshiro256PlusPlus::seed_from_u64(1);
+        let in0 = random_bit_str(15, &mut rng);
+        do_test_slice(&in0, 0, 0);
+        do_test_slice(&in0, 1, 1);
+        do_test_slice(&in0, 6, 0);
+        do_test_slice(&in0, 6, 4);
+
+        // test larger slices
+        let in1 = random_bit_str(1354, &mut rng);
+        do_test_slice(&in1, 400, 400); // 400 = 6 * 64 +  16
+        do_test_slice(&in1, 400, 400 - 20);
+        do_test_slice(&in1, 400 + 13, 400 - 20);
+        // result is larger than one word
+        // do_test_slice(&in1, 875, 875 - (Word::BITS * 2) - 15);
     }
 }
