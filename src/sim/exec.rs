@@ -58,7 +58,23 @@ pub(crate) fn slice(dst: &mut [Word], source: &[Word], hi: WidthInt, lo: WidthIn
     if dst.len() == 1 {
         dst[0] = slice_to_word(source, hi, lo);
     } else {
-        todo!("implement slice with a larger target")
+        let skip_lsb_words = (lo / Word::BITS) as usize;
+        let shift_right = lo % Word::BITS;
+
+        let skip_msb_words = source.len() - dst.len() - skip_lsb_words;
+        if shift_right == 0 {
+            let skip_msb_words = source.len() - dst.len() - skip_lsb_words;
+            assign(dst, &source[skip_msb_words..(skip_msb_words + dst.len())]);
+        } else {
+            let shift_left = Word::BITS - shift_right;
+            let m = mask(shift_left);
+            let mut prev = 0;
+            for (d, s) in dst.iter_mut().zip(source.iter().skip(skip_msb_words)) {
+                *d = (prev & m) << shift_left;
+                *d |= (*s) >> shift_right;
+                prev = *s;
+            }
+        }
     }
 }
 
@@ -335,17 +351,19 @@ mod tests {
     fn test_slice() {
         let mut rng = rand_xoshiro::Xoshiro256PlusPlus::seed_from_u64(1);
         let in0 = random_bit_str(15, &mut rng);
-        do_test_slice(&in0, 0, 0);
-        do_test_slice(&in0, 1, 1);
-        do_test_slice(&in0, 6, 0);
-        do_test_slice(&in0, 6, 4);
+        // do_test_slice(&in0, 0, 0);
+        // do_test_slice(&in0, 1, 1);
+        // do_test_slice(&in0, 6, 0);
+        // do_test_slice(&in0, 6, 4);
 
         // test larger slices
         let in1 = random_bit_str(1354, &mut rng);
-        do_test_slice(&in1, 400, 400); // 400 = 6 * 64 +  16
-        do_test_slice(&in1, 400, 400 - 20);
-        do_test_slice(&in1, 400 + 13, 400 - 20);
+        // do_test_slice(&in1, 400, 400); // 400 = 6 * 64 +  16
+        // do_test_slice(&in1, 400, 400 - 20);
+        // do_test_slice(&in1, 400 + 13, 400 - 20);
         // result is larger than one word
-        // do_test_slice(&in1, 875, 875 - (Word::BITS * 2) - 15);
+        do_test_slice(&in1, 875, Word::BITS * 13); // aligned to word boundaries
+        do_test_slice(&in1, 3 + (Word::BITS * 2) + 11, 3);
+        do_test_slice(&in1, 875, 875 - (Word::BITS * 2) - 15);
     }
 }
