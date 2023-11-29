@@ -25,6 +25,11 @@ pub(crate) fn assign(dst: &mut [Word], source: &[Word]) {
 }
 
 #[inline]
+pub(crate) fn read_bool(source: &[Word]) -> bool {
+    word_to_bool(source[0])
+}
+
+#[inline]
 pub(crate) fn assign_word(dst: &mut [Word], value: Word) {
     // assign the lsb
     dst[0] = value;
@@ -157,6 +162,11 @@ fn bool_to_word(value: bool) -> Word {
 }
 
 #[inline]
+fn word_to_bool(value: Word) -> bool {
+    (value & 1) == 1
+}
+
+#[inline]
 pub(crate) fn split_borrow_1(
     data: &mut [Word],
     dst: Range<usize>,
@@ -227,6 +237,29 @@ pub(crate) fn to_bit_str(values: &[Word], width: WidthInt) -> String {
         }
     }
     out
+}
+
+pub(crate) fn to_big_uint(words: &[Word], width: WidthInt) -> num_bigint::BigUint {
+    let mut words32 = Vec::with_capacity(words.len() * 2);
+    let mask32 = mask(32);
+    let msb_offset = width % Word::BITS;
+    let msb_mask = if msb_offset == 0 {
+        Word::MAX
+    } else {
+        mask(msb_offset)
+    };
+    for (ii, w) in words.iter().enumerate() {
+        let word = if ii + 1 == words.len() {
+            msb_mask & (*w)
+        } else {
+            *w
+        };
+        let lsb = (word & mask32) as u32;
+        let msb = ((word >> 32) & mask32) as u32;
+        words32.push(lsb);
+        words32.push(msb);
+    }
+    num_bigint::BigUint::from_slice(&words32)
 }
 
 #[cfg(test)]

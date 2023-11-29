@@ -7,6 +7,8 @@ use libpatron::ir::*;
 use libpatron::mc::Simulator;
 use libpatron::sim::interpreter::{InitKind, Interpreter};
 use libpatron::*;
+use num_bigint::BigUint;
+use num_traits::Num;
 use std::collections::HashMap;
 use std::io::BufRead;
 
@@ -157,9 +159,14 @@ fn do_step(
                 // apply input
                 let trimmed = cell.trim();
                 if trimmed.to_ascii_lowercase() != "x" {
-                    let expected = u64::from_str_radix(trimmed, 10).unwrap();
-                    let actual = sim.get(output.1).unwrap().to_u64().unwrap();
-                    assert_eq!(expected, actual, "{}@{step_id}", output.2);
+                    if let Ok(expected) = u64::from_str_radix(trimmed, 10) {
+                        let actual = sim.get(output.1).unwrap().to_u64().unwrap();
+                        assert_eq!(expected, actual, "{}@{step_id}", output.2);
+                    } else {
+                        let expected = BigUint::from_str_radix(trimmed, 10).unwrap();
+                        let actual = sim.get(output.1).unwrap().to_big_uint();
+                        assert_eq!(expected, actual, "{}@{step_id}", output.2);
+                    }
                 }
 
                 // get next output

@@ -70,6 +70,9 @@ jobs:
       - name: simulate mux
         run: |
           cargo run --release --example sim -- --testbench=inputs/repair/mux_4_1.original.tb.csv inputs/repair/mux_4_1.original.btor
+      - name: simulate sha3 (keccak)
+        run: |
+          cargo run --release --example sim -- --testbench=inputs/repair/keccak.original.tb.csv inputs/repair/keccak.original.btor
 
   semver:
     name: Check Semantic Versioning

@@ -306,6 +306,10 @@ impl<'a> ValueRef<'a> {
     pub fn to_bit_string(&self) -> String {
         exec::to_bit_str(self.words, self.bits)
     }
+
+    pub fn to_big_uint(&self) -> num_bigint::BigUint {
+        exec::to_big_uint(self.words, self.bits)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -421,23 +425,18 @@ fn exec_instr(instr: &Instr, data: &mut [Word]) {
                 );
             }
         }
-        InstrType::Tertiary(tpe, a_loc, b_loc, c_loc) => {
-            match tpe {
-                TertiaryOp::BVIte => {
-                    // we take advantage of the fact that the condition is always a bool
-                    let cond_value = data[a_loc.range()][0] != 0;
-                    if cond_value {
-                        let (dst, src) =
-                            exec::split_borrow_1(data, instr.dst.range(), b_loc.range());
-                        exec::assign(dst, src);
-                    } else {
-                        let (dst, src) =
-                            exec::split_borrow_1(data, instr.dst.range(), c_loc.range());
-                        exec::assign(dst, src);
-                    }
+        InstrType::Tertiary(tpe, a_loc, b_loc, c_loc) => match tpe {
+            TertiaryOp::BVIte => {
+                let cond_value = exec::read_bool(&data[a_loc.range()]);
+                if cond_value {
+                    let (dst, src) = exec::split_borrow_1(data, instr.dst.range(), b_loc.range());
+                    exec::assign(dst, src);
+                } else {
+                    let (dst, src) = exec::split_borrow_1(data, instr.dst.range(), c_loc.range());
+                    exec::assign(dst, src);
                 }
             }
-        }
+        },
     }
 }
 
