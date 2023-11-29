@@ -114,9 +114,7 @@ fn compile_expr(
 fn compile_expr_type(expr: &Expr, locs: &[Option<Loc>], ctx: &Context) -> InstrType {
     match expr {
         Expr::BVSymbol { .. } => InstrType::Nullary(NullaryOp::BVSymbol),
-        Expr::BVLiteral { value, width } => {
-            InstrType::Nullary(NullaryOp::BVLiteral(*value, *width))
-        }
+        Expr::BVLiteral { value, .. } => InstrType::Nullary(NullaryOp::BVLiteral(*value)),
         Expr::BVZeroExt { .. } => todo!("compile zext"),
         Expr::BVSignExt { .. } => todo!("compile sext"),
         Expr::BVSlice { e, hi, lo } => {
@@ -239,11 +237,8 @@ impl Simulator for Interpreter {
 
     fn set(&mut self, expr: ExprRef, value: u64) {
         if let Some(m) = &self.instructions[expr.index()] {
-            let data = &mut self.data[m.dst.range()];
-            data[0] = value;
-            for other in data.iter_mut().skip(1) {
-                *other = 0;
-            }
+            let dst = &mut self.data[m.dst.range()];
+            exec::assign_word(dst, value);
             // println!("Set [{}] = {}", expr.index(), data[0]);
         }
     }
@@ -295,7 +290,7 @@ enum InstrType {
 #[derive(Debug, Clone)]
 enum NullaryOp {
     BVSymbol,
-    BVLiteral(BVLiteralInt, WidthInt),
+    BVLiteral(BVLiteralInt),
 }
 
 #[derive(Debug, Clone)]
@@ -339,14 +334,10 @@ fn exec_instr(instr: &Instr, data: &mut [Word]) {
         InstrType::Nullary(tpe) => {
             match tpe {
                 NullaryOp::BVSymbol => {}
-                NullaryOp::BVLiteral(value, width) => {
+                NullaryOp::BVLiteral(value) => {
                     // TODO: optimize by only calculating once!
                     let dst = &mut data[instr.dst.range()];
-                    dst[0] = *value;
-                    // zero extend
-                    for other in dst.iter_mut().skip(1) {
-                        *other = 0;
-                    }
+                    exec::assign_word(dst, *value);
                 }
             }
         }
@@ -361,9 +352,7 @@ fn exec_instr(instr: &Instr, data: &mut [Word]) {
             let (dst, a, b) =
                 exec::split_borrow_2(data, instr.dst.range(), a_loc.range(), b_loc.range());
             match tpe {
-                BinaryOp::BVEqual => {
-                    dst[0] = exec::cmp_equal(a, b);
-                }
+                BinaryOp::BVEqual => dst[0] = exec::cmp_equal(a, b),
                 BinaryOp::Concat(lsb_width) => exec::concat(dst, a, b, *lsb_width),
                 BinaryOp::Or => exec::or(dst, a, b),
                 BinaryOp::And => exec::and(dst, a, b),

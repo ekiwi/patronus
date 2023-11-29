@@ -3,6 +3,7 @@
 // author: Kevin Laeufer <laeufer@berkeley.edu>
 
 // contains implementations of our smt operations
+// values are stored in an array of words in little endian form
 
 use crate::ir::WidthInt;
 use std::ops::Range;
@@ -24,6 +25,17 @@ pub(crate) fn assign(dst: &mut [Word], source: &[Word]) {
 }
 
 #[inline]
+pub(crate) fn assign_word(dst: &mut [Word], value: Word) {
+    // assign the lsb
+    dst[0] = value;
+
+    // zero extend
+    for other in dst.iter_mut().skip(1) {
+        *other = 0;
+    }
+}
+
+#[inline]
 pub(crate) fn mask(bits: WidthInt) -> Word {
     if bits == Word::BITS {
         Word::MAX
@@ -34,53 +46,25 @@ pub(crate) fn mask(bits: WidthInt) -> Word {
 }
 
 #[inline]
-#[allow(dead_code)] // TODO: remove at some point
-pub(crate) fn slice_to_word(source: &[Word], hi: WidthInt, lo: WidthInt) -> Word {
-    let lo_word = lo / Word::BITS;
-    let lo_offset = lo - (lo_word * Word::BITS);
-    let lo_index = source.len() - 1 - (lo_word as usize); // big endian
-    let hi_word = hi / Word::BITS;
-    let hi_offset = hi - (hi_word * Word::BITS);
-    let hi_index = source.len() - 1 - (hi_word as usize); // big endian
-
-    let lsb = source[lo_index] >> lo_offset;
-    if hi_word == lo_word {
-        let m = mask(hi - lo + 1);
-        lsb & m
-    } else {
-        let lo_width = Word::BITS - lo_offset;
-        let msb = source[hi_index] & mask(hi_offset + 1);
-        lsb | (msb << lo_width)
-    }
-}
-
-#[inline]
 pub(crate) fn slice(dst: &mut [Word], source: &[Word], hi: WidthInt, lo: WidthInt) {
     let lo_offset = lo % Word::BITS;
     let hi_word = (hi / Word::BITS) as usize;
     let lo_word = (lo / Word::BITS) as usize;
-    let source_word_count = hi_word - lo_word + 1;
-    let hi_index = source.len() - 1 - hi_word; // big endian
+    let src = &source[lo_word..(hi_word + 1)];
 
     let shift_right = lo_offset;
-    let skip_msb_words = hi_index;
     if shift_right == 0 {
-        assign(
-            dst,
-            &source[skip_msb_words..(skip_msb_words + source_word_count)],
-        );
+        assign(dst, src);
     } else {
+        // assign with a shift
         let shift_left = Word::BITS - shift_right;
         let m = mask(shift_right);
-        let mut source_iter = source.iter().skip(skip_msb_words);
-        let mut prev = if dst.len() < source_word_count {
-            *source_iter.next().unwrap()
-        } else {
-            0
-        };
-        for (d, s) in dst.iter_mut().zip(source_iter) {
-            let d0 = (prev & m) << shift_left;
-            let d1 = d0 | ((*s) >> shift_right);
+        let mut prev = src[0];
+        // We append a zero to the src iter in case src.len() == dst.len().
+        // If src.len() == dst.len() + 1, then the 0 will just be ignored by `zip`.
+        for (d, s) in dst.iter_mut().zip(src.iter().skip(1).chain([0].iter())) {
+            let d0 = prev >> shift_right;
+            let d1 = d0 | ((*s) & m) << shift_left;
             *d = d1;
             prev = *s;
         }
@@ -124,8 +108,13 @@ pub(crate) fn concat(dst: &mut [Word], msb: &[Word], lsb: &[Word], lsb_width: Wi
 
 #[inline]
 pub(crate) fn not(dst: &mut [Word], source: &[Word]) {
+    bitwise_un_op(dst, source, |e| !e)
+}
+
+#[inline]
+fn bitwise_un_op(dst: &mut [Word], source: &[Word], foo: fn(Word) -> Word) {
     for (d, s) in dst.iter_mut().zip(source.iter()) {
-        *d = !(*s);
+        *d = (foo)(*s);
     }
 }
 
@@ -240,6 +229,7 @@ mod tests {
             word = (word << 1) | value;
         }
         out.push(word);
+        out.reverse(); // little endian
 
         (out, width)
     }
@@ -247,15 +237,16 @@ mod tests {
     fn to_bit_str(values: &[Word], width: WidthInt) -> String {
         let start_bit = (width - 1) % Word::BITS;
         let mut out = String::with_capacity(width as usize);
+        let msb = values.last().unwrap();
         for ii in (0..(start_bit + 1)).rev() {
-            let value = (values[0] >> ii) & 1;
+            let value = (msb >> ii) & 1;
             if value == 1 {
                 out.push('1');
             } else {
                 out.push('0');
             }
         }
-        for word in values.iter().skip(1) {
+        for word in values.iter().rev().skip(1) {
             for ii in (0..Word::BITS).rev() {
                 let value = (word >> ii) & 1;
                 if value == 1 {
@@ -304,8 +295,8 @@ mod tests {
         assert_eq!(
             c_vec,
             vec![
-                0b101000011010001000000010,
-                0b1010101010100010101010100001101000100000001010101010101000101010
+                0b1010101010100010101010100001101000100000001010101010101000101010, // lsb
+                0b101000011010001000000010,                                         // msb
             ]
         );
 
