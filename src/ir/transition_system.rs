@@ -155,13 +155,17 @@ impl TransitionSystem {
     }
 
     /// Uses signal names to generate a lookup map from name to the expression that represents it.
+    /// Currently ignores any internal nodes.
     pub fn generate_name_to_ref(&self, ctx: &Context) -> HashMap<String, ExprRef> {
         let mut out = HashMap::new();
         for (idx, maybe_signal) in self.signals.iter().enumerate() {
             if let Some(signal) = maybe_signal {
-                if let Some(name) = signal.name {
-                    let name_str = ctx.get(name).to_string();
-                    out.insert(name_str, ExprRef::from_index(idx));
+                if signal.kind != SignalKind::Node {
+                    // ignore nodes
+                    if let Some(name) = signal.name {
+                        let name_str = ctx.get(name).to_string();
+                        out.insert(name_str, ExprRef::from_index(idx));
+                    }
                 }
             }
         }

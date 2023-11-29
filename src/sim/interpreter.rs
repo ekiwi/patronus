@@ -300,6 +300,10 @@ impl<'a> ValueRef<'a> {
             }
         }
     }
+
+    pub fn to_bit_string(&self) -> String {
+        exec::to_bit_str(self.words, self.bits)
+    }
 }
 
 #[derive(Debug, Clone)]

@@ -18,6 +18,8 @@ use std::io::BufRead;
 struct Args {
     #[arg(short, long)]
     verbose: bool,
+    #[arg(short, long, help = "print out signal values for each step")]
+    trace: bool,
     #[arg(long, help = "Filename of a testbench.")]
     testbench: String,
     #[arg(value_name = "BTOR2", index = 1)]
@@ -45,6 +47,18 @@ fn main() {
         println!("Outputs: {outputs:?}");
     }
 
+    let mut signals_to_print: Vec<(String, ExprRef)> = Vec::new();
+    if args.trace {
+        for (name, expr) in name_to_ref.iter() {
+            // TODO: maybe filter
+            signals_to_print.push((name.clone(), expr.clone()));
+        }
+        signals_to_print.push(("914 (~f_ack)".to_string(), ExprRef::from_index(914)));
+        signals_to_print.push(("915".to_string(), ExprRef::from_index(915)));
+        signals_to_print.push(("931".to_string(), ExprRef::from_index(931)));
+        signals_to_print.sort_by_key(|(name, _)| name.clone());
+    }
+
     // start execution
     let start_load = std::time::Instant::now();
     let mut sim = Interpreter::new(&ctx, &sys);
@@ -54,7 +68,14 @@ fn main() {
 
     let start_exec = std::time::Instant::now();
     for (step_id, line) in tb.lines().flatten().enumerate() {
-        do_step(step_id, &mut sim, &line, &inputs, &outputs);
+        do_step(
+            step_id,
+            &mut sim,
+            &line,
+            &inputs,
+            &outputs,
+            &signals_to_print,
+        );
     }
     let delta_exec = std::time::Instant::now() - start_exec;
     println!("Executed {} steps in {:?}", sim.step_count(), delta_exec);
@@ -93,6 +114,7 @@ fn do_step(
     line: &str,
     inputs: &[(usize, ExprRef, String)],
     outputs: &[(usize, ExprRef, String)],
+    signal_to_print: &[(String, ExprRef)],
 ) {
     // apply inputs
     let mut input_iter = inputs.iter();
@@ -118,6 +140,17 @@ fn do_step(
 
     // calculate the output values
     sim.update();
+
+    // print values if the option is enables
+    if !signal_to_print.is_empty() {
+        println!();
+        for (name, expr) in signal_to_print.iter() {
+            if let Some(value_ref) = sim.get(*expr) {
+                let value = value_ref.to_bit_string();
+                println!("{name}@{step_id} = {value}")
+            }
+        }
+    }
 
     // check outputs
     let mut output_iter = outputs.iter();

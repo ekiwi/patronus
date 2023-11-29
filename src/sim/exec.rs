@@ -195,6 +195,31 @@ pub(crate) fn split_borrow_2(
     (dst_words, a_words, b_words)
 }
 
+pub(crate) fn to_bit_str(values: &[Word], width: WidthInt) -> String {
+    let start_bit = (width - 1) % Word::BITS;
+    let mut out = String::with_capacity(width as usize);
+    let msb = values.last().unwrap();
+    for ii in (0..(start_bit + 1)).rev() {
+        let value = (msb >> ii) & 1;
+        if value == 1 {
+            out.push('1');
+        } else {
+            out.push('0');
+        }
+    }
+    for word in values.iter().rev().skip(1) {
+        for ii in (0..Word::BITS).rev() {
+            let value = (word >> ii) & 1;
+            if value == 1 {
+                out.push('1');
+            } else {
+                out.push('0');
+            }
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -224,31 +249,6 @@ mod tests {
         out.reverse(); // little endian
 
         (out, width)
-    }
-
-    fn to_bit_str(values: &[Word], width: WidthInt) -> String {
-        let start_bit = (width - 1) % Word::BITS;
-        let mut out = String::with_capacity(width as usize);
-        let msb = values.last().unwrap();
-        for ii in (0..(start_bit + 1)).rev() {
-            let value = (msb >> ii) & 1;
-            if value == 1 {
-                out.push('1');
-            } else {
-                out.push('0');
-            }
-        }
-        for word in values.iter().rev().skip(1) {
-            for ii in (0..Word::BITS).rev() {
-                let value = (word >> ii) & 1;
-                if value == 1 {
-                    out.push('1');
-                } else {
-                    out.push('0');
-                }
-            }
-        }
-        out
     }
 
     #[test]
@@ -312,11 +312,11 @@ mod tests {
         out
     }
 
-    fn do_test_concat(a: &str, b: &str) {
+    fn do_test_concat(a: &str, b: &str, c_init: &str) {
         let (a_vec, a_width) = from_bit_str(a);
         let (b_vec, b_width) = from_bit_str(b);
-        let c_width = a_width + b_width;
-        let mut c_vec = vec![0 as Word; c_width.div_ceil(Word::BITS) as usize];
+        let (mut c_vec, c_width) = from_bit_str(c_init);
+        assert_eq!(c_width, a_width + b_width);
         concat(&mut c_vec, &a_vec, &b_vec, b_width);
         let expected = format!("{a}{b}");
         assert_eq!(to_bit_str(&c_vec, c_width), expected);
@@ -324,19 +324,32 @@ mod tests {
 
     #[test]
     fn test_concat() {
-        let mut rng = rand_xoshiro::Xoshiro256PlusPlus::seed_from_u64(1);
+        let mut rng = rand_xoshiro::Xoshiro256PlusPlus::seed_from_u64(2);
+        // simple
+        do_test_concat("0", "0", "11");
+
         // word aligned
         do_test_concat(
             &random_bit_str(Word::BITS, &mut rng),
             &random_bit_str(Word::BITS * 2, &mut rng),
+            &random_bit_str(Word::BITS + Word::BITS * 2, &mut rng),
         );
         // unaligned
-        do_test_concat(&random_bit_str(38, &mut rng), &random_bit_str(44, &mut rng));
-        do_test_concat(&random_bit_str(38, &mut rng), &random_bit_str(8, &mut rng));
+        do_test_concat(
+            &random_bit_str(38, &mut rng),
+            &random_bit_str(44, &mut rng),
+            &random_bit_str(38 + 44, &mut rng),
+        );
+        do_test_concat(
+            &random_bit_str(38, &mut rng),
+            &random_bit_str(8, &mut rng),
+            &random_bit_str(38 + 8, &mut rng),
+        );
         // test a concat where dst and msb have the same number of words
         do_test_concat(
             &random_bit_str(10 + Word::BITS, &mut rng),
             &random_bit_str(8, &mut rng),
+            &random_bit_str(10 + Word::BITS + 8, &mut rng),
         );
     }
 

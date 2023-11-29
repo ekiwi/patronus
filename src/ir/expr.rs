@@ -252,7 +252,8 @@ impl Debug for ExprRef {
 }
 
 impl ExprRef {
-    pub(crate) fn from_index(index: usize) -> Self {
+    // TODO: reduce visibility to pub(crate)
+    pub fn from_index(index: usize) -> Self {
         ExprRef(NonZeroU32::new((index + 1) as u32).unwrap())
     }
 
