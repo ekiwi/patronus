@@ -371,7 +371,7 @@ impl<'a> Parser<'a> {
                 if tpe.is_bit_vector() {
                     self.ctx.bv_ite(a, b, c)
                 } else {
-                    todo!("Array ITE")
+                    self.ctx.array_ite(a, b, c)
                 }
             }
             "write" => self.ctx.array_store(a, b, c),

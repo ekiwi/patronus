@@ -59,6 +59,9 @@ pub trait ExprNodeConstruction:
     fn bv_ite(&mut self, cond: ExprRef, tru: ExprRef, fals: ExprRef) -> ExprRef {
         self.add_node(Expr::BVIte { cond, tru, fals })
     }
+    fn array_ite(&mut self, cond: ExprRef, tru: ExprRef, fals: ExprRef) -> ExprRef {
+        self.add_node(Expr::ArrayIte { cond, tru, fals })
+    }
     fn implies(&mut self, a: ExprRef, b: ExprRef) -> ExprRef {
         self.add_node(Expr::BVImplies(a, b))
     }
