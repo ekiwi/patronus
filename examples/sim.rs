@@ -116,6 +116,7 @@ fn do_step(
         }
     }
 
+    // calculate the output values
     sim.update();
 
     // check outputs
