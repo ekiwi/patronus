@@ -127,7 +127,7 @@ fn do_step(
                 let trimmed = cell.trim();
                 if trimmed.to_ascii_lowercase() != "x" {
                     let expected = u64::from_str_radix(trimmed, 10).unwrap();
-                    let actual = sim.get(output.1).unwrap();
+                    let actual = sim.get(output.1).unwrap().to_u64().unwrap();
                     assert_eq!(expected, actual, "{}@{step_id}", output.2);
                 }
 

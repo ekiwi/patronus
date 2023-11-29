@@ -26,7 +26,7 @@ pub trait Simulator {
     /// Change the value or an expression in the simulator. Be careful!
     fn set(&mut self, expr: ExprRef, value: u64);
 
-    fn get(&mut self, expr: ExprRef) -> Option<u64>;
+    fn get(&mut self, expr: ExprRef) -> Option<ValueRef<'_>>;
 
     fn step_count(&self) -> u64;
 }
@@ -254,20 +254,11 @@ impl<'a> Simulator for Interpreter<'a> {
         }
     }
 
-    fn get(&mut self, expr: ExprRef) -> Option<u64> {
+    fn get(&mut self, expr: ExprRef) -> Option<ValueRef<'_>> {
         if let Some(m) = &self.instructions[expr.index()] {
-            if let Some(name) = expr.get_symbol_name(self.ctx) {
-                println!("GET {name} : bv<{}>", m.result_width);
-            } else {
-                println!("GET {:?} : bv<{}>", self.ctx.get(expr), m.result_width);
-            }
-            let data = &self.data[m.dst.range()];
-            let mask = (1u64 << m.result_width) - 1;
-            let res = data[0] & mask;
-            for other in data.iter().skip(1) {
-                assert_eq!(*other, 0, "missing MSB!");
-            }
-            Some(res)
+            let words = &self.data[m.dst.range()];
+            let bits = m.result_width;
+            Some(ValueRef { words, bits })
         } else {
             None
         }
@@ -283,6 +274,30 @@ impl<'a> Interpreter<'a> {
     fn update_all_signals(&mut self) {
         for instr in self.instructions.iter().flatten() {
             exec_instr(instr, &mut self.data);
+        }
+    }
+}
+
+/// Contains a pointer to a value.
+pub struct ValueRef<'a> {
+    bits: WidthInt,
+    words: &'a [Word],
+}
+
+impl<'a> ValueRef<'a> {
+    pub fn to_u64(&self) -> Option<u64> {
+        match self.words.len() {
+            0 => Some(0),
+            1 => Some(self.words[0] & exec::mask(self.bits)),
+            _ => {
+                // check to see if all msbs are zero
+                for word in self.words.iter().skip(1) {
+                    if *word != 0 {
+                        return None;
+                    }
+                }
+                Some(self.words[0])
+            }
         }
     }
 }
