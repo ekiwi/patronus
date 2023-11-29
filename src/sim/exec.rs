@@ -71,28 +71,37 @@ pub(crate) fn slice(dst: &mut [Word], source: &[Word], hi: WidthInt, lo: WidthIn
 
 #[inline]
 pub(crate) fn concat(dst: &mut [Word], msb: &[Word], lsb: &[Word], lsb_width: WidthInt) {
+    let lsb_offset = lsb_width % Word::BITS;
+
     // copy lsb to dst
-    for (d, l) in dst.iter_mut().zip(lsb.iter()) {
-        *d = *l;
+    for (ii, (d, l)) in dst.iter_mut().zip(lsb.iter()).enumerate() {
+        let is_msb = ii + 1 == lsb.len();
+        if is_msb && lsb_offset > 0 {
+            // the msb of the lsb might need to be masked
+            let m = mask(lsb_offset);
+            *d = (*l) & m;
+        } else {
+            *d = *l;
+        }
     }
     //
-    let shift_left = lsb_width % Word::BITS;
-    if shift_left == 0 {
+
+    if lsb_offset == 0 {
         // copy msb to dst
         for (d, m) in dst.iter_mut().skip(lsb.len()).zip(msb.iter()) {
             *d = *m;
         }
     } else {
         // copy a shifted version of the msb to dst
-        let shift_right = Word::BITS - shift_left;
+        let shift_right = Word::BITS - lsb_offset;
         let m = mask(shift_right);
-        let mut prev = *lsb.last().unwrap(); // the msb of the lsb
+        let mut prev = dst[lsb.len() - 1]; // the msb of the lsb
         for (d, s) in dst
             .iter_mut()
             .skip(lsb.len() - 1)
             .zip(msb.iter().chain([0].iter()))
         {
-            *d = prev | ((*s) & m) << shift_left;
+            *d = prev | ((*s) & m) << lsb_offset;
             prev = (*s) >> shift_right;
         }
     }
@@ -251,6 +260,21 @@ mod tests {
         (out, width)
     }
 
+    /// randomizes unused bits in the msb
+    fn randomize_dont_care_bits(words: &mut [Word], width: WidthInt, rng: &mut impl Rng) {
+        let msb = words.last_mut().unwrap();
+        let msb_used_len = width % Word::BITS;
+        if msb_used_len == 0 {
+            return; // full word is used
+        }
+        for ii in msb_used_len..Word::BITS {
+            if rng.gen_bool(0.5) {
+                // flip bit with 50% probability
+                *msb ^= 1 << ii;
+            }
+        }
+    }
+
     #[test]
     fn test_split_borrow() {
         let data: &mut [Word] = &mut [0, 1, 2, 3];
@@ -312,9 +336,11 @@ mod tests {
         out
     }
 
-    fn do_test_concat(a: &str, b: &str, c_init: &str) {
-        let (a_vec, a_width) = from_bit_str(a);
-        let (b_vec, b_width) = from_bit_str(b);
+    fn do_test_concat(a: &str, b: &str, c_init: &str, rng: &mut impl Rng) {
+        let (mut a_vec, a_width) = from_bit_str(a);
+        randomize_dont_care_bits(&mut a_vec, a_width, rng);
+        let (mut b_vec, b_width) = from_bit_str(b);
+        randomize_dont_care_bits(&mut b_vec, b_width, rng);
         let (mut c_vec, c_width) = from_bit_str(c_init);
         assert_eq!(c_width, a_width + b_width);
         concat(&mut c_vec, &a_vec, &b_vec, b_width);
@@ -324,37 +350,42 @@ mod tests {
 
     #[test]
     fn test_concat() {
-        let mut rng = rand_xoshiro::Xoshiro256PlusPlus::seed_from_u64(2);
+        let mut rng = rand_xoshiro::Xoshiro256PlusPlus::seed_from_u64(1);
         // simple
-        do_test_concat("0", "0", "11");
+        do_test_concat("0", "0", "11", &mut rng);
 
         // word aligned
         do_test_concat(
             &random_bit_str(Word::BITS, &mut rng),
             &random_bit_str(Word::BITS * 2, &mut rng),
             &random_bit_str(Word::BITS + Word::BITS * 2, &mut rng),
+            &mut rng,
         );
         // unaligned
         do_test_concat(
             &random_bit_str(38, &mut rng),
             &random_bit_str(44, &mut rng),
             &random_bit_str(38 + 44, &mut rng),
+            &mut rng,
         );
         do_test_concat(
             &random_bit_str(38, &mut rng),
             &random_bit_str(8, &mut rng),
             &random_bit_str(38 + 8, &mut rng),
+            &mut rng,
         );
         // test a concat where dst and msb have the same number of words
         do_test_concat(
             &random_bit_str(10 + Word::BITS, &mut rng),
             &random_bit_str(8, &mut rng),
             &random_bit_str(10 + Word::BITS + 8, &mut rng),
+            &mut rng,
         );
     }
 
-    fn do_test_slice(src: &str, hi: WidthInt, lo: WidthInt) {
-        let (src_vec, src_width) = from_bit_str(src);
+    fn do_test_slice(src: &str, hi: WidthInt, lo: WidthInt, rng: &mut impl Rng) {
+        let (mut src_vec, src_width) = from_bit_str(src);
+        randomize_dont_care_bits(&mut src_vec, src_width, rng);
         assert!(hi >= lo);
         assert!(hi < src_width);
         let res_width = hi - lo + 1;
@@ -372,25 +403,25 @@ mod tests {
     fn test_slice() {
         let mut rng = rand_xoshiro::Xoshiro256PlusPlus::seed_from_u64(1);
         let in0 = random_bit_str(15, &mut rng);
-        do_test_slice(&in0, 0, 0);
-        do_test_slice(&in0, 1, 1);
-        do_test_slice(&in0, 6, 0);
-        do_test_slice(&in0, 6, 4);
+        do_test_slice(&in0, 0, 0, &mut rng);
+        do_test_slice(&in0, 1, 1, &mut rng);
+        do_test_slice(&in0, 6, 0, &mut rng);
+        do_test_slice(&in0, 6, 4, &mut rng);
 
         // test slice across two words
         let in1 = random_bit_str((2 * Word::BITS) - 5, &mut rng);
-        do_test_slice(&in1, Word::BITS, Word::BITS - 5);
-        do_test_slice(&in1, Word::BITS + 5, Word::BITS - 5);
+        do_test_slice(&in1, Word::BITS, Word::BITS - 5, &mut rng);
+        do_test_slice(&in1, Word::BITS + 5, Word::BITS - 5, &mut rng);
 
         // test larger slices
         let in2 = random_bit_str(1354, &mut rng);
-        do_test_slice(&in2, 400, 400); // 400 = 6 * 64 +  16
-        do_test_slice(&in2, 400, 400 - 20);
-        do_test_slice(&in2, 400 + 13, 400 - 20);
+        do_test_slice(&in2, 400, 400, &mut rng); // 400 = 6 * 64 +  16
+        do_test_slice(&in2, 400, 400 - 20, &mut rng);
+        do_test_slice(&in2, 400 + 13, 400 - 20, &mut rng);
 
         // result is larger than one word
-        do_test_slice(&in2, 875, Word::BITS * 13); // aligned to word boundaries
-        do_test_slice(&in2, 3 + (Word::BITS * 2) + 11, 3);
-        do_test_slice(&in2, 875, 875 - (Word::BITS * 2) - 15);
+        do_test_slice(&in2, 875, Word::BITS * 13, &mut rng); // aligned to word boundaries
+        do_test_slice(&in2, 3 + (Word::BITS * 2) + 11, 3, &mut rng);
+        do_test_slice(&in2, 875, 875 - (Word::BITS * 2) - 15, &mut rng);
     }
 }

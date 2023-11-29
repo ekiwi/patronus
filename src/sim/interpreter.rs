@@ -114,11 +114,13 @@ fn compile_expr(
         .map(|s| s.kind.clone())
         .unwrap_or(SignalKind::Node);
     let tpe = compile_expr_type(expr, locs, ctx);
+    let do_trace = expr_ref.index() == 915;
     Instr {
         dst,
         tpe,
         kind,
         result_width,
+        do_trace,
     }
 }
 
@@ -312,6 +314,7 @@ struct Instr {
     tpe: InstrType,
     kind: SignalKind,       // TODO: move to symbol meta-data or similar structure
     result_width: WidthInt, // TODO: move to symbol meta-data
+    do_trace: bool,         // for debugging
 }
 
 #[derive(Debug, Clone)]
@@ -373,6 +376,12 @@ fn exec_instr(instr: &Instr, data: &mut [Word]) {
                     // TODO: optimize by only calculating once!
                     let dst = &mut data[instr.dst.range()];
                     exec::assign_word(dst, *value);
+                    if instr.do_trace {
+                        println!(
+                            "{} <= {tpe:?} = ",
+                            exec::to_bit_str(dst, instr.result_width)
+                        );
+                    }
                 }
             }
         }
@@ -382,16 +391,34 @@ fn exec_instr(instr: &Instr, data: &mut [Word]) {
                 UnaryOp::Slice(hi, lo) => exec::slice(dst, a, *hi, *lo),
                 UnaryOp::Not => exec::not(dst, a),
             }
+            if instr.do_trace {
+                println!(
+                    "{} <= {tpe:?} = {}",
+                    exec::to_bit_str(dst, instr.result_width),
+                    exec::to_bit_str(a, a.len() as WidthInt * Word::BITS)
+                );
+            }
         }
         InstrType::Binary(tpe, a_loc, b_loc) => {
             let (dst, a, b) =
                 exec::split_borrow_2(data, instr.dst.range(), a_loc.range(), b_loc.range());
+            if instr.do_trace {
+                println!("Old dst: {}", exec::to_bit_str(dst, instr.result_width));
+            }
             match tpe {
                 BinaryOp::BVEqual => dst[0] = exec::cmp_equal(a, b),
                 BinaryOp::Concat(lsb_width) => exec::concat(dst, a, b, *lsb_width),
                 BinaryOp::Or => exec::or(dst, a, b),
                 BinaryOp::And => exec::and(dst, a, b),
                 BinaryOp::Xor => exec::xor(dst, a, b),
+            }
+            if instr.do_trace {
+                println!(
+                    "{} <= {tpe:?} = {}, {}",
+                    exec::to_bit_str(dst, instr.result_width),
+                    exec::to_bit_str(a, a.len() as WidthInt * Word::BITS),
+                    exec::to_bit_str(b, b.len() as WidthInt * Word::BITS)
+                );
             }
         }
         InstrType::Tertiary(tpe, a_loc, b_loc, c_loc) => {
