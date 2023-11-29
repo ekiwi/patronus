@@ -168,7 +168,7 @@ impl<'a> Parser<'a> {
             let name = cont
                 .tokens
                 .get(token_count)
-                .map(|s| self.ctx.add_unique_str(s));
+                .map(|s| self.ctx.add_unique_str(&clean_up_name(s)));
             self.sys.add_signal(e, label, name);
         }
         Ok(())
@@ -711,6 +711,11 @@ impl<'a> Parser<'a> {
             format!("Invalid op {op}. Did you mean: {suggestions}?"),
         )
     }
+}
+
+/// yosys likes to use a lot of $ in the signal names, we want to avoid that for readability reasons
+fn clean_up_name(name: &str) -> String {
+    name.replace("$", "_")
 }
 
 // Line Tokenizer
