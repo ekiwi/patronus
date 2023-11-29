@@ -53,9 +53,6 @@ fn main() {
             // TODO: maybe filter
             signals_to_print.push((name.clone(), expr.clone()));
         }
-        signals_to_print.push(("914 (~f_ack)".to_string(), ExprRef::from_index(914)));
-        signals_to_print.push(("915".to_string(), ExprRef::from_index(915)));
-        signals_to_print.push(("931".to_string(), ExprRef::from_index(931)));
         signals_to_print.sort_by_key(|(name, _)| name.clone());
     }
 

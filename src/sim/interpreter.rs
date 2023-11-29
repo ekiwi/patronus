@@ -114,7 +114,7 @@ fn compile_expr(
         .map(|s| s.kind.clone())
         .unwrap_or(SignalKind::Node);
     let tpe = compile_expr_type(expr, locs, ctx);
-    let do_trace = expr_ref.index() == 915;
+    let do_trace = false; // set to true for debugging
     Instr {
         dst,
         tpe,
