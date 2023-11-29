@@ -25,30 +25,28 @@ pub fn count_expr_uses(ctx: &Context, sys: &TransitionSystem) -> Vec<u32> {
             .map(|(e, _)| *e),
     );
 
-    // make sure that all root nodes are marked as used at least once
-    for initial in todo.iter() {
-        *use_count.get_mut(*initial) = 1;
-    }
     while let Some(expr) = todo.pop() {
+        // when we process an item for the first time, we set the count to 1
+        *use_count.get_mut(expr) = 1;
+        if let Some(state) = states.get(&expr) {
+            // for states, we also want to mark the initial and the next expression as used
+            if let Some(init) = state.init {
+                *use_count.get_mut(init) = 1;
+                todo.push(init);
+            }
+            if let Some(next) = state.next {
+                *use_count.get_mut(next) = 1;
+                todo.push(next);
+            }
+        }
+
         ctx.get(expr).for_each_child(|child| {
-            let is_first_use = {
-                let count = use_count.get_mut(*child);
-                *count += 1;
-                *count == 1
-            };
+            let count = use_count.get_mut(*child);
+            let is_first_use = *count == 0;
             if is_first_use {
                 todo.push(*child);
-                if let Some(state) = states.get(child) {
-                    // for states, we also want to mark the initial and the next expression as used
-                    if let Some(init) = state.init {
-                        *use_count.get_mut(init) = 1;
-                        todo.push(init);
-                    }
-                    if let Some(next) = state.next {
-                        *use_count.get_mut(next) = 1;
-                        todo.push(next);
-                    }
-                }
+            } else {
+                *count += 1;
             }
         });
     }

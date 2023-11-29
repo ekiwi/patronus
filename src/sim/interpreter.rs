@@ -32,19 +32,27 @@ pub trait Simulator {
 }
 
 /// Interpreter based simulator for a transition system.
-pub struct Interpreter {
+pub struct Interpreter<'a> {
+    ctx: &'a Context,
     instructions: Vec<Option<Instr>>,
     states: Vec<State>,
     data: Vec<Word>,
     step_count: u64,
 }
 
-impl Interpreter {
-    pub fn new(ctx: &Context, sys: &TransitionSystem) -> Self {
-        let (meta, data_len) = compile(ctx, sys);
+impl<'a> Interpreter<'a> {
+    pub fn new(ctx: &'a Context, sys: &TransitionSystem) -> Self {
+        let use_counts = count_expr_uses(ctx, sys);
+        let (meta, data_len) = compile(ctx, sys, &use_counts);
         let data = vec![0; data_len];
-        let states = sys.states().cloned().collect::<Vec<_>>();
+        let mut states = Vec::with_capacity(sys.states().len());
+        for state in sys.states() {
+            if use_counts[state.symbol.index()] > 0 {
+                states.push(state.clone());
+            }
+        }
         Self {
+            ctx,
             instructions: meta,
             data,
             states,
@@ -54,18 +62,21 @@ impl Interpreter {
 }
 
 /// Converts a transitions system into instructions and the number of Words that need to be allocated
-fn compile(ctx: &Context, sys: &TransitionSystem) -> (Vec<Option<Instr>>, usize) {
-    let use_counts = count_expr_uses(ctx, sys);
+fn compile(
+    ctx: &Context,
+    sys: &TransitionSystem,
+    use_counts: &[u32],
+) -> (Vec<Option<Instr>>, usize) {
     // used to track instruction result allocations
     let mut locs: Vec<Option<Loc>> = Vec::with_capacity(use_counts.len());
     let mut instructions = Vec::new();
     let mut word_count = 0u32;
     for (idx, count) in use_counts.iter().enumerate() {
+        let expr = ExprRef::from_index(idx);
         if *count == 0 {
             locs.push(None); // no space needed
             instructions.push(None); // TODO: we would like to store the instructions compacted
         } else {
-            let expr = ExprRef::from_index(idx);
             let tpe = expr.get_type(ctx);
             let (loc, width) = allocate_result_space(tpe, &mut word_count);
             locs.push(Some(loc));
@@ -178,7 +189,7 @@ fn compile_expr_type(expr: &Expr, locs: &[Option<Loc>], ctx: &Context) -> InstrT
     }
 }
 
-impl Simulator for Interpreter {
+impl<'a> Simulator for Interpreter<'a> {
     fn init(&mut self, kind: InitKind) {
         // assign default value to all inputs and states
         for inst in self.instructions.iter().flatten() {
@@ -245,6 +256,11 @@ impl Simulator for Interpreter {
 
     fn get(&mut self, expr: ExprRef) -> Option<u64> {
         if let Some(m) = &self.instructions[expr.index()] {
+            if let Some(name) = expr.get_symbol_name(self.ctx) {
+                println!("GET {name} : bv<{}>", m.result_width);
+            } else {
+                println!("GET {:?} : bv<{}>", self.ctx.get(expr), m.result_width);
+            }
             let data = &self.data[m.dst.range()];
             let mask = (1u64 << m.result_width) - 1;
             let res = data[0] & mask;
@@ -262,7 +278,7 @@ impl Simulator for Interpreter {
     }
 }
 
-impl Interpreter {
+impl<'a> Interpreter<'a> {
     /// Eagerly re-computes all signals in the system.
     fn update_all_signals(&mut self) {
         for instr in self.instructions.iter().flatten() {

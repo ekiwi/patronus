@@ -490,8 +490,7 @@ fn serialize_transition_system<W: Write>(
         let tpe = expr.get_type(ctx);
         write!(writer, " : {tpe}",)?;
 
-        // do not print simple symbols
-        if expr.is_symbol() {
+        if is_input {
             writeln!(writer)?;
         } else {
             write!(writer, " = ")?;
