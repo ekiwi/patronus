@@ -59,49 +59,41 @@ pub(crate) fn slice(dst: &mut [Word], source: &[Word], hi: WidthInt, lo: WidthIn
         // assign with a shift
         let shift_left = Word::BITS - shift_right;
         let m = mask(shift_right);
-        let mut prev = src[0];
+        let mut prev = src[0] >> shift_right;
         // We append a zero to the src iter in case src.len() == dst.len().
         // If src.len() == dst.len() + 1, then the 0 will just be ignored by `zip`.
         for (d, s) in dst.iter_mut().zip(src.iter().skip(1).chain([0].iter())) {
-            let d0 = prev >> shift_right;
-            let d1 = d0 | ((*s) & m) << shift_left;
-            *d = d1;
-            prev = *s;
+            *d = prev | ((*s) & m) << shift_left;
+            prev = (*s) >> shift_right;
         }
     }
 }
 
 #[inline]
 pub(crate) fn concat(dst: &mut [Word], msb: &[Word], lsb: &[Word], lsb_width: WidthInt) {
-    let lsb_offset = dst.len() - lsb.len();
     // copy lsb to dst
-    for (d, l) in dst.iter_mut().skip(lsb_offset).zip(lsb.iter()) {
+    for (d, l) in dst.iter_mut().zip(lsb.iter()) {
         *d = *l;
     }
     //
-    let msb_shift = lsb_width % Word::BITS;
-    if msb_shift == 0 {
-        assert_eq!(msb.len(), lsb_offset);
-        for (d, m) in dst.iter_mut().zip(msb.iter()) {
+    let shift_left = lsb_width % Word::BITS;
+    if shift_left == 0 {
+        // copy msb to dst
+        for (d, m) in dst.iter_mut().skip(lsb.len()).zip(msb.iter()) {
             *d = *m;
         }
     } else {
-        let top_shift = Word::BITS - msb_shift;
-        //                         msb_shift
-        //         |-----m-----|<-------->
-        // |- dst[ii] -| |- dst[ii + 1] -|
-        for (ii, m) in msb.iter().enumerate() {
-            if ii == 0 {
-                dst[ii] = m >> top_shift;
-            } else {
-                dst[ii] |= m >> top_shift;
-            }
-            let is_last = ii + 1 == msb.len();
-            if is_last {
-                dst[ii + 1] |= m << msb_shift; // merge with lsb
-            } else {
-                dst[ii + 1] = m << msb_shift; // overwrite any prior value
-            }
+        // copy a shifted version of the msb to dst
+        let shift_right = Word::BITS - shift_left;
+        let m = mask(shift_right);
+        let mut prev = *lsb.last().unwrap(); // the msb of the lsb
+        for (d, s) in dst
+            .iter_mut()
+            .skip(lsb.len() - 1)
+            .zip(msb.iter().chain([0].iter()))
+        {
+            *d = prev | ((*s) & m) << shift_left;
+            prev = (*s) >> shift_right;
         }
     }
 }
@@ -216,7 +208,7 @@ mod tests {
 
         for (ii, cc) in bits.chars().enumerate() {
             let ii_rev = width as usize - ii - 1;
-            if ii_rev > 0 && ((ii_rev + 1) % Word::BITS as usize) == 0 {
+            if ii > 0 && ((ii_rev + 1) % Word::BITS as usize) == 0 {
                 out.push(word);
                 word = 0;
             }
@@ -277,6 +269,7 @@ mod tests {
 
     #[test]
     fn test_bit_string_conversion() {
+        let mut rng = rand_xoshiro::Xoshiro256PlusPlus::seed_from_u64(1);
         let a = "01100";
         let (a_vec, a_width) = from_bit_str(a);
         assert_eq!(a_width, 5);
@@ -301,12 +294,19 @@ mod tests {
         );
 
         assert_eq!(to_bit_str(&c_vec, c_width), c);
+
+        // no unnecessary vec entries
+        let d = random_bit_str(Word::BITS * 2, &mut rng);
+        let (d_vec, d_width) = from_bit_str(&d);
+        assert_eq!(d_width, Word::BITS * 2);
+        assert_eq!(d_vec.len(), 2);
+        assert_eq!(to_bit_str(&d_vec, d_width), d);
     }
 
-    fn random_bit_str(width: WidthInt, rnd: &mut impl Rng) -> String {
+    fn random_bit_str(width: WidthInt, rng: &mut impl Rng) -> String {
         let mut out = String::with_capacity(width as usize);
         for _ in 0..width {
-            let cc = if rnd.gen_bool(0.5) { '1' } else { '0' };
+            let cc = if rng.gen_bool(0.5) { '1' } else { '0' };
             out.push(cc);
         }
         out
@@ -325,6 +325,12 @@ mod tests {
     #[test]
     fn test_concat() {
         let mut rng = rand_xoshiro::Xoshiro256PlusPlus::seed_from_u64(1);
+        // word aligned
+        do_test_concat(
+            &random_bit_str(Word::BITS, &mut rng),
+            &random_bit_str(Word::BITS * 2, &mut rng),
+        );
+        // unaligned
         do_test_concat(&random_bit_str(38, &mut rng), &random_bit_str(44, &mut rng));
         do_test_concat(&random_bit_str(38, &mut rng), &random_bit_str(8, &mut rng));
         // test a concat where dst and msb have the same number of words
