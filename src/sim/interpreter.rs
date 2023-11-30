@@ -138,14 +138,12 @@ fn compile_expr_type(expr: &Expr, locs: &[Option<(Loc, WidthInt)>], ctx: &Contex
     match expr {
         Expr::BVSymbol { .. } => InstrType::Nullary(NullaryOp::BVSymbol),
         Expr::BVLiteral { value, .. } => InstrType::Nullary(NullaryOp::BVLiteral(*value)),
-        Expr::BVZeroExt { e, by, width } => {
-            InstrType::Unary(UnaryOp::ZeroExt(*width - *by), locs[e.index()].unwrap().0)
-        }
+        Expr::BVZeroExt { e, .. } => InstrType::Unary(UnaryOp::ZeroExt, locs[e.index()].unwrap().0),
         Expr::BVSignExt { .. } => todo!("compile sext"),
         Expr::BVSlice { e, hi, lo } => {
             InstrType::Unary(UnaryOp::Slice(*hi, *lo), locs[e.index()].unwrap().0)
         }
-        Expr::BVNot(e, _) => InstrType::Unary(UnaryOp::Not, locs[e.index()].unwrap().0),
+        Expr::BVNot(e, width) => InstrType::Unary(UnaryOp::Not(*width), locs[e.index()].unwrap().0),
         Expr::BVNegate(_, _) => todo!(),
         Expr::BVEqual(a, b) => InstrType::Binary(
             BinaryOp::BVEqual,
@@ -324,7 +322,7 @@ impl<'a> ValueRef<'a> {
     }
 
     pub fn to_big_uint(&self) -> num_bigint::BigUint {
-        exec::to_big_uint(self.words, self.bits)
+        exec::to_big_uint(self.words)
     }
 }
 
@@ -356,8 +354,8 @@ enum NullaryOp {
 #[derive(Debug, Clone)]
 enum UnaryOp {
     Slice(WidthInt, WidthInt),
-    ZeroExt(WidthInt),
-    Not,
+    ZeroExt,
+    Not(WidthInt),
 }
 
 #[derive(Debug, Clone)]
@@ -413,8 +411,8 @@ fn exec_instr(instr: &Instr, data: &mut [Word]) {
             let (dst, a) = exec::split_borrow_1(data, instr.dst.range(), a_loc.range());
             match tpe {
                 UnaryOp::Slice(hi, lo) => exec::slice(dst, a, *hi, *lo),
-                UnaryOp::Not => exec::not(dst, a),
-                UnaryOp::ZeroExt(source_width) => exec::zero_extend(dst, a, *source_width),
+                UnaryOp::Not(width) => exec::not(dst, a, *width),
+                UnaryOp::ZeroExt => exec::zero_extend(dst, a),
             }
             if instr.do_trace {
                 println!(

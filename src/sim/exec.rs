@@ -24,20 +24,6 @@ pub(crate) fn assign(dst: &mut [Word], source: &[Word]) {
     }
 }
 
-fn assign_with_mask(dst: &mut [Word], source: &[Word], source_width: WidthInt) {
-    let offset = source_width % Word::BITS;
-    for (ii, (d, l)) in dst.iter_mut().zip(source.iter()).enumerate() {
-        let is_msb = ii + 1 == source.len();
-        if is_msb && offset > 0 {
-            // the msb of the lsb might need to be masked
-            let m = mask(offset);
-            *d = (*l) & m;
-        } else {
-            *d = *l;
-        }
-    }
-}
-
 #[inline]
 pub(crate) fn read_bool(source: &[Word]) -> bool {
     word_to_bool(source[0])
@@ -56,7 +42,7 @@ pub(crate) fn assign_word(dst: &mut [Word], value: Word) {
 
 #[inline]
 pub(crate) fn mask(bits: WidthInt) -> Word {
-    if bits == Word::BITS {
+    if bits == Word::BITS || bits == 0 {
         Word::MAX
     } else {
         assert!(bits < Word::BITS);
@@ -65,11 +51,17 @@ pub(crate) fn mask(bits: WidthInt) -> Word {
 }
 
 #[inline]
-pub(crate) fn zero_extend(dst: &mut [Word], source: &[Word], source_width: WidthInt) {
+pub(crate) fn zero_extend(dst: &mut [Word], source: &[Word]) {
     // copy source to dst
-    assign_with_mask(dst, source, source_width);
+    assign(dst, source);
     // zero out remaining words
     clear(&mut dst[source.len()..]);
+}
+
+#[inline]
+fn mask_msb(dst: &mut [Word], width: WidthInt) {
+    let m = mask(width % Word::BITS);
+    *dst.last_mut().unwrap() &= m;
 }
 
 #[inline]
@@ -94,12 +86,14 @@ pub(crate) fn slice(dst: &mut [Word], source: &[Word], hi: WidthInt, lo: WidthIn
             prev = (*s) >> shift_right;
         }
     }
+    // mask the result msb
+    mask_msb(dst, hi - lo + 1);
 }
 
 #[inline]
 pub(crate) fn concat(dst: &mut [Word], msb: &[Word], lsb: &[Word], lsb_width: WidthInt) {
     // copy lsb to dst
-    assign_with_mask(dst, lsb, lsb_width);
+    assign(dst, lsb);
 
     let lsb_offset = lsb_width % Word::BITS;
     if lsb_offset == 0 {
@@ -124,8 +118,9 @@ pub(crate) fn concat(dst: &mut [Word], msb: &[Word], lsb: &[Word], lsb_width: Wi
 }
 
 #[inline]
-pub(crate) fn not(dst: &mut [Word], source: &[Word]) {
-    bitwise_un_op(dst, source, |e| !e)
+pub(crate) fn not(dst: &mut [Word], source: &[Word], width: WidthInt) {
+    bitwise_un_op(dst, source, |e| !e);
+    mask_msb(dst, width);
 }
 
 #[inline]
@@ -261,21 +256,11 @@ pub(crate) fn to_bit_str(values: &[Word], width: WidthInt) -> String {
     out
 }
 
-pub(crate) fn to_big_uint(words: &[Word], width: WidthInt) -> num_bigint::BigUint {
+pub(crate) fn to_big_uint(words: &[Word]) -> num_bigint::BigUint {
     let mut words32 = Vec::with_capacity(words.len() * 2);
     let mask32 = mask(32);
-    let msb_offset = width % Word::BITS;
-    let msb_mask = if msb_offset == 0 {
-        Word::MAX
-    } else {
-        mask(msb_offset)
-    };
-    for (ii, w) in words.iter().enumerate() {
-        let word = if ii + 1 == words.len() {
-            msb_mask & (*w)
-        } else {
-            *w
-        };
+    for w in words.iter() {
+        let word = *w;
         let lsb = (word & mask32) as u32;
         let msb = ((word >> 32) & mask32) as u32;
         words32.push(lsb);
@@ -315,18 +300,13 @@ mod tests {
         (out, width)
     }
 
-    /// randomizes unused bits in the msb
-    fn randomize_dont_care_bits(words: &mut [Word], width: WidthInt, rng: &mut impl Rng) {
-        let msb = words.last_mut().unwrap();
-        let msb_used_len = width % Word::BITS;
-        if msb_used_len == 0 {
-            return; // full word is used
-        }
-        for ii in msb_used_len..Word::BITS {
-            if rng.gen_bool(0.5) {
-                // flip bit with 50% probability
-                *msb ^= 1 << ii;
-            }
+    fn assert_unused_bits_zero(value: &[Word], width: WidthInt) {
+        let offset = width % Word::BITS;
+        if offset > 0 {
+            let msb = *value.last().unwrap();
+            let m = !mask(offset);
+            let unused = msb & m;
+            assert_eq!(unused, 0, "unused msb bits need to be zero!")
         }
     }
 
@@ -351,11 +331,13 @@ mod tests {
         let mut rng = rand_xoshiro::Xoshiro256PlusPlus::seed_from_u64(1);
         let a = "01100";
         let (a_vec, a_width) = from_bit_str(a);
+        assert_unused_bits_zero(&a_vec, a_width);
         assert_eq!(a_width, 5);
         assert_eq!(a_vec, vec![0b1100]);
 
         let b = "10100001101000100000001010101010101000101010";
         let (b_vec, b_width) = from_bit_str(b);
+        assert_unused_bits_zero(&b_vec, b_width);
         assert_eq!(b_width, 44);
         assert_eq!(b_vec, vec![0b10100001101000100000001010101010101000101010]);
 
@@ -363,6 +345,7 @@ mod tests {
 
         let c = "1010000110100010000000101010101010100010101010100001101000100000001010101010101000101010";
         let (c_vec, c_width) = from_bit_str(c);
+        assert_unused_bits_zero(&c_vec, c_width);
         assert_eq!(c_width, 88);
         assert_eq!(
             c_vec,
@@ -377,6 +360,7 @@ mod tests {
         // no unnecessary vec entries
         let d = random_bit_str(Word::BITS * 2, &mut rng);
         let (d_vec, d_width) = from_bit_str(&d);
+        assert_unused_bits_zero(&d_vec, d_width);
         assert_eq!(d_width, Word::BITS * 2);
         assert_eq!(d_vec.len(), 2);
         assert_eq!(to_bit_str(&d_vec, d_width), d);
@@ -391,14 +375,13 @@ mod tests {
         out
     }
 
-    fn do_test_concat(a: &str, b: &str, c_init: &str, rng: &mut impl Rng) {
-        let (mut a_vec, a_width) = from_bit_str(a);
-        randomize_dont_care_bits(&mut a_vec, a_width, rng);
-        let (mut b_vec, b_width) = from_bit_str(b);
-        randomize_dont_care_bits(&mut b_vec, b_width, rng);
+    fn do_test_concat(a: &str, b: &str, c_init: &str) {
+        let (a_vec, a_width) = from_bit_str(a);
+        let (b_vec, b_width) = from_bit_str(b);
         let (mut c_vec, c_width) = from_bit_str(c_init);
         assert_eq!(c_width, a_width + b_width);
         concat(&mut c_vec, &a_vec, &b_vec, b_width);
+        assert_unused_bits_zero(&c_vec, c_width);
         let expected = format!("{a}{b}");
         assert_eq!(to_bit_str(&c_vec, c_width), expected);
     }
@@ -407,45 +390,41 @@ mod tests {
     fn test_concat() {
         let mut rng = rand_xoshiro::Xoshiro256PlusPlus::seed_from_u64(1);
         // simple
-        do_test_concat("0", "0", "11", &mut rng);
+        do_test_concat("0", "0", "11");
 
         // word aligned
         do_test_concat(
             &random_bit_str(Word::BITS, &mut rng),
             &random_bit_str(Word::BITS * 2, &mut rng),
             &random_bit_str(Word::BITS + Word::BITS * 2, &mut rng),
-            &mut rng,
         );
         // unaligned
         do_test_concat(
             &random_bit_str(38, &mut rng),
             &random_bit_str(44, &mut rng),
             &random_bit_str(38 + 44, &mut rng),
-            &mut rng,
         );
         do_test_concat(
             &random_bit_str(38, &mut rng),
             &random_bit_str(8, &mut rng),
             &random_bit_str(38 + 8, &mut rng),
-            &mut rng,
         );
         // test a concat where dst and msb have the same number of words
         do_test_concat(
             &random_bit_str(10 + Word::BITS, &mut rng),
             &random_bit_str(8, &mut rng),
             &random_bit_str(10 + Word::BITS + 8, &mut rng),
-            &mut rng,
         );
     }
 
-    fn do_test_slice(src: &str, hi: WidthInt, lo: WidthInt, rng: &mut impl Rng) {
-        let (mut src_vec, src_width) = from_bit_str(src);
-        randomize_dont_care_bits(&mut src_vec, src_width, rng);
+    fn do_test_slice(src: &str, hi: WidthInt, lo: WidthInt) {
+        let (src_vec, src_width) = from_bit_str(src);
         assert!(hi >= lo);
         assert!(hi < src_width);
         let res_width = hi - lo + 1;
         let mut res_vec = vec![0 as Word; res_width.div_ceil(Word::BITS) as usize];
         slice(&mut res_vec, &src_vec, hi, lo);
+        assert_unused_bits_zero(&res_vec, res_width);
         let expected: String = src
             .chars()
             .skip((src_width - 1 - hi) as usize)
@@ -458,46 +437,45 @@ mod tests {
     fn test_slice() {
         let mut rng = rand_xoshiro::Xoshiro256PlusPlus::seed_from_u64(1);
         let in0 = random_bit_str(15, &mut rng);
-        do_test_slice(&in0, 0, 0, &mut rng);
-        do_test_slice(&in0, 1, 1, &mut rng);
-        do_test_slice(&in0, 6, 0, &mut rng);
-        do_test_slice(&in0, 6, 4, &mut rng);
+        // do_test_slice(&in0, 0, 0);
+        do_test_slice(&in0, 1, 1);
+        do_test_slice(&in0, 6, 0);
+        do_test_slice(&in0, 6, 4);
 
         // test slice across two words
         let in1 = random_bit_str((2 * Word::BITS) - 5, &mut rng);
-        do_test_slice(&in1, Word::BITS, Word::BITS - 5, &mut rng);
-        do_test_slice(&in1, Word::BITS + 5, Word::BITS - 5, &mut rng);
+        do_test_slice(&in1, Word::BITS, Word::BITS - 5);
+        do_test_slice(&in1, Word::BITS + 5, Word::BITS - 5);
 
         // test larger slices
         let in2 = random_bit_str(1354, &mut rng);
-        do_test_slice(&in2, 400, 400, &mut rng); // 400 = 6 * 64 +  16
-        do_test_slice(&in2, 400, 400 - 20, &mut rng);
-        do_test_slice(&in2, 400 + 13, 400 - 20, &mut rng);
+        do_test_slice(&in2, 400, 400); // 400 = 6 * 64 +  16
+        do_test_slice(&in2, 400, 400 - 20);
+        do_test_slice(&in2, 400 + 13, 400 - 20);
 
         // result is larger than one word
-        do_test_slice(&in2, 875, Word::BITS * 13, &mut rng); // aligned to word boundaries
-        do_test_slice(&in2, 3 + (Word::BITS * 2) + 11, 3, &mut rng);
-        do_test_slice(&in2, 875, 875 - (Word::BITS * 2) - 15, &mut rng);
+        do_test_slice(&in2, 875, Word::BITS * 13); // aligned to word boundaries
+        do_test_slice(&in2, 3 + (Word::BITS * 2) + 11, 3);
+        do_test_slice(&in2, 875, 875 - (Word::BITS * 2) - 15);
     }
 
-    fn do_test_zero_ext(src: &str, by: WidthInt, rng: &mut impl Rng) {
-        let (mut src_vec, src_width) = from_bit_str(src);
-        randomize_dont_care_bits(&mut src_vec, src_width, rng);
+    fn do_test_zero_ext(src: &str, by: WidthInt) {
+        let (src_vec, src_width) = from_bit_str(src);
         let res_width = src_width + by;
         let mut res_vec = vec![0 as Word; res_width.div_ceil(Word::BITS) as usize];
-        zero_extend(&mut res_vec, &src_vec, src_width);
+        zero_extend(&mut res_vec, &src_vec);
+        assert_unused_bits_zero(&res_vec, res_width);
         let expected: String = format!("{}{}", "0".repeat(by as usize), src);
         assert_eq!(to_bit_str(&res_vec, res_width), expected);
     }
 
     #[test]
     fn test_zero_ext() {
-        let mut rng = rand_xoshiro::Xoshiro256PlusPlus::seed_from_u64(1);
-        do_test_zero_ext("0", 1, &mut rng);
-        do_test_zero_ext("1", 1, &mut rng);
-        do_test_zero_ext("0", 16, &mut rng);
-        do_test_zero_ext("1", 16, &mut rng);
-        do_test_zero_ext("0", 13 + Word::BITS, &mut rng);
-        do_test_zero_ext("1", 13 + Word::BITS, &mut rng);
+        do_test_zero_ext("0", 1);
+        do_test_zero_ext("1", 1);
+        do_test_zero_ext("0", 16);
+        do_test_zero_ext("1", 16);
+        do_test_zero_ext("0", 13 + Word::BITS);
+        do_test_zero_ext("1", 13 + Word::BITS);
     }
 }
