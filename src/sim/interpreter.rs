@@ -151,7 +151,11 @@ fn compile_expr_type(expr: &Expr, locs: &[Option<(Loc, WidthInt)>], ctx: &Contex
             locs[b.index()].unwrap().0,
         ),
         Expr::BVImplies(_, _) => todo!(),
-        Expr::BVGreater(_, _) => todo!(),
+        Expr::BVGreater(a, b) => InstrType::Binary(
+            BinaryOp::Greater,
+            locs[a.index()].unwrap().0,
+            locs[b.index()].unwrap().0,
+        ),
         Expr::BVGreaterSigned(_, _) => todo!(),
         Expr::BVGreaterEqual(a, b) => InstrType::Binary(
             BinaryOp::GreaterEqual,
@@ -373,6 +377,7 @@ enum UnaryOp {
 #[derive(Debug, Clone)]
 enum BinaryOp {
     BVEqual,
+    Greater,
     GreaterEqual,
     Concat(WidthInt), // width of the lsb
     Or,
@@ -444,8 +449,11 @@ fn exec_instr(instr: &Instr, data: &mut [Word]) {
                 println!("Old dst: {}", exec::to_bit_str(dst, instr.result_width));
             }
             match tpe {
-                BinaryOp::BVEqual => dst[0] = exec::cmp_equal(a, b),
-                BinaryOp::GreaterEqual => dst[0] = exec::cmp_greater_equal(a, b),
+                BinaryOp::BVEqual => dst[0] = exec::bool_to_word(exec::cmp_equal(a, b)),
+                BinaryOp::Greater => dst[0] = exec::bool_to_word(exec::cmp_greater(a, b)),
+                BinaryOp::GreaterEqual => {
+                    dst[0] = exec::bool_to_word(exec::cmp_greater_equal(a, b))
+                }
                 BinaryOp::Concat(lsb_width) => exec::concat(dst, a, b, *lsb_width),
                 BinaryOp::Or => exec::or(dst, a, b),
                 BinaryOp::And => exec::and(dst, a, b),

@@ -6,9 +6,11 @@
 // values are stored in an array of words in little endian form
 
 use crate::ir::WidthInt;
+use std::cmp::Ordering;
 use std::ops::Range;
 
 pub(crate) type Word = u64;
+type DoubleWord = u128;
 
 #[inline]
 pub(crate) fn clear(dst: &mut [Word]) {
@@ -153,34 +155,65 @@ fn bitwise_bin_op(dst: &mut [Word], a: &[Word], b: &[Word], foo: fn(Word, Word) 
 }
 
 #[inline]
-pub(crate) fn add(dst: &mut [Word], a: &[Word], b: &[Word], width: WidthInt) {
-    todo!("add")
+fn adc(dst: &mut Word, carry: u8, a: Word, b: Word) -> u8 {
+    let sum = carry as DoubleWord + a as DoubleWord + b as DoubleWord;
+    let new_carry = (sum >> Word::BITS) as u8;
+    *dst = sum as Word;
+    new_carry
 }
 
+/// Add function inspired by the num-bigint implementation: https://docs.rs/num-bigint/0.4.4/src/num_bigint/biguint/addition.rs.html
+#[inline]
+pub(crate) fn add(dst: &mut [Word], a: &[Word], b: &[Word], width: WidthInt) {
+    let mut carry = 0;
+    for (dd, (aa, bb)) in dst.iter_mut().zip(a.iter().zip(b.iter())) {
+        carry = adc(dd, carry, *aa, *bb);
+    }
+    mask_msb(dst, width);
+}
+
+/// Sub function inspired by the num-bigint implementation: https://docs.rs/num-bigint/0.4.4/src/num_bigint/biguint/subtraction.rs.html
 #[inline]
 pub(crate) fn sub(dst: &mut [Word], a: &[Word], b: &[Word], width: WidthInt) {
-    todo!("sub")
+    // we add one by setting the input carry to one
+    let mut carry = 1;
+    for (dd, (aa, bb)) in dst.iter_mut().zip(a.iter().zip(b.iter())) {
+        // we invert b which in addition to adding 1 turns it into `-b`
+        carry = adc(dd, carry, *aa, !(*bb));
+    }
+    mask_msb(dst, width);
 }
 
 #[inline]
-pub(crate) fn cmp_equal(a: &[Word], b: &[Word]) -> Word {
-    let bool_res = a.iter().zip(b.iter()).all(|(a, b)| a == b);
-    bool_to_word(bool_res)
+pub(crate) fn cmp_equal(a: &[Word], b: &[Word]) -> bool {
+    a.iter().zip(b.iter()).all(|(a, b)| a == b)
 }
 
 #[inline]
-pub(crate) fn cmp_greater(a: &[Word], b: &[Word]) -> Word {
-    todo!()
+pub(crate) fn cmp_greater(a: &[Word], b: &[Word]) -> bool {
+    is_greater_and_not_less(a, b).unwrap_or(false)
+}
+
+/// `Some(true)` if `a > b`, `Some(false)` if `a < b`, None if `a == b`
+#[inline]
+fn is_greater_and_not_less(a: &[Word], b: &[Word]) -> Option<bool> {
+    for (a, b) in a.iter().rev().zip(b.iter().rev()) {
+        match a.cmp(b) {
+            Ordering::Less => return Some(false),
+            Ordering::Equal => {} // continue
+            Ordering::Greater => return Some(true),
+        }
+    }
+    None
 }
 
 #[inline]
-pub(crate) fn cmp_greater_equal(a: &[Word], b: &[Word]) -> Word {
-    // TODO: there is probably a more efficient way of implementing this
-    cmp_equal(a, b) | cmp_greater(a, b)
+pub(crate) fn cmp_greater_equal(a: &[Word], b: &[Word]) -> bool {
+    is_greater_and_not_less(a, b).unwrap_or(true)
 }
 
 #[inline]
-fn bool_to_word(value: bool) -> Word {
+pub(crate) fn bool_to_word(value: bool) -> Word {
     if value {
         1
     } else {
