@@ -315,8 +315,37 @@ pub(crate) fn to_big_uint(words: &[Word]) -> num_bigint::BigUint {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use num_bigint::{BigInt, BigUint, Sign};
     use rand::Rng;
     use rand_xoshiro::rand_core::SeedableRng;
+
+    fn from_big_uint(value: BigUint, width: WidthInt) -> Vec<Word> {
+        let mut words = value.iter_u64_digits().collect::<Vec<_>>();
+        let num_words = width.div_ceil(Word::BITS);
+        // add any missing (because they are zero) msb words
+        words.resize(num_words as usize, 0);
+        mask_msb(&mut words, width);
+        words
+    }
+
+    fn gen_value_and_big_uint(
+        width: WidthInt,
+        rng: &mut impl Rng,
+    ) -> (Vec<Word>, WidthInt, BigUint) {
+        let (words, width) = from_bit_str(&random_bit_str(width, rng));
+        let bignum = to_big_uint(&words);
+        (words, width, bignum)
+    }
+
+    fn get_sign(value: &[Word], width: WidthInt) -> Sign {
+        let sign_bit = (width - 1) % Word::BITS;
+        let sign_value = (value.last().unwrap() >> sign_bit) & 1;
+        if sign_value == 1 {
+            Sign::Minus
+        } else {
+            Sign::Plus
+        }
+    }
 
     fn from_bit_str(bits: &str) -> (Vec<Word>, WidthInt) {
         let width = bits.len() as WidthInt;
@@ -520,5 +549,48 @@ mod tests {
         do_test_zero_ext("1", 16);
         do_test_zero_ext("0", 13 + Word::BITS);
         do_test_zero_ext("1", 13 + Word::BITS);
+    }
+
+    fn do_test_add(width: WidthInt, rng: &mut impl Rng) {
+        let (a_vec, a_width, a_num) = gen_value_and_big_uint(width, rng);
+        let (b_vec, b_width, b_num) = gen_value_and_big_uint(width, rng);
+        let mut res_vec = vec![0 as Word; width.div_ceil(Word::BITS) as usize];
+        add(&mut res_vec, &a_vec, &b_vec, width);
+        assert_unused_bits_zero(&res_vec, width);
+        let expected = from_big_uint(a_num + b_num, width);
+        assert_eq!(expected, res_vec);
+    }
+
+    #[test]
+    fn test_add() {
+        let mut rng = rand_xoshiro::Xoshiro256PlusPlus::seed_from_u64(1);
+        do_test_add(1, &mut rng);
+        do_test_add(1, &mut rng);
+        do_test_add(1, &mut rng);
+        do_test_add(35, &mut rng);
+        do_test_add(35, &mut rng);
+        do_test_add(1789, &mut rng);
+    }
+
+    fn do_test_sub(width: WidthInt, rng: &mut impl Rng) {
+        let (a_vec, a_width, a_num) = gen_value_and_big_uint(width, rng);
+        let (b_vec, b_width, b_num) = gen_value_and_big_uint(width, rng);
+        let mut res_vec = vec![0 as Word; width.div_ceil(Word::BITS) as usize];
+        sub(&mut res_vec, &a_vec, &b_vec, width);
+        assert_unused_bits_zero(&res_vec, width);
+        let res = BigInt::from_biguint(Sign::Plus, a_num) - BigInt::from_biguint(Sign::Plus, b_num);
+
+        todo!("correctly implement the sub behavior!")
+    }
+
+    #[test]
+    fn test_sub() {
+        let mut rng = rand_xoshiro::Xoshiro256PlusPlus::seed_from_u64(1);
+        do_test_sub(1, &mut rng);
+        do_test_sub(1, &mut rng);
+        do_test_sub(1, &mut rng);
+        do_test_sub(35, &mut rng);
+        do_test_sub(35, &mut rng);
+        do_test_sub(1789, &mut rng);
     }
 }
