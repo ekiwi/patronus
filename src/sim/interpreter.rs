@@ -153,7 +153,11 @@ fn compile_expr_type(expr: &Expr, locs: &[Option<(Loc, WidthInt)>], ctx: &Contex
         Expr::BVImplies(_, _) => todo!(),
         Expr::BVGreater(_, _) => todo!(),
         Expr::BVGreaterSigned(_, _) => todo!(),
-        Expr::BVGreaterEqual(_, _) => todo!(),
+        Expr::BVGreaterEqual(a, b) => InstrType::Binary(
+            BinaryOp::GreaterEqual,
+            locs[a.index()].unwrap().0,
+            locs[b.index()].unwrap().0,
+        ),
         Expr::BVGreaterEqualSigned(_, _) => todo!(),
         Expr::BVConcat(a, b, _) => InstrType::Binary(
             BinaryOp::Concat(b.get_bv_type(ctx).unwrap()), // LSB width
@@ -178,14 +182,22 @@ fn compile_expr_type(expr: &Expr, locs: &[Option<(Loc, WidthInt)>], ctx: &Contex
         Expr::BVShiftLeft(_, _, _) => todo!(),
         Expr::BVArithmeticShiftRight(_, _, _) => todo!(),
         Expr::BVShiftRight(_, _, _) => todo!(),
-        Expr::BVAdd(_, _, _) => todo!(),
+        Expr::BVAdd(a, b, width) => InstrType::Binary(
+            BinaryOp::Add(*width),
+            locs[a.index()].unwrap().0,
+            locs[b.index()].unwrap().0,
+        ),
         Expr::BVMul(_, _, _) => todo!(),
         Expr::BVSignedDiv(_, _, _) => todo!(),
         Expr::BVUnsignedDiv(_, _, _) => todo!(),
         Expr::BVSignedMod(_, _, _) => todo!(),
         Expr::BVSignedRem(_, _, _) => todo!(),
         Expr::BVUnsignedRem(_, _, _) => todo!(),
-        Expr::BVSub(_, _, _) => todo!(),
+        Expr::BVSub(a, b, width) => InstrType::Binary(
+            BinaryOp::Sub(*width),
+            locs[a.index()].unwrap().0,
+            locs[b.index()].unwrap().0,
+        ),
         Expr::BVArrayRead { array, index, .. } => {
             let (array_loc, index_width) = locs[array.index()].unwrap();
             assert!(index_width <= Word::BITS, "array too large!");
@@ -361,10 +373,13 @@ enum UnaryOp {
 #[derive(Debug, Clone)]
 enum BinaryOp {
     BVEqual,
+    GreaterEqual,
     Concat(WidthInt), // width of the lsb
     Or,
     And,
     Xor,
+    Add(WidthInt),
+    Sub(WidthInt),
 }
 
 #[derive(Debug, Clone)]
@@ -430,10 +445,13 @@ fn exec_instr(instr: &Instr, data: &mut [Word]) {
             }
             match tpe {
                 BinaryOp::BVEqual => dst[0] = exec::cmp_equal(a, b),
+                BinaryOp::GreaterEqual => dst[0] = exec::cmp_greater_equal(a, b),
                 BinaryOp::Concat(lsb_width) => exec::concat(dst, a, b, *lsb_width),
                 BinaryOp::Or => exec::or(dst, a, b),
                 BinaryOp::And => exec::and(dst, a, b),
                 BinaryOp::Xor => exec::xor(dst, a, b),
+                BinaryOp::Add(width) => exec::add(dst, a, b, *width),
+                BinaryOp::Sub(width) => exec::sub(dst, a, b, *width),
             }
             if instr.do_trace {
                 println!(

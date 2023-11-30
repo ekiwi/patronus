@@ -153,6 +153,16 @@ fn bitwise_bin_op(dst: &mut [Word], a: &[Word], b: &[Word], foo: fn(Word, Word) 
 }
 
 #[inline]
+pub(crate) fn add(dst: &mut [Word], a: &[Word], b: &[Word], width: WidthInt) {
+    todo!("add")
+}
+
+#[inline]
+pub(crate) fn sub(dst: &mut [Word], a: &[Word], b: &[Word], width: WidthInt) {
+    todo!("sub")
+}
+
+#[inline]
 pub(crate) fn cmp_equal(a: &[Word], b: &[Word]) -> Word {
     let bool_res = a.iter().zip(b.iter()).all(|(a, b)| a == b);
     bool_to_word(bool_res)
