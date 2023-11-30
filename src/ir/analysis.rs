@@ -17,6 +17,14 @@ pub fn find_expr_with_multiple_uses(ctx: &Context, sys: &TransitionSystem) -> Ve
 }
 
 pub fn count_expr_uses(ctx: &Context, sys: &TransitionSystem) -> Vec<u32> {
+    internal_count_expr_uses(ctx, sys, false)
+}
+
+pub fn count_expr_uses_without_init(ctx: &Context, sys: &TransitionSystem) -> Vec<u32> {
+    internal_count_expr_uses(ctx, sys, true)
+}
+
+fn internal_count_expr_uses(ctx: &Context, sys: &TransitionSystem, ignore_init: bool) -> Vec<u32> {
     let mut use_count = ExprMetaData::default();
     let states: HashMap<ExprRef, &State> = HashMap::from_iter(sys.states().map(|s| (s.symbol, s)));
     let mut todo = Vec::from_iter(
@@ -33,10 +41,12 @@ pub fn count_expr_uses(ctx: &Context, sys: &TransitionSystem) -> Vec<u32> {
         if let Some(state) = states.get(&expr) {
             // for states, we also want to mark the initial and the next expression as used
             if let Some(init) = state.init {
-                let count = use_count.get_mut(init);
-                if *count == 0 {
-                    *count = 1;
-                    todo.push(init);
+                if !ignore_init {
+                    let count = use_count.get_mut(init);
+                    if *count == 0 {
+                        *count = 1;
+                        todo.push(init);
+                    }
                 }
             }
             if let Some(next) = state.next {

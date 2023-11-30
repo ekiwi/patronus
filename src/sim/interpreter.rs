@@ -42,7 +42,7 @@ pub struct Interpreter<'a> {
 
 impl<'a> Interpreter<'a> {
     pub fn new(ctx: &'a Context, sys: &TransitionSystem) -> Self {
-        let use_counts = count_expr_uses(ctx, sys);
+        let use_counts = count_expr_uses_without_init(ctx, sys);
         let (meta, data_len) = compile(ctx, sys, &use_counts);
         let data = vec![0; data_len];
         let mut states = Vec::with_capacity(sys.states().len());
@@ -68,7 +68,7 @@ fn compile(
     use_counts: &[u32],
 ) -> (Vec<Option<Instr>>, usize) {
     // used to track instruction result allocations
-    let mut locs: Vec<Option<Loc>> = Vec::with_capacity(use_counts.len());
+    let mut locs: Vec<Option<(Loc, WidthInt)>> = Vec::with_capacity(use_counts.len());
     let mut instructions = Vec::new();
     let mut word_count = 0u32;
     for (idx, count) in use_counts.iter().enumerate() {
@@ -78,8 +78,8 @@ fn compile(
             instructions.push(None); // TODO: we would like to store the instructions compacted
         } else {
             let tpe = expr.get_type(ctx);
-            let (loc, width) = allocate_result_space(tpe, &mut word_count);
-            locs.push(Some(loc));
+            let (loc, width, index_width) = allocate_result_space(tpe, &mut word_count);
+            locs.push(Some((loc, index_width)));
             let instr = compile_expr(ctx, sys, expr, loc, &locs, width);
             instructions.push(Some(instr));
         }
@@ -87,15 +87,25 @@ fn compile(
     (instructions, word_count as usize)
 }
 
-fn allocate_result_space(tpe: Type, word_count: &mut u32) -> (Loc, WidthInt) {
-    match tpe.get_bit_vector_width() {
-        None => todo!("array support"),
-        Some(width) => {
+fn allocate_result_space(tpe: Type, word_count: &mut u32) -> (Loc, WidthInt, WidthInt) {
+    match tpe {
+        Type::BV(width) => {
             let words = width.div_ceil(Word::BITS as WidthInt) as u16;
             let offset = *word_count;
             *word_count += words as u32;
             let loc = Loc { offset, words };
-            (loc, width)
+            (loc, width, 0)
+        }
+        Type::Array(ArrayType {
+            index_width,
+            data_width,
+        }) => {
+            let words = data_width.div_ceil(Word::BITS as WidthInt) as u16;
+            let offset = *word_count;
+            let entries = 1u32 << index_width;
+            *word_count += words as u32 * entries;
+            let loc = Loc { offset, words };
+            (loc, data_width, index_width)
         }
     }
 }
@@ -105,7 +115,7 @@ fn compile_expr(
     sys: &TransitionSystem,
     expr_ref: ExprRef,
     dst: Loc,
-    locs: &[Option<Loc>],
+    locs: &[Option<(Loc, WidthInt)>],
     result_width: WidthInt,
 ) -> Instr {
     let expr = ctx.get(expr_ref);
@@ -124,21 +134,23 @@ fn compile_expr(
     }
 }
 
-fn compile_expr_type(expr: &Expr, locs: &[Option<Loc>], ctx: &Context) -> InstrType {
+fn compile_expr_type(expr: &Expr, locs: &[Option<(Loc, WidthInt)>], ctx: &Context) -> InstrType {
     match expr {
         Expr::BVSymbol { .. } => InstrType::Nullary(NullaryOp::BVSymbol),
         Expr::BVLiteral { value, .. } => InstrType::Nullary(NullaryOp::BVLiteral(*value)),
-        Expr::BVZeroExt { .. } => todo!("compile zext"),
+        Expr::BVZeroExt { e, by, width } => {
+            InstrType::Unary(UnaryOp::ZeroExt(*width - *by), locs[e.index()].unwrap().0)
+        }
         Expr::BVSignExt { .. } => todo!("compile sext"),
         Expr::BVSlice { e, hi, lo } => {
-            InstrType::Unary(UnaryOp::Slice(*hi, *lo), locs[e.index()].unwrap())
+            InstrType::Unary(UnaryOp::Slice(*hi, *lo), locs[e.index()].unwrap().0)
         }
-        Expr::BVNot(e, _) => InstrType::Unary(UnaryOp::Not, locs[e.index()].unwrap()),
+        Expr::BVNot(e, _) => InstrType::Unary(UnaryOp::Not, locs[e.index()].unwrap().0),
         Expr::BVNegate(_, _) => todo!(),
         Expr::BVEqual(a, b) => InstrType::Binary(
             BinaryOp::BVEqual,
-            locs[a.index()].unwrap(),
-            locs[b.index()].unwrap(),
+            locs[a.index()].unwrap().0,
+            locs[b.index()].unwrap().0,
         ),
         Expr::BVImplies(_, _) => todo!(),
         Expr::BVGreater(_, _) => todo!(),
@@ -147,23 +159,23 @@ fn compile_expr_type(expr: &Expr, locs: &[Option<Loc>], ctx: &Context) -> InstrT
         Expr::BVGreaterEqualSigned(_, _) => todo!(),
         Expr::BVConcat(a, b, _) => InstrType::Binary(
             BinaryOp::Concat(b.get_bv_type(ctx).unwrap()), // LSB width
-            locs[a.index()].unwrap(),
-            locs[b.index()].unwrap(),
+            locs[a.index()].unwrap().0,
+            locs[b.index()].unwrap().0,
         ),
         Expr::BVAnd(a, b, _) => InstrType::Binary(
             BinaryOp::And,
-            locs[a.index()].unwrap(),
-            locs[b.index()].unwrap(),
+            locs[a.index()].unwrap().0,
+            locs[b.index()].unwrap().0,
         ),
         Expr::BVOr(a, b, _) => InstrType::Binary(
             BinaryOp::Or,
-            locs[a.index()].unwrap(),
-            locs[b.index()].unwrap(),
+            locs[a.index()].unwrap().0,
+            locs[b.index()].unwrap().0,
         ),
         Expr::BVXor(a, b, _) => InstrType::Binary(
             BinaryOp::Xor,
-            locs[a.index()].unwrap(),
-            locs[b.index()].unwrap(),
+            locs[a.index()].unwrap().0,
+            locs[b.index()].unwrap().0,
         ),
         Expr::BVShiftLeft(_, _, _) => todo!(),
         Expr::BVArithmeticShiftRight(_, _, _) => todo!(),
@@ -176,17 +188,21 @@ fn compile_expr_type(expr: &Expr, locs: &[Option<Loc>], ctx: &Context) -> InstrT
         Expr::BVSignedRem(_, _, _) => todo!(),
         Expr::BVUnsignedRem(_, _, _) => todo!(),
         Expr::BVSub(_, _, _) => todo!(),
-        Expr::BVArrayRead { .. } => todo!(),
+        Expr::BVArrayRead { array, index, .. } => {
+            let (array_loc, index_width) = locs[array.index()].unwrap();
+            assert!(index_width <= Word::BITS, "array too large!");
+            InstrType::ArrayRead(array_loc, index_width, locs[index.index()].unwrap().0)
+        }
         Expr::BVIte { cond, tru, fals } => InstrType::Tertiary(
             TertiaryOp::BVIte,
-            locs[cond.index()].unwrap(),
-            locs[tru.index()].unwrap(),
-            locs[fals.index()].unwrap(),
+            locs[cond.index()].unwrap().0,
+            locs[tru.index()].unwrap().0,
+            locs[fals.index()].unwrap().0,
         ),
-        Expr::ArraySymbol { .. } => todo!(),
+        Expr::ArraySymbol { .. } => InstrType::Nullary(NullaryOp::ArraySymbol),
         Expr::ArrayConstant { .. } => todo!(),
         Expr::ArrayEqual(_, _) => todo!(),
-        Expr::ArrayStore { .. } => todo!(),
+        Expr::ArrayStore { .. } => panic!("Array stores should have been preprocessed!"),
         Expr::ArrayIte { .. } => todo!(),
     }
 }
@@ -327,17 +343,20 @@ enum InstrType {
     Unary(UnaryOp, Loc),
     Binary(BinaryOp, Loc, Loc),
     Tertiary(TertiaryOp, Loc, Loc, Loc),
+    ArrayRead(Loc, WidthInt, Loc), // array loc + array index width + index loc
 }
 
 #[derive(Debug, Clone)]
 enum NullaryOp {
     BVSymbol,
+    ArraySymbol,
     BVLiteral(BVLiteralInt),
 }
 
 #[derive(Debug, Clone)]
 enum UnaryOp {
     Slice(WidthInt, WidthInt),
+    ZeroExt(WidthInt),
     Not,
 }
 
@@ -376,6 +395,7 @@ fn exec_instr(instr: &Instr, data: &mut [Word]) {
         InstrType::Nullary(tpe) => {
             match tpe {
                 NullaryOp::BVSymbol => {}
+                NullaryOp::ArraySymbol => {}
                 NullaryOp::BVLiteral(value) => {
                     // TODO: optimize by only calculating once!
                     let dst = &mut data[instr.dst.range()];
@@ -394,6 +414,7 @@ fn exec_instr(instr: &Instr, data: &mut [Word]) {
             match tpe {
                 UnaryOp::Slice(hi, lo) => exec::slice(dst, a, *hi, *lo),
                 UnaryOp::Not => exec::not(dst, a),
+                UnaryOp::ZeroExt(source_width) => exec::zero_extend(dst, a, *source_width),
             }
             if instr.do_trace {
                 println!(
@@ -437,6 +458,13 @@ fn exec_instr(instr: &Instr, data: &mut [Word]) {
                 }
             }
         },
+        InstrType::ArrayRead(array, index_width, index) => {
+            let index_value = data[index.range()][0] & exec::mask(*index_width);
+            let src_start = array.offset as usize + array.words as usize * index_value as usize;
+            let src_range = src_start..(src_start + array.words as usize);
+            let (dst, src) = exec::split_borrow_1(data, instr.dst.range(), src_range);
+            exec::assign(dst, src);
+        }
     }
 }
 

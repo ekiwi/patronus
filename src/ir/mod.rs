@@ -8,7 +8,8 @@ mod transition_system;
 mod type_check;
 
 pub use analysis::{
-    count_expr_uses, find_expr_with_multiple_uses, is_usage_root_signal, ForEachChild,
+    count_expr_uses, count_expr_uses_without_init, find_expr_with_multiple_uses,
+    is_usage_root_signal, ForEachChild,
 };
 pub use expr::{
     bv_value_fits_width, AddNode, ArrayType, BVLiteralInt, Context, Expr, ExprNodeConstruction,

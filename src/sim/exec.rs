@@ -24,6 +24,20 @@ pub(crate) fn assign(dst: &mut [Word], source: &[Word]) {
     }
 }
 
+fn assign_with_mask(dst: &mut [Word], source: &[Word], source_width: WidthInt) {
+    let offset = source_width % Word::BITS;
+    for (ii, (d, l)) in dst.iter_mut().zip(source.iter()).enumerate() {
+        let is_msb = ii + 1 == source.len();
+        if is_msb && offset > 0 {
+            // the msb of the lsb might need to be masked
+            let m = mask(offset);
+            *d = (*l) & m;
+        } else {
+            *d = *l;
+        }
+    }
+}
+
 #[inline]
 pub(crate) fn read_bool(source: &[Word]) -> bool {
     word_to_bool(source[0])
@@ -48,6 +62,14 @@ pub(crate) fn mask(bits: WidthInt) -> Word {
         assert!(bits < Word::BITS);
         ((1 as Word) << bits) - 1
     }
+}
+
+#[inline]
+pub(crate) fn zero_extend(dst: &mut [Word], source: &[Word], source_width: WidthInt) {
+    // copy source to dst
+    assign_with_mask(dst, source, source_width);
+    // zero out remaining words
+    clear(&mut dst[source.len()..]);
 }
 
 #[inline]
@@ -76,21 +98,10 @@ pub(crate) fn slice(dst: &mut [Word], source: &[Word], hi: WidthInt, lo: WidthIn
 
 #[inline]
 pub(crate) fn concat(dst: &mut [Word], msb: &[Word], lsb: &[Word], lsb_width: WidthInt) {
-    let lsb_offset = lsb_width % Word::BITS;
-
     // copy lsb to dst
-    for (ii, (d, l)) in dst.iter_mut().zip(lsb.iter()).enumerate() {
-        let is_msb = ii + 1 == lsb.len();
-        if is_msb && lsb_offset > 0 {
-            // the msb of the lsb might need to be masked
-            let m = mask(lsb_offset);
-            *d = (*l) & m;
-        } else {
-            *d = *l;
-        }
-    }
-    //
+    assign_with_mask(dst, lsb, lsb_width);
 
+    let lsb_offset = lsb_width % Word::BITS;
     if lsb_offset == 0 {
         // copy msb to dst
         for (d, m) in dst.iter_mut().skip(lsb.len()).zip(msb.iter()) {
@@ -150,6 +161,17 @@ fn bitwise_bin_op(dst: &mut [Word], a: &[Word], b: &[Word], foo: fn(Word, Word) 
 pub(crate) fn cmp_equal(a: &[Word], b: &[Word]) -> Word {
     let bool_res = a.iter().zip(b.iter()).all(|(a, b)| a == b);
     bool_to_word(bool_res)
+}
+
+#[inline]
+pub(crate) fn cmp_greater(a: &[Word], b: &[Word]) -> Word {
+    todo!()
+}
+
+#[inline]
+pub(crate) fn cmp_greater_equal(a: &[Word], b: &[Word]) -> Word {
+    // TODO: there is probably a more efficient way of implementing this
+    cmp_equal(a, b) | cmp_greater(a, b)
 }
 
 #[inline]
@@ -456,5 +478,26 @@ mod tests {
         do_test_slice(&in2, 875, Word::BITS * 13, &mut rng); // aligned to word boundaries
         do_test_slice(&in2, 3 + (Word::BITS * 2) + 11, 3, &mut rng);
         do_test_slice(&in2, 875, 875 - (Word::BITS * 2) - 15, &mut rng);
+    }
+
+    fn do_test_zero_ext(src: &str, by: WidthInt, rng: &mut impl Rng) {
+        let (mut src_vec, src_width) = from_bit_str(src);
+        randomize_dont_care_bits(&mut src_vec, src_width, rng);
+        let res_width = src_width + by;
+        let mut res_vec = vec![0 as Word; res_width.div_ceil(Word::BITS) as usize];
+        zero_extend(&mut res_vec, &src_vec, src_width);
+        let expected: String = format!("{}{}", "0".repeat(by as usize), src);
+        assert_eq!(to_bit_str(&res_vec, res_width), expected);
+    }
+
+    #[test]
+    fn test_zero_ext() {
+        let mut rng = rand_xoshiro::Xoshiro256PlusPlus::seed_from_u64(1);
+        do_test_zero_ext("0", 1, &mut rng);
+        do_test_zero_ext("1", 1, &mut rng);
+        do_test_zero_ext("0", 16, &mut rng);
+        do_test_zero_ext("1", 16, &mut rng);
+        do_test_zero_ext("0", 13 + Word::BITS, &mut rng);
+        do_test_zero_ext("1", 13 + Word::BITS, &mut rng);
     }
 }
