@@ -5,7 +5,7 @@
 use super::exec;
 use super::exec::Word;
 use crate::ir::*;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 /// Specifies how to initialize states that do not have
 #[derive(Debug, PartialEq, Copy, Clone)]
@@ -35,67 +35,261 @@ pub trait Simulator {
 /// Interpreter based simulator for a transition system.
 pub struct Interpreter<'a> {
     ctx: &'a Context,
-    instructions: Vec<Option<Instr>>,
+    update: Program,
+    init: Program,
     states: Vec<State>,
+    inputs: Vec<ExprRef>,
     data: Vec<Word>,
     step_count: u64,
 }
 
 impl<'a> Interpreter<'a> {
     pub fn new(ctx: &'a Context, sys: &TransitionSystem) -> Self {
-        let use_counts = count_expr_uses_without_init(ctx, sys);
-        let (meta, data_len) = compile(ctx, sys, &use_counts);
-        let data = vec![0; data_len];
-        let mut states = Vec::with_capacity(sys.states().len());
-        for state in sys.states() {
-            if use_counts[state.symbol.index()] > 0 {
-                states.push(state.clone());
-            }
-        }
+        let init = compile(ctx, sys, true);
+        let update = compile(ctx, sys, false);
+        let states = sys.states().cloned().collect::<Vec<_>>();
+        let inputs = sys
+            .get_signals(|s| s.kind == SignalKind::Input)
+            .iter()
+            .map(|(e, _)| *e)
+            .collect::<Vec<_>>();
+        let data = vec![0; update.mem_words as usize];
         Self {
             ctx,
-            instructions: meta,
-            data,
+            update,
+            init,
             states,
+            inputs,
+            data,
             step_count: 0,
         }
     }
 }
 
+impl<'a> Simulator for Interpreter<'a> {
+    fn init(&mut self, kind: InitKind) {
+        // allocate memory to execute the init program
+        let mut init_data = vec![0; self.init.mem_words as usize];
+
+        // assign default value to all inputs
+        for sym in self.inputs.iter() {
+            let dst = self.init.get_range(sym).unwrap();
+            exec::clear(&mut init_data[dst]);
+        }
+
+        // assign default value to all states
+        for state in self.states.iter() {
+            let dst = self.init.get_range(&state.symbol).unwrap();
+            exec::clear(&mut init_data[dst]);
+        }
+
+        // execute the init program
+        self.init.execute(&mut init_data);
+
+        // copy init values from init to update program
+        for state in self.states.iter() {
+            // println!("{}", state.symbol.get_symbol_name(self.ctx).unwrap());
+            let src = self.init.get_range(&state.symbol).unwrap();
+            let dst = self.update.get_range(&state.symbol).unwrap();
+            exec::assign(&mut self.data[dst], &init_data[src]);
+        }
+    }
+
+    fn update(&mut self) {
+        self.update.execute(&mut self.data);
+    }
+
+    fn step(&mut self) {
+        // assign next expressions to state
+        for state in self.states.iter() {
+            if let Some(next) = state.next {
+                let dst_range = self.update.get_range(&state.symbol).unwrap();
+                let src_range = self.update.get_range(&next).unwrap();
+                let (dst, src) = exec::split_borrow_1(&mut self.data, dst_range, src_range);
+                exec::assign(dst, src);
+            }
+        }
+        self.step_count += 1;
+    }
+
+    fn set(&mut self, expr: ExprRef, value: u64) {
+        if let Some(m) = &self.update.symbols.get(&expr) {
+            assert_eq!(m.elements, 1, "cannot set array values with this function");
+            let dst = &mut self.data[m.loc.range()];
+            exec::assign_word(dst, value);
+            // println!("Set [{}] = {}", expr.index(), data[0]);
+        }
+    }
+
+    fn get(&mut self, expr: ExprRef) -> Option<ValueRef<'_>> {
+        // println!("{:?}", expr.get_symbol_name(self.ctx));
+        if let Some(m) = &self.update.symbols.get(&expr) {
+            assert_eq!(m.elements, 1, "cannot get array values with this function");
+            let words = &self.data[m.loc.range()];
+            let bits = m.width;
+            Some(ValueRef { words, bits })
+        } else {
+            None
+        }
+    }
+
+    fn step_count(&self) -> u64 {
+        self.step_count
+    }
+}
+
+/// the result of a compilation
+struct Program {
+    instructions: Vec<Instr>,
+    symbols: HashMap<ExprRef, SymbolInfo>,
+    mem_words: u32,
+}
+
+struct SymbolInfo {
+    loc: Loc,
+    width: WidthInt,
+    elements: u64,
+}
+
+impl Program {
+    fn execute(&self, data: &mut [Word]) {
+        for instr in self.instructions.iter() {
+            exec_instr(instr, data);
+        }
+    }
+
+    fn get_range(&self, e: &ExprRef) -> Option<std::ops::Range<usize>> {
+        if let Some(info) = self.symbols.get(e) {
+            let start = info.loc.offset as usize;
+            let len = info.elements as usize * info.loc.words as usize;
+            Some(start..(start + len))
+        } else {
+            None
+        }
+    }
+}
+
 /// Converts a transitions system into instructions and the number of Words that need to be allocated
-fn compile(
-    ctx: &Context,
-    sys: &TransitionSystem,
-    use_counts: &[u32],
-) -> (Vec<Option<Instr>>, usize) {
+/// * `init_mode` - Indicates whether we want to generate a program for the system init or the system update.
+fn compile(ctx: &Context, sys: &TransitionSystem, init_mode: bool) -> Program {
+    // we need to be able to indentiy expressions that represent states
+    let expr_to_state: HashMap<ExprRef, &State> =
+        HashMap::from_iter(sys.states().map(|s| (s.symbol, s)));
+
     // used to track instruction result allocations
-    let mut locs: Vec<Option<(Loc, WidthInt)>> = Vec::with_capacity(use_counts.len());
+    let mut locs: ExprMetaData<Option<(Loc, WidthInt)>> = ExprMetaData::default();
+    let mut symbols = HashMap::new();
     // generated instructions
     let mut instructions = Vec::new();
     // bump allocator
-    let mut word_count = 0u32;
-    // We want to "compile" init values by computing them.
-    let is_init: HashSet<ExprRef> = HashSet::from_iter(sys.states().flat_map(|s| s.init));
+    let mut mem_words = 0u32;
 
-    for (idx, count) in use_counts.iter().enumerate() {
-        let expr = ExprRef::from_index(idx);
-        if is_init.contains(&expr) {
-            // allocate space for init values
-            let tpe = expr.get_type(ctx);
-            let (loc, _, index_width) = allocate_result_space(tpe, &mut word_count);
-            locs.push(Some((loc, index_width)));
-        } else if *count == 0 {
-            locs.push(None); // no space needed
-            instructions.push(None); // TODO: we would like to store the instructions compacted
-        } else {
-            let tpe = expr.get_type(ctx);
-            let (loc, width, index_width) = allocate_result_space(tpe, &mut word_count);
-            locs.push(Some((loc, index_width)));
-            let instr = compile_expr(ctx, sys, expr, loc, &locs, width);
-            instructions.push(Some(instr));
+    // keep track of which instructions need to be compiled next
+    let mut todo = Vec::new();
+
+    // we want to be able to identify these expression to add them to the `symbol` lookup
+    let init_and_next_exprs = get_next_and_init_refs(sys);
+
+    // define roots depending on mode
+    if init_mode {
+        // calculate the value for each state (which in init mode is the value of the init expression)
+        for state in sys.states() {
+            todo.push(state.symbol);
+        }
+        // allocate space for inputs
+        for (signal_expr, _) in sys.get_signals(|s| matches!(s.kind, SignalKind::Input)) {
+            todo.push(signal_expr);
+        }
+    } else {
+        // calculate the next expression for each state
+        for state in sys.states() {
+            if let Some(next) = state.next {
+                if next != state.symbol {
+                    todo.push(next);
+                }
+            }
+        }
+        // calculate all other signals that might be observable
+        for (signal_expr, _) in sys.get_signals(is_usage_root_signal) {
+            todo.push(signal_expr);
         }
     }
-    (instructions, word_count as usize)
+
+    // compile until we are done
+    while !todo.is_empty() {
+        let expr_ref = todo.pop().unwrap();
+
+        // states get special handling in init mode
+        let mut compile_expr_ref = expr_ref;
+        if let Some(state) = expr_to_state.get(&expr_ref) {
+            if init_mode {
+                if let Some(init) = state.init {
+                    // compute the init expression instead of the state
+                    compile_expr_ref = init; // overwrite!
+                }
+            }
+        }
+
+        // check to see if all children are already compiled
+        let expr = ctx.get(compile_expr_ref);
+        let mut all_compiled = true;
+        expr.for_each_child(|c| {
+            if locs.get(*c).is_none() {
+                if all_compiled {
+                    todo.push(expr_ref); // return expression to the todo list
+                }
+                all_compiled = false;
+                // we need to compile the child first
+                todo.push(*c);
+            }
+        });
+        if !all_compiled {
+            // something was missing, try again later
+            continue;
+        }
+
+        // allocate space to store the expression result
+        let (loc, width, index_width) = allocate_result_space(expr.get_type(ctx), &mut mem_words);
+        *locs.get_mut(expr_ref) = Some((loc, index_width));
+        // if the expression is a symbol or a state expression or a usage root, we create a lookup
+        let is_root = sys
+            .get_signal(compile_expr_ref)
+            .map(is_usage_root_signal)
+            .unwrap_or(false);
+        if expr.is_symbol() || init_and_next_exprs.contains(&compile_expr_ref) || is_root {
+            // it is important to use `expr_ref` here!
+            symbols.insert(
+                expr_ref,
+                SymbolInfo {
+                    loc,
+                    width,
+                    elements: 1u64 << index_width,
+                },
+            );
+        }
+        // compile expression
+        let instr = compile_expr(ctx, sys, compile_expr_ref, loc, &locs, width);
+        instructions.push(instr);
+    }
+
+    Program {
+        instructions,
+        symbols,
+        mem_words,
+    }
+}
+
+fn get_next_and_init_refs(sys: &TransitionSystem) -> HashSet<ExprRef> {
+    let mut out: HashSet<ExprRef> = HashSet::new();
+    for state in sys.states() {
+        if let Some(init) = state.init {
+            out.insert(init);
+        }
+        if let Some(next) = state.next {
+            out.insert(next);
+        }
+    }
+    out
 }
 
 fn allocate_result_space(tpe: Type, word_count: &mut u32) -> (Loc, WidthInt, WidthInt) {
@@ -126,7 +320,7 @@ fn compile_expr(
     sys: &TransitionSystem,
     expr_ref: ExprRef,
     dst: Loc,
-    locs: &[Option<(Loc, WidthInt)>],
+    locs: &ExprMetaData<Option<(Loc, WidthInt)>>,
     result_width: WidthInt,
 ) -> Instr {
     let expr = ctx.get(expr_ref);
@@ -145,62 +339,56 @@ fn compile_expr(
     }
 }
 
-fn compile_expr_type(expr: &Expr, locs: &[Option<(Loc, WidthInt)>], ctx: &Context) -> InstrType {
+fn compile_expr_type(
+    expr: &Expr,
+    locs: &ExprMetaData<Option<(Loc, WidthInt)>>,
+    ctx: &Context,
+) -> InstrType {
     match expr {
         Expr::BVSymbol { .. } => InstrType::Nullary(NullaryOp::BVSymbol),
         Expr::BVLiteral { value, .. } => InstrType::Nullary(NullaryOp::BVLiteral(*value)),
-        Expr::BVZeroExt { e, .. } => InstrType::Unary(UnaryOp::ZeroExt, locs[e.index()].unwrap().0),
+        Expr::BVZeroExt { e, .. } => InstrType::Unary(UnaryOp::ZeroExt, locs[e].unwrap().0),
         Expr::BVSignExt { .. } => todo!("compile sext"),
         Expr::BVSlice { e, hi, lo } => {
-            InstrType::Unary(UnaryOp::Slice(*hi, *lo), locs[e.index()].unwrap().0)
+            InstrType::Unary(UnaryOp::Slice(*hi, *lo), locs[e].unwrap().0)
         }
-        Expr::BVNot(e, width) => InstrType::Unary(UnaryOp::Not(*width), locs[e.index()].unwrap().0),
+        Expr::BVNot(e, width) => InstrType::Unary(UnaryOp::Not(*width), locs[e].unwrap().0),
         Expr::BVNegate(_, _) => todo!(),
-        Expr::BVEqual(a, b) => InstrType::Binary(
-            BinaryOp::BVEqual,
-            locs[a.index()].unwrap().0,
-            locs[b.index()].unwrap().0,
-        ),
+        Expr::BVEqual(a, b) => {
+            InstrType::Binary(BinaryOp::BVEqual, locs[a].unwrap().0, locs[b].unwrap().0)
+        }
         Expr::BVImplies(_, _) => todo!(),
-        Expr::BVGreater(a, b) => InstrType::Binary(
-            BinaryOp::Greater,
-            locs[a.index()].unwrap().0,
-            locs[b.index()].unwrap().0,
-        ),
+        Expr::BVGreater(a, b) => {
+            InstrType::Binary(BinaryOp::Greater, locs[a].unwrap().0, locs[b].unwrap().0)
+        }
         Expr::BVGreaterSigned(_, _) => todo!(),
         Expr::BVGreaterEqual(a, b) => InstrType::Binary(
             BinaryOp::GreaterEqual,
-            locs[a.index()].unwrap().0,
-            locs[b.index()].unwrap().0,
+            locs[a].unwrap().0,
+            locs[b].unwrap().0,
         ),
         Expr::BVGreaterEqualSigned(_, _) => todo!(),
         Expr::BVConcat(a, b, _) => InstrType::Binary(
             BinaryOp::Concat(b.get_bv_type(ctx).unwrap()), // LSB width
-            locs[a.index()].unwrap().0,
-            locs[b.index()].unwrap().0,
+            locs[a].unwrap().0,
+            locs[b].unwrap().0,
         ),
-        Expr::BVAnd(a, b, _) => InstrType::Binary(
-            BinaryOp::And,
-            locs[a.index()].unwrap().0,
-            locs[b.index()].unwrap().0,
-        ),
-        Expr::BVOr(a, b, _) => InstrType::Binary(
-            BinaryOp::Or,
-            locs[a.index()].unwrap().0,
-            locs[b.index()].unwrap().0,
-        ),
-        Expr::BVXor(a, b, _) => InstrType::Binary(
-            BinaryOp::Xor,
-            locs[a.index()].unwrap().0,
-            locs[b.index()].unwrap().0,
-        ),
+        Expr::BVAnd(a, b, _) => {
+            InstrType::Binary(BinaryOp::And, locs[a].unwrap().0, locs[b].unwrap().0)
+        }
+        Expr::BVOr(a, b, _) => {
+            InstrType::Binary(BinaryOp::Or, locs[a].unwrap().0, locs[b].unwrap().0)
+        }
+        Expr::BVXor(a, b, _) => {
+            InstrType::Binary(BinaryOp::Xor, locs[a].unwrap().0, locs[b].unwrap().0)
+        }
         Expr::BVShiftLeft(_, _, _) => todo!(),
         Expr::BVArithmeticShiftRight(_, _, _) => todo!(),
         Expr::BVShiftRight(_, _, _) => todo!(),
         Expr::BVAdd(a, b, width) => InstrType::Binary(
             BinaryOp::Add(*width),
-            locs[a.index()].unwrap().0,
-            locs[b.index()].unwrap().0,
+            locs[a].unwrap().0,
+            locs[b].unwrap().0,
         ),
         Expr::BVMul(_, _, _) => todo!(),
         Expr::BVSignedDiv(_, _, _) => todo!(),
@@ -210,19 +398,19 @@ fn compile_expr_type(expr: &Expr, locs: &[Option<(Loc, WidthInt)>], ctx: &Contex
         Expr::BVUnsignedRem(_, _, _) => todo!(),
         Expr::BVSub(a, b, width) => InstrType::Binary(
             BinaryOp::Sub(*width),
-            locs[a.index()].unwrap().0,
-            locs[b.index()].unwrap().0,
+            locs[a].unwrap().0,
+            locs[b].unwrap().0,
         ),
         Expr::BVArrayRead { array, index, .. } => {
-            let (array_loc, index_width) = locs[array.index()].unwrap();
+            let (array_loc, index_width) = locs[array].unwrap();
             assert!(index_width <= Word::BITS, "array too large!");
-            InstrType::ArrayRead(array_loc, index_width, locs[index.index()].unwrap().0)
+            InstrType::ArrayRead(array_loc, index_width, locs[index].unwrap().0)
         }
         Expr::BVIte { cond, tru, fals } => InstrType::Tertiary(
             TertiaryOp::BVIte,
-            locs[cond.index()].unwrap().0,
-            locs[tru.index()].unwrap().0,
-            locs[fals.index()].unwrap().0,
+            locs[cond].unwrap().0,
+            locs[tru].unwrap().0,
+            locs[fals].unwrap().0,
         ),
         Expr::ArraySymbol { index_width, .. } => {
             InstrType::Nullary(NullaryOp::ArraySymbol(*index_width))
@@ -231,74 +419,6 @@ fn compile_expr_type(expr: &Expr, locs: &[Option<(Loc, WidthInt)>], ctx: &Contex
         Expr::ArrayEqual(_, _) => todo!(),
         Expr::ArrayStore { .. } => panic!("Array stores should have been preprocessed!"),
         Expr::ArrayIte { .. } => todo!(),
-    }
-}
-
-impl<'a> Simulator for Interpreter<'a> {
-    fn init(&mut self, kind: InitKind) {
-        // assign default value to all inputs and states
-        for inst in self.instructions.iter().flatten() {
-            if matches!(inst.kind, SignalKind::Input | SignalKind::State) {
-                exec::clear(&mut self.data[inst.range()]);
-            }
-        }
-
-        // assign init expressions to signals
-        for state in self.states.iter() {
-            println!("{}", state.symbol.get_symbol_name(self.ctx).unwrap());
-            if let Some(init) = state.init {
-                let state_instr = self.instructions[state.symbol.index()].as_ref().unwrap();
-                let dst = &mut self.data[state_instr.range()];
-                eval_init_value(self.ctx, init, dst, state_instr.dst.words);
-            }
-        }
-    }
-
-    fn update(&mut self) {
-        self.update_all_signals();
-    }
-
-    fn step(&mut self) {
-        // assign next expressions to state
-        for state in self.states.iter() {
-            if let Some(next) = state.next {
-                let dst_range = self.instructions[state.symbol.index()]
-                    .as_ref()
-                    .unwrap()
-                    .dst
-                    .range();
-                let src_range = self.instructions[next.index()]
-                    .as_ref()
-                    .unwrap()
-                    .dst
-                    .range();
-                let (dst, src) = exec::split_borrow_1(&mut self.data, dst_range, src_range);
-                exec::assign(dst, src);
-            }
-        }
-        self.step_count += 1;
-    }
-
-    fn set(&mut self, expr: ExprRef, value: u64) {
-        if let Some(m) = &self.instructions[expr.index()] {
-            let dst = &mut self.data[m.dst.range()];
-            exec::assign_word(dst, value);
-            // println!("Set [{}] = {}", expr.index(), data[0]);
-        }
-    }
-
-    fn get(&mut self, expr: ExprRef) -> Option<ValueRef<'_>> {
-        if let Some(m) = &self.instructions[expr.index()] {
-            let words = &self.data[m.dst.range()];
-            let bits = m.result_width;
-            Some(ValueRef { words, bits })
-        } else {
-            None
-        }
-    }
-
-    fn step_count(&self) -> u64 {
-        self.step_count
     }
 }
 
@@ -329,15 +449,6 @@ fn eval_init_value_bv(ctx: &Context, expr_ref: ExprRef) -> u64 {
         Expr::BVOr(a, b, _) => eval_init_value_bv(ctx, *a) | eval_init_value_bv(ctx, *b),
         Expr::BVAnd(a, b, _) => eval_init_value_bv(ctx, *a) & eval_init_value_bv(ctx, *b),
         _ => todo!("Implement support for init expression: {expr:?}"),
-    }
-}
-
-impl<'a> Interpreter<'a> {
-    /// Eagerly re-computes all signals in the system.
-    fn update_all_signals(&mut self) {
-        for instr in self.instructions.iter().flatten() {
-            exec_instr(instr, &mut self.data);
-        }
     }
 }
 

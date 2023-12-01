@@ -4,6 +4,7 @@
 
 use crate::ir::{Context, Expr, ExprRef, GetNode, SignalInfo, SignalKind, State, TransitionSystem};
 use std::collections::HashMap;
+use std::ops::Index;
 
 pub fn find_expr_with_multiple_uses(ctx: &Context, sys: &TransitionSystem) -> Vec<ExprRef> {
     let counts = count_expr_uses(ctx, sys);
@@ -81,7 +82,7 @@ pub fn is_usage_root_signal(info: &SignalInfo) -> bool {
 
 /// A dense hash map to store meta-data related to each expression
 #[derive(Debug, Default)]
-struct ExprMetaData<T: Default + Clone> {
+pub struct ExprMetaData<T: Default + Clone> {
     inner: Vec<T>,
     default: T,
 }
@@ -101,6 +102,22 @@ impl<T: Default + Clone> ExprMetaData<T> {
 
     pub fn into_vec(self) -> Vec<T> {
         self.inner
+    }
+}
+
+impl<T: Default + Clone> Index<ExprRef> for ExprMetaData<T> {
+    type Output = T;
+
+    fn index(&self, index: ExprRef) -> &Self::Output {
+        self.get(index)
+    }
+}
+
+impl<T: Default + Clone> Index<&ExprRef> for ExprMetaData<T> {
+    type Output = T;
+
+    fn index(&self, index: &ExprRef) -> &Self::Output {
+        self.get(*index)
     }
 }
 
