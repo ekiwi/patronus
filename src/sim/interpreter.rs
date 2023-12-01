@@ -5,6 +5,7 @@
 use super::exec;
 use super::exec::Word;
 use crate::ir::*;
+use std::collections::HashSet;
 
 /// Specifies how to initialize states that do not have
 #[derive(Debug, PartialEq, Copy, Clone)]
@@ -69,11 +70,21 @@ fn compile(
 ) -> (Vec<Option<Instr>>, usize) {
     // used to track instruction result allocations
     let mut locs: Vec<Option<(Loc, WidthInt)>> = Vec::with_capacity(use_counts.len());
+    // generated instructions
     let mut instructions = Vec::new();
+    // bump allocator
     let mut word_count = 0u32;
+    // We want to "compile" init values by computing them.
+    let is_init: HashSet<ExprRef> = HashSet::from_iter(sys.states().flat_map(|s| s.init));
+
     for (idx, count) in use_counts.iter().enumerate() {
         let expr = ExprRef::from_index(idx);
-        if *count == 0 {
+        if is_init.contains(&expr) {
+            // allocate space for init values
+            let tpe = expr.get_type(ctx);
+            let (loc, _, index_width) = allocate_result_space(tpe, &mut word_count);
+            locs.push(Some((loc, index_width)));
+        } else if *count == 0 {
             locs.push(None); // no space needed
             instructions.push(None); // TODO: we would like to store the instructions compacted
         } else {
@@ -213,7 +224,9 @@ fn compile_expr_type(expr: &Expr, locs: &[Option<(Loc, WidthInt)>], ctx: &Contex
             locs[tru.index()].unwrap().0,
             locs[fals.index()].unwrap().0,
         ),
-        Expr::ArraySymbol { .. } => InstrType::Nullary(NullaryOp::ArraySymbol),
+        Expr::ArraySymbol { index_width, .. } => {
+            InstrType::Nullary(NullaryOp::ArraySymbol(*index_width))
+        }
         Expr::ArrayConstant { .. } => todo!(),
         Expr::ArrayEqual(_, _) => todo!(),
         Expr::ArrayStore { .. } => panic!("Array stores should have been preprocessed!"),
@@ -226,29 +239,17 @@ impl<'a> Simulator for Interpreter<'a> {
         // assign default value to all inputs and states
         for inst in self.instructions.iter().flatten() {
             if matches!(inst.kind, SignalKind::Input | SignalKind::State) {
-                exec::clear(&mut self.data[inst.dst.range()]);
+                exec::clear(&mut self.data[inst.range()]);
             }
         }
 
-        // update signals since signal init values might need to be computed
-        // TODO: more efficient would be to only update expressions that are needed for init
-        self.update_all_signals();
-
         // assign init expressions to signals
         for state in self.states.iter() {
+            println!("{}", state.symbol.get_symbol_name(self.ctx).unwrap());
             if let Some(init) = state.init {
-                let dst_range = self.instructions[state.symbol.index()]
-                    .as_ref()
-                    .unwrap()
-                    .dst
-                    .range();
-                let src_range = self.instructions[init.index()]
-                    .as_ref()
-                    .unwrap()
-                    .dst
-                    .range();
-                let (dst, src) = exec::split_borrow_1(&mut self.data, dst_range, src_range);
-                exec::assign(dst, src);
+                let state_instr = self.instructions[state.symbol.index()].as_ref().unwrap();
+                let dst = &mut self.data[state_instr.range()];
+                eval_init_value(self.ctx, init, dst, state_instr.dst.words);
             }
         }
     }
@@ -298,6 +299,36 @@ impl<'a> Simulator for Interpreter<'a> {
 
     fn step_count(&self) -> u64 {
         self.step_count
+    }
+}
+
+/// Function to evaluate a limited set of expressions that are often used by yosys to define init values.
+/// Uses only the destination space to store values.
+fn eval_init_value(ctx: &Context, expr_ref: ExprRef, dst: &mut [Word], words: u16) {
+    let expr = ctx.get(expr_ref);
+    match expr {
+        Expr::ArrayStore { array, index, data } => {
+            // first evaluate the sub array
+            eval_init_value(ctx, *array, dst, words);
+            // then apply the write
+            let index_value = eval_init_value_bv(ctx, *index);
+            let data_value = eval_init_value_bv(ctx, *data);
+            println!("TODO: assign @{index_value} := {data_value} ({expr_ref:?})");
+        }
+        Expr::ArraySymbol { .. } => {
+            println!("TODO: implement array copy")
+        }
+        _ => todo!("Implement support for init expression: {expr:?}"),
+    }
+}
+
+fn eval_init_value_bv(ctx: &Context, expr_ref: ExprRef) -> u64 {
+    let expr = ctx.get(expr_ref);
+    match expr {
+        Expr::BVLiteral { value, .. } => *value,
+        Expr::BVOr(a, b, _) => eval_init_value_bv(ctx, *a) | eval_init_value_bv(ctx, *b),
+        Expr::BVAnd(a, b, _) => eval_init_value_bv(ctx, *a) & eval_init_value_bv(ctx, *b),
+        _ => todo!("Implement support for init expression: {expr:?}"),
     }
 }
 
@@ -351,6 +382,19 @@ struct Instr {
     do_trace: bool,         // for debugging
 }
 
+impl Instr {
+    /// Computes the data range while taking the number of array elements into account
+    fn range(&self) -> std::ops::Range<usize> {
+        let num_elements = match self.tpe {
+            InstrType::Nullary(NullaryOp::ArraySymbol(index_width)) => 1usize << index_width,
+            _ => 1,
+        };
+        let start = self.dst.offset as usize;
+        let len = num_elements * self.dst.words as usize;
+        start..(start + len)
+    }
+}
+
 #[derive(Debug, Clone)]
 enum InstrType {
     Nullary(NullaryOp),
@@ -363,7 +407,7 @@ enum InstrType {
 #[derive(Debug, Clone)]
 enum NullaryOp {
     BVSymbol,
-    ArraySymbol,
+    ArraySymbol(WidthInt), // index width
     BVLiteral(BVLiteralInt),
 }
 
@@ -413,7 +457,7 @@ fn exec_instr(instr: &Instr, data: &mut [Word]) {
         InstrType::Nullary(tpe) => {
             match tpe {
                 NullaryOp::BVSymbol => {}
-                NullaryOp::ArraySymbol => {}
+                NullaryOp::ArraySymbol(_) => {}
                 NullaryOp::BVLiteral(value) => {
                     // TODO: optimize by only calculating once!
                     let dst = &mut data[instr.dst.range()];
