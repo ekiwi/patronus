@@ -185,6 +185,17 @@ pub(crate) fn sub(dst: &mut [Word], a: &[Word], b: &[Word], width: WidthInt) {
 }
 
 #[inline]
+pub(crate) fn negate(dst: &mut [Word], b: &[Word], width: WidthInt) {
+    // we add one by setting the input carry to one
+    let mut carry = 1;
+    for (dd, bb) in dst.iter_mut().zip(b.iter()) {
+        // we invert b which in addition to adding 1 turns it into `-b`
+        carry = adc(dd, carry, 0, !(*bb));
+    }
+    mask_msb(dst, width);
+}
+
+#[inline]
 pub(crate) fn cmp_equal(a: &[Word], b: &[Word]) -> bool {
     a.iter().zip(b.iter()).all(|(a, b)| a == b)
 }
@@ -300,6 +311,11 @@ pub(crate) fn to_bit_str(values: &[Word], width: WidthInt) -> String {
 }
 
 pub(crate) fn to_big_uint(words: &[Word]) -> num_bigint::BigUint {
+    let words32 = words_to_u32(words);
+    num_bigint::BigUint::from_slice(&words32)
+}
+
+fn words_to_u32(words: &[Word]) -> Vec<u32> {
     let mut words32 = Vec::with_capacity(words.len() * 2);
     let mask32 = mask(32);
     for w in words.iter() {
@@ -309,7 +325,7 @@ pub(crate) fn to_big_uint(words: &[Word]) -> num_bigint::BigUint {
         words32.push(lsb);
         words32.push(msb);
     }
-    num_bigint::BigUint::from_slice(&words32)
+    words32
 }
 
 #[cfg(test)]
@@ -328,15 +344,6 @@ mod tests {
         words
     }
 
-    fn gen_value_and_big_uint(
-        width: WidthInt,
-        rng: &mut impl Rng,
-    ) -> (Vec<Word>, WidthInt, BigUint) {
-        let (words, width) = from_bit_str(&random_bit_str(width, rng));
-        let bignum = to_big_uint(&words);
-        (words, width, bignum)
-    }
-
     fn get_sign(value: &[Word], width: WidthInt) -> Sign {
         let sign_bit = (width - 1) % Word::BITS;
         let sign_value = (value.last().unwrap() >> sign_bit) & 1;
@@ -345,6 +352,35 @@ mod tests {
         } else {
             Sign::Plus
         }
+    }
+
+    fn to_big_int(words: &[Word], width: WidthInt) -> BigInt {
+        let sign = get_sign(words, width);
+        // calculate the magnitude
+        let words64 = if sign == Sign::Minus {
+            let mut negated = vec![0; words.len()];
+            negate(&mut negated, words, width);
+            negated
+        } else {
+            Vec::from(words)
+        };
+
+        let words32 = words_to_u32(&words64);
+        BigInt::from_slice(sign, &words32)
+    }
+
+    fn from_big_int(value: BigInt, width: WidthInt) -> Vec<Word> {
+        let mut words = value.iter_u64_digits().collect::<Vec<_>>();
+        let num_words = width.div_ceil(Word::BITS);
+        // add any missing (because they are zero) msb words
+        words.resize(num_words as usize, 0);
+        mask_msb(&mut words, width);
+        // negate if sign is minus
+        if value.sign() == Sign::Minus {
+            let word_copy = words.clone();
+            negate(&mut words, &word_copy, width);
+        }
+        words
     }
 
     fn from_bit_str(bits: &str) -> (Vec<Word>, WidthInt) {
@@ -436,6 +472,16 @@ mod tests {
         assert_eq!(d_width, Word::BITS * 2);
         assert_eq!(d_vec.len(), 2);
         assert_eq!(to_bit_str(&d_vec, d_width), d);
+    }
+
+    #[test]
+    fn test_big_uint_conversion() {
+        let mut rng = rand_xoshiro::Xoshiro256PlusPlus::seed_from_u64(1);
+        for _ in 0..10 {
+            let (a_vec, a_width) = from_bit_str(&random_bit_str(1345, &mut rng));
+            assert_eq!(a_vec, from_big_uint(to_big_uint(&a_vec), a_width));
+            assert_eq!(a_vec, from_big_int(to_big_int(&a_vec, a_width), a_width));
+        }
     }
 
     fn random_bit_str(width: WidthInt, rng: &mut impl Rng) -> String {
@@ -551,14 +597,27 @@ mod tests {
         do_test_zero_ext("1", 13 + Word::BITS);
     }
 
-    fn do_test_add(width: WidthInt, rng: &mut impl Rng) {
-        let (a_vec, a_width, a_num) = gen_value_and_big_uint(width, rng);
-        let (b_vec, b_width, b_num) = gen_value_and_big_uint(width, rng);
+    fn do_test_arith(
+        width: WidthInt,
+        our: fn(&mut [Word], &[Word], &[Word], WidthInt),
+        big: fn(BigInt, BigInt) -> BigInt,
+        rng: &mut impl Rng,
+    ) {
+        let (a_vec, _) = from_bit_str(&random_bit_str(width, rng));
+        let (b_vec, _) = from_bit_str(&random_bit_str(width, rng));
         let mut res_vec = vec![0 as Word; width.div_ceil(Word::BITS) as usize];
-        add(&mut res_vec, &a_vec, &b_vec, width);
+        (our)(&mut res_vec, &a_vec, &b_vec, width);
         assert_unused_bits_zero(&res_vec, width);
-        let expected = from_big_uint(a_num + b_num, width);
-        assert_eq!(expected, res_vec);
+
+        // check result
+        let (a_num, b_num) = (to_big_int(&a_vec, width), to_big_int(&b_vec, width));
+        let expected_num = (big)(a_num.clone(), b_num.clone());
+        let expected = from_big_int(expected_num.clone(), width);
+        assert_eq!(expected, res_vec, "{a_num} {b_num} {expected_num}");
+    }
+
+    fn do_test_add(width: WidthInt, rng: &mut impl Rng) {
+        do_test_arith(width, add, |a, b| a + b, rng)
     }
 
     #[test]
@@ -573,14 +632,7 @@ mod tests {
     }
 
     fn do_test_sub(width: WidthInt, rng: &mut impl Rng) {
-        let (a_vec, a_width, a_num) = gen_value_and_big_uint(width, rng);
-        let (b_vec, b_width, b_num) = gen_value_and_big_uint(width, rng);
-        let mut res_vec = vec![0 as Word; width.div_ceil(Word::BITS) as usize];
-        sub(&mut res_vec, &a_vec, &b_vec, width);
-        assert_unused_bits_zero(&res_vec, width);
-        let res = BigInt::from_biguint(Sign::Plus, a_num) - BigInt::from_biguint(Sign::Plus, b_num);
-
-        todo!("correctly implement the sub behavior!")
+        do_test_arith(width, sub, |a, b| a - b, rng)
     }
 
     #[test]
