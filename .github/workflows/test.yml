@@ -75,6 +75,9 @@ jobs:
       - name: simulate sha3 (keccak)
         run: |
           cargo run --release --example sim -- --testbench=inputs/repair/keccak.original.tb.csv inputs/repair/keccak.original.btor
+      - name: simulate sdram controller
+        run: |
+          cargo run --release --example sim -- --testbench=inputs/repair/sdram_controller.original.tb.csv inputs/repair/sdram_controller.original.btor
 
   semver:
     name: Check Semantic Versioning
