@@ -90,7 +90,7 @@ impl<'a> Parser<'a> {
             .sys
             .states()
             .enumerate()
-            .rev()
+            .rev() // this reverse is needed in order to properly remove elements from back to front
             .filter(|(_, s)| s.init.is_none() && s.next.is_none())
             .map(|(i, _)| i)
             .collect::<Vec<_>>();
