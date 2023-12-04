@@ -153,8 +153,10 @@ struct SymbolInfo {
 
 impl Program {
     fn execute(&self, data: &mut [Word]) {
-        for instr in self.instructions.iter() {
-            exec_instr(instr, data);
+        let mut ii = 0;
+        while let Some(instr) = self.instructions.get(ii) {
+            let increment = exec_instr(instr, data);
+            ii += increment;
         }
     }
 
@@ -277,7 +279,6 @@ fn compile(ctx: &Context, sys: &TransitionSystem, init_mode: bool) -> Program {
                 compile_expr_ref,
                 &loc,
                 index_width,
-                None,
                 &mut locs,
                 &mut instructions,
             );
@@ -342,21 +343,34 @@ fn compile_array_expr(
     expr_ref: ExprRef,
     dst: &Loc,
     index_width: WidthInt,
-    store_cond: Option<&Loc>,
     locs: &ExprMetaData<Option<(Loc, WidthInt)>>,
     instructions: &mut Vec<Instr>,
 ) {
     let expr = ctx.get(expr_ref);
     match expr {
-        Expr::ArrayConstant { e, data_width, index_width } => {
-            todo!("compile array constant")
+        Expr::ArrayConstant { e, index_width, .. } => {
+            let tpe = InstrType::ArrayConst(*index_width, locs[e].unwrap().0);
+            instructions.push(Instr::new(*dst, tpe, SignalKind::Node, 0));
         }
         Expr::ArrayIte { cond, tru, fals } => {
-            todo!("compile array ite")
+            let default_tpe = InstrType::Skip(locs[cond].unwrap().0, false, 0);
+            // compile tru branch and then update instruction
+            let tru_skip_pos = instructions.len();
+            instructions.push(Instr::new(*dst, default_tpe.clone(), SignalKind::Node, 0));
+            compile_array_expr(ctx, *tru, dst, index_width, locs, instructions);
+            let num_tru_skip = (instructions.len() - 1 - tru_skip_pos) as u32;
+            instructions[tru_skip_pos].tpe = InstrType::Skip(locs[cond].unwrap().0, false, num_tru_skip);
+
+            // compile fals branch and then update instruction
+            let fals_skip_pos = instructions.len();
+            instructions.push(Instr::new(*dst, default_tpe, SignalKind::Node, 0));
+            compile_array_expr(ctx, *fals, dst, index_width, locs, instructions);
+            let num_fals_skip = (instructions.len() - 1 - fals_skip_pos) as u32;
+            instructions[fals_skip_pos].tpe = InstrType::Skip(locs[cond].unwrap().0, true, num_fals_skip);
         }
         Expr::ArrayStore { array, data, index } => {
             // first we need to compile all previous stores or copies
-            compile_array_expr(ctx, *array, dst, index_width, store_cond, locs, instructions);
+            compile_array_expr(ctx, *array, dst, index_width, locs, instructions);
             // now we can execute our store
             let tpe = InstrType::ArrayStore(index_width, locs[index].unwrap().0, locs[data].unwrap().0);
             instructions.push(Instr::new(*dst, tpe, SignalKind::Node, 0));
@@ -630,6 +644,8 @@ enum InstrType {
     Tertiary(TertiaryOp, Loc, Loc, Loc),
     ArrayRead(Loc, WidthInt, Loc), // array loc + array index width + index loc
     ArrayStore(WidthInt, Loc, Loc), // array index width + index loc + data loc
+    ArrayConst(WidthInt, Loc),     // array index with + data
+    Skip(Loc, bool, u32), // conditional skip, condition, invert, number of instructions to skip
 }
 
 #[derive(Debug, Clone)]
@@ -696,8 +712,14 @@ impl Loc {
     }
 }
 
-fn exec_instr(instr: &Instr, data: &mut [Word]) {
+fn exec_instr(instr: &Instr, data: &mut [Word]) -> usize {
     match &instr.tpe {
+        InstrType::Skip(cond, invert, num_instr) => {
+            let cond_value = exec::read_bool(&data[cond.range()]);
+            if (cond_value && !*invert) || (!cond_value && *invert) {
+                return *num_instr as usize + 1;
+            }
+        }
         InstrType::Nullary(tpe) => {
             match tpe {
                 NullaryOp::BVSymbol => {}
@@ -786,7 +808,20 @@ fn exec_instr(instr: &Instr, data: &mut [Word]) {
             let (dst, src) = exec::split_borrow_1(data, dst_range, data_loc.range());
             exec::assign(dst, src);
         }
+        InstrType::ArrayConst(index_width, data_loc) => {
+            let dst_range = instr.dst.array_range(*index_width);
+            let (dst_all, src) = exec::split_borrow_1(data, dst_range, data_loc.range());
+            let len = 1usize << index_width;
+            let words = instr.dst.words as usize;
+            for ii in 0..len {
+                let sub_range = ii * words..(ii + 1) * words;
+                let dst = &mut dst_all[sub_range];
+                exec::assign(dst, src);
+            }
+        }
     }
+    // by default we advance to the next instruction
+    1
 }
 
 #[cfg(test)]
