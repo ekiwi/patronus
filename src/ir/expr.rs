@@ -148,6 +148,15 @@ pub trait ExprNodeConstruction:
         self.add_node(Expr::ArrayStore { array, index, data })
     }
 
+    fn array_const(&mut self, e: ExprRef, index_width: WidthInt) -> ExprRef {
+        let data_width = e.get_bv_type(self).unwrap();
+        self.add_node(Expr::ArrayConstant {
+            e,
+            index_width,
+            data_width,
+        })
+    }
+
     fn array_read(&mut self, array: ExprRef, index: ExprRef) -> ExprRef {
         let width = array.get_type(self).get_array_data_width().unwrap();
         self.add_node(Expr::BVArrayRead {
@@ -449,6 +458,13 @@ impl Type {
         match &self {
             Type::BV(_) => true,
             Type::Array(_) => false,
+        }
+    }
+
+    pub fn is_array(&self) -> bool {
+        match &self {
+            Type::BV(_) => false,
+            Type::Array(_) => true,
         }
     }
 

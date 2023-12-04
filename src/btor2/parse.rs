@@ -437,14 +437,6 @@ impl<'a> Parser<'a> {
         let state_sym = self.sys.get(state_ref).symbol;
         let state_tpe = state_sym.type_check(self.ctx).unwrap();
         let state_name = state_sym.get_symbol_name(self.ctx).unwrap().to_string();
-        let expr = self.get_expr_from_line_id(line, cont.tokens[4])?;
-        self.check_type(
-            &expr.get_type(self.ctx),
-            &tpe,
-            line,
-            cont.tokens[4],
-            &format!("[{state_name}.{lbl}] Expressions has mismatched type"),
-        )?;
         self.check_type(
             &state_tpe,
             &tpe,
@@ -452,6 +444,25 @@ impl<'a> Parser<'a> {
             cont.tokens[4],
             &format!("[{state_name}.{lbl}] Expression type does not match state type."),
         )?;
+
+        let maybe_expr = self.get_expr_from_line_id(line, cont.tokens[4])?;
+        // for state init, sometimes array states are assigned a bv-type expression
+        let bv_assigned_to_array =
+            maybe_expr.get_type(self.ctx).is_bit_vector() && state_tpe.is_array();
+        let expr = if is_init_not_next && bv_assigned_to_array {
+            self.ctx
+                .array_const(maybe_expr, state_tpe.get_array_index_width().unwrap())
+        } else {
+            maybe_expr
+        };
+        self.check_type(
+            &expr.get_type(self.ctx),
+            &tpe,
+            line,
+            cont.tokens[4],
+            &format!("[{state_name}.{lbl}] Expressions has mismatched type"),
+        )?;
+
         if is_init_not_next {
             self.sys
                 .modify_state(state_ref, |state| state.init = Some(expr));
