@@ -233,36 +233,57 @@ fn compile(ctx: &Context, sys: &TransitionSystem, init_mode: bool) -> Program {
                 }
             }
         }
+        let compile_expr = ctx.get(compile_expr_ref);
 
         let is_bv_or_symbol =
-            compile_expr_ref.is_symbol(ctx) || compile_expr_ref.get_type(ctx).is_bit_vector();
-        if is_bv_or_symbol {
-            let instr = compile_bv_or_symbol_expr(
-                ctx,
-                sys,
-                expr_ref,
-                compile_expr_ref,
-                &mut todo,
-                &mut locs,
-                &init_and_next_exprs,
-                &mut symbols,
-                &mut mem_words,
-            );
-            if let Some(ii) = instr {
-                instructions.push(ii);
-            }
+            compile_expr.is_symbol() || compile_expr.get_type(ctx).is_bit_vector();
+
+        // check to see if all children have been compiled
+        let all_compiled = if is_bv_or_symbol {
+            check_children_bv(ctx, compile_expr_ref, expr_ref, &mut todo, &locs)
         } else {
-            let instrs = compile_array_expr(
-                ctx,
+            check_children_array(ctx, compile_expr_ref, expr_ref, &mut todo, &locs)
+        };
+        if !all_compiled {
+            continue;
+        }
+
+        // allocate space to store the expression result
+        let (loc, width, index_width) =
+            allocate_result_space(compile_expr.get_type(ctx), &mut mem_words);
+        *locs.get_mut(expr_ref) = Some((loc, index_width));
+
+        // if the expression is a symbol or a state expression or a usage root, we create a lookup
+        let is_root = sys
+            .get_signal(expr_ref)
+            .map(is_usage_root_signal)
+            .unwrap_or(false);
+        if expr_ref.is_symbol(ctx) || init_and_next_exprs.contains(&compile_expr_ref) || is_root {
+            // it is important to use `expr_ref` here!
+            symbols.insert(
                 expr_ref,
-                compile_expr_ref,
-                &mut todo,
-                &mut locs,
-                &mut mem_words,
+                SymbolInfo {
+                    loc,
+                    width,
+                    elements: 1u64 << index_width,
+                },
             );
-            if let Some(mut ii) = instrs {
-                instructions.append(&mut ii);
-            }
+        }
+
+        // compile expression
+        if is_bv_or_symbol {
+            let instr = compile_bv_expr(ctx, sys, compile_expr_ref, loc, &locs, width);
+            instructions.push(instr);
+        } else {
+            compile_array_expr(
+                ctx,
+                compile_expr_ref,
+                &loc,
+                index_width,
+                None,
+                &mut locs,
+                &mut instructions,
+            );
         }
     }
 
@@ -273,20 +294,16 @@ fn compile(ctx: &Context, sys: &TransitionSystem, init_mode: bool) -> Program {
     }
 }
 
-fn compile_bv_or_symbol_expr(
+fn check_children_bv(
     ctx: &Context,
-    sys: &TransitionSystem,
-    expr_ref: ExprRef,
     compile_expr_ref: ExprRef,
+    expr_ref: ExprRef,
     todo: &mut Vec<ExprRef>,
-    locs: &mut ExprMetaData<Option<(Loc, WidthInt)>>,
-    init_and_next_exprs: &HashSet<ExprRef>,
-    symbols: &mut HashMap<ExprRef, SymbolInfo>,
-    mem_words: &mut u32,
-) -> Option<Instr> {
+    locs: &ExprMetaData<Option<(Loc, WidthInt)>>,
+) -> bool {
     // check to see if all children are already compiled
-    let expr = ctx.get(compile_expr_ref);
     let mut all_compiled = true;
+    let expr = ctx.get(compile_expr_ref);
     expr.for_each_child(|c| {
         if locs.get(*c).is_none() {
             if all_compiled {
@@ -297,43 +314,16 @@ fn compile_bv_or_symbol_expr(
             todo.push(*c);
         }
     });
-    if !all_compiled {
-        // something was missing, try again later
-        return None;
-    }
-
-    // allocate space to store the expression result
-    let (loc, width, index_width) = allocate_result_space(expr.get_type(ctx), mem_words);
-    *locs.get_mut(expr_ref) = Some((loc, index_width));
-    // if the expression is a symbol or a state expression or a usage root, we create a lookup
-    let is_root = sys
-        .get_signal(compile_expr_ref)
-        .map(is_usage_root_signal)
-        .unwrap_or(false);
-    if expr.is_symbol() || init_and_next_exprs.contains(&compile_expr_ref) || is_root {
-        // it is important to use `expr_ref` here!
-        symbols.insert(
-            expr_ref,
-            SymbolInfo {
-                loc,
-                width,
-                elements: 1u64 << index_width,
-            },
-        );
-    }
-    // compile expression
-    let instr = compile_expr(ctx, sys, compile_expr_ref, loc, &locs, width);
-    Some(instr)
+    all_compiled
 }
 
-fn compile_array_expr(
+fn check_children_array(
     ctx: &Context,
-    expr_ref: ExprRef,
     compile_expr_ref: ExprRef,
+    expr_ref: ExprRef,
     todo: &mut Vec<ExprRef>,
-    locs: &mut ExprMetaData<Option<(Loc, WidthInt)>>,
-    mem_words: &mut u32,
-) -> Option<Vec<Instr>> {
+    locs: &ExprMetaData<Option<(Loc, WidthInt)>>,
+) -> bool {
     // check to see if all children are already compiled
     let mut all_compiled = true;
     for c in get_array_expr_children(ctx, compile_expr_ref) {
@@ -346,30 +336,11 @@ fn compile_array_expr(
             todo.push(c);
         }
     }
-    if !all_compiled {
-        // something was missing, try again later
-        return None;
-    }
-
-    // allocate space for the result array
-    let (loc, width, index_width) = allocate_result_space(expr_ref.get_type(ctx), mem_words);
-    *locs.get_mut(expr_ref) = Some((loc, index_width));
-
-    // compile the complete array instruction _block_
-    let mut instrs = Vec::new();
-    compile_array_res_expr_type(
-        ctx,
-        compile_expr_ref,
-        &loc,
-        index_width,
-        None,
-        locs,
-        &mut instrs,
-    );
-    Some(instrs)
+    all_compiled
 }
 
-fn compile_array_res_expr_type(
+/// Compile expressions that result in an array.
+fn compile_array_expr(
     ctx: &Context,
     expr_ref: ExprRef,
     dst: &Loc,
@@ -388,7 +359,7 @@ fn compile_array_res_expr_type(
         }
         Expr::ArrayStore { array, data, index } => {
             // first we need to compile all previous stores or copies
-            compile_array_res_expr_type(ctx, *array, dst, index_width, store_cond, locs, instructions);
+            compile_array_expr(ctx, *array, dst, index_width, store_cond, locs, instructions);
             // now we can execute our store
             let tpe = InstrType::ArrayStore(index_width, locs[index].unwrap().0, locs[data].unwrap().0);
             instructions.push(Instr::new(*dst, tpe, SignalKind::Node, 0));
@@ -473,7 +444,7 @@ fn allocate_result_space(tpe: Type, word_count: &mut u32) -> (Loc, WidthInt, Wid
     }
 }
 
-fn compile_expr(
+fn compile_bv_expr(
     ctx: &Context,
     sys: &TransitionSystem,
     expr_ref: ExprRef,
