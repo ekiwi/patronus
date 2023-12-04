@@ -132,6 +132,10 @@ impl TransitionSystem {
         self.states.iter()
     }
 
+    pub fn remove_state(&mut self, index: usize) -> State {
+        self.states.remove(index)
+    }
+
     pub fn get_signals(&self, filter: fn(&SignalInfo) -> bool) -> Vec<(ExprRef, SignalInfo)> {
         self.signals
             .iter()

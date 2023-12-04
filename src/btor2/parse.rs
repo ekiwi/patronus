@@ -85,6 +85,20 @@ impl<'a> Parser<'a> {
             }
         }
 
+        // demote states without next or init to input
+        let input_states = self
+            .sys
+            .states()
+            .enumerate()
+            .rev()
+            .filter(|(_, s)| s.init.is_none() && s.next.is_none())
+            .map(|(i, _)| i)
+            .collect::<Vec<_>>();
+        for state_id in input_states {
+            let st = self.sys.remove_state(state_id);
+            self.sys.add_input(self.ctx, st.symbol);
+        }
+
         // check to see if we encountered any errors
         if self.errors.is_empty() {
             Ok(std::mem::replace(
