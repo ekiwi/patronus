@@ -1,6 +1,6 @@
 [package]
 name = "libpatron"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 authors = ["Kevin Laeufer <laeufer@berkeley.edu>"]
 description = "Hardware bug-finding toolkit."
@@ -13,14 +13,14 @@ exclude = [".github/", ".gitignore"]
 [dependencies]
 string-interner = "0.14.0"
 indexmap = "2.0.0"
-smallvec = "1.11.0"
 codespan-reporting = "0.11.1"
 fuzzy-matcher = "0.3.7"
 lazy_static = "1.4.0"
+easy-smt = "0.2.1"
 num-bigint = "0.4.4"
 num-traits = "0.2.17"
-easy-smt = "0.2.1"
 num-integer = "0.1.45"
+# used for simulator initialization
 rand = { version = "0.8.5", default-features = false }
 rand_xoshiro = "0.6.0"
 
