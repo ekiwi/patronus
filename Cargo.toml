@@ -1,6 +1,6 @@
 [package]
 name = "libpatron"
-version = "0.3.0"
+version = "0.3.1"
 edition = "2021"
 authors = ["Kevin Laeufer <laeufer@berkeley.edu>"]
 description = "Hardware bug-finding toolkit."
@@ -23,6 +23,7 @@ num-integer = "0.1.45"
 # used for simulator initialization
 rand = { version = "0.8.5", default-features = false }
 rand_xoshiro = "0.6.0"
+smallvec = "1.11.2"
 
 [dev-dependencies]
 clap =  { version = "4.4.8", features = ["derive"] }
