@@ -53,7 +53,10 @@ fn main() {
     if args.trace {
         for (name, expr) in name_to_ref.iter() {
             // TODO: maybe filter
-            signals_to_print.push((name.clone(), expr.clone()));
+            if expr.get_type(&ctx).is_bit_vector() {
+                // we do not print arrays
+                signals_to_print.push((name.clone(), expr.clone()));
+            }
         }
         signals_to_print.sort_by_key(|(name, _)| name.clone());
     }

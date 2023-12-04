@@ -79,7 +79,6 @@ impl<'a> Simulator for Interpreter<'a> {
 
         // assign default value to all states
         for state in self.states.iter() {
-            println!("{:?}", state.symbol.get_symbol_name(self.ctx));
             let dst = self.init.get_range(&state.symbol).unwrap();
             exec::clear(&mut init_data[dst]);
         }
@@ -103,7 +102,7 @@ impl<'a> Simulator for Interpreter<'a> {
     fn step(&mut self) {
         // assign next expressions to state
         for state in self.states.iter() {
-            if let Some(next) = state.next {
+            if let Some(next) = get_state_next(state) {
                 let dst_range = self.update.get_range(&state.symbol).unwrap();
                 let src_range = self.update.get_range(&next).unwrap();
                 let (dst, src) = exec::split_borrow_1(&mut self.data, dst_range, src_range);
@@ -204,10 +203,8 @@ fn compile(ctx: &Context, sys: &TransitionSystem, init_mode: bool) -> Program {
     } else {
         // calculate the next expression for each state
         for state in sys.states() {
-            if let Some(next) = state.next {
-                if next != state.symbol {
-                    todo.push(next);
-                }
+            if let Some(next) = get_state_next(state) {
+                todo.push(next);
             }
         }
         // calculate all other signals that might be observable
@@ -414,11 +411,23 @@ fn get_next_and_init_refs(sys: &TransitionSystem) -> HashSet<ExprRef> {
         if let Some(init) = state.init {
             out.insert(init);
         }
-        if let Some(next) = state.next {
+        if let Some(next) = get_state_next(state) {
             out.insert(next);
         }
     }
     out
+}
+
+/// Returns a next state expression if it is not the same as the state
+fn get_state_next(st: &State) -> Option<ExprRef> {
+    let next = st
+        .next
+        .expect("states without a next expr, should have been turned into inputs");
+    if next == st.symbol {
+        None
+    } else {
+        Some(next)
+    }
 }
 
 fn allocate_result_space(tpe: Type, word_count: &mut u32) -> (Loc, WidthInt, WidthInt) {
