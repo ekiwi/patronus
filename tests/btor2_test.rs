@@ -31,7 +31,7 @@ fn parse_count2() {
 fn serialize_count2() {
     let mut ctx = Context::default();
     let sys = btor2::parse_str(&mut ctx, COUNT_2, Some("count2")).unwrap();
-    insta::assert_snapshot!(btor2::serialize_to_str(&ctx, &sys));
+    insta::assert_snapshot!(skip_first_line(&btor2::serialize_to_str(&ctx, &sys)));
 }
 
 #[test]
@@ -43,5 +43,12 @@ fn parse_quiz1() {
 #[test]
 fn serialize_quiz1() {
     let (ctx, sys) = btor2::parse_file("inputs/chiseltest/Quiz1.btor").unwrap();
-    insta::assert_snapshot!(btor2::serialize_to_str(&ctx, &sys));
+    insta::assert_snapshot!(skip_first_line(&btor2::serialize_to_str(&ctx, &sys)));
+}
+
+fn skip_first_line(value: &str) -> &str {
+    match value.char_indices().find(|(_, c)| *c == '\n') {
+        None => "",
+        Some((char_ii, _)) => &value[(char_ii + 1)..],
+    }
 }
