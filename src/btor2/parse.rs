@@ -179,10 +179,12 @@ impl<'a> Parser<'a> {
         if let Some((e, token_count)) = expr {
             self.signal_map.insert(line_id, e);
             // try to find a name
-            let name = cont
-                .tokens
-                .get(token_count)
-                .map(|s| self.ctx.add_unique_str(&clean_up_name(s)));
+            let name =  match cont.tokens.get(token_count) {
+                None => None,
+                Some(name) => if include_name(name) {
+                    Some(self.ctx.add_unique_str(&clean_up_name(name)))
+                } else { None }
+            };
             self.sys.add_signal(e, label, name);
         }
         Ok(())
@@ -741,6 +743,13 @@ impl<'a> Parser<'a> {
 /// yosys likes to use a lot of $ in the signal names, we want to avoid that for readability reasons
 fn clean_up_name(name: &str) -> String {
     name.replace("$", "_")
+}
+
+/// decides whether a name should be included or ignored
+fn include_name(name: &str) -> bool {
+    // yosys sometime includes complete file paths which are not super helpful
+    let yosys_path = name.contains('/') && name.contains(':') && name.len() > 30;
+    !yosys_path
 }
 
 // Line Tokenizer
