@@ -97,7 +97,7 @@ impl<'a> Simulator for Interpreter<'a> {
 
         // copy init values from init to update program
         for state in self.states.iter() {
-            println!("{}", state.symbol.get_symbol_name(self.ctx).unwrap());
+            // println!("{}", state.symbol.get_symbol_name(self.ctx).unwrap());
             let src = self.init.get_range(&state.symbol).unwrap();
             let dst = self.update.get_range(&state.symbol).unwrap();
             exec::assign(&mut self.data[dst], &init_data[src]);

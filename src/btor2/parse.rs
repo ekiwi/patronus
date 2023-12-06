@@ -778,11 +778,16 @@ fn merge_signal_info(original: &SignalInfo, alias: &SignalInfo) -> SignalInfo {
     // TODO: it might be interesting to retain alias names
 
     // only overwrite the kind if it was a node, since other labels add more info
-    let kind = if original.kind == SignalKind::Node {
-        alias.kind
-    } else {
-        original.kind
+    let kind = match (original.kind, alias.kind) {
+        // nodes can always be renamed
+        (SignalKind::Node, alias) => alias,
+        // outputs always overwrite
+        (_, SignalKind::Output) => SignalKind::Output,
+        // otherwise we want to keep the original kind
+        (original, _) => original,
     };
+    // TODO: it might be interesting to retain alias kinds
+    //       e.g., a single signal could be a state and an output
 
     SignalInfo { name, kind }
 }
