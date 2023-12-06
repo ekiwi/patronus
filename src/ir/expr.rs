@@ -133,15 +133,27 @@ pub trait ExprNodeConstruction:
         self.add_node(Expr::BVConcat(a, b, width))
     }
     fn slice(&mut self, e: ExprRef, hi: WidthInt, lo: WidthInt) -> ExprRef {
-        self.add_node(Expr::BVSlice { e, hi, lo })
+        if lo == 0 && hi + 1 == e.get_bv_type(self).unwrap() {
+            e
+        } else {
+            self.add_node(Expr::BVSlice { e, hi, lo })
+        }
     }
     fn zero_extend(&mut self, e: ExprRef, by: WidthInt) -> ExprRef {
-        let width = e.get_bv_type(self).unwrap() + by;
-        self.add_node(Expr::BVZeroExt { e, by, width })
+        if by == 0 {
+            e
+        } else {
+            let width = e.get_bv_type(self).unwrap() + by;
+            self.add_node(Expr::BVZeroExt { e, by, width })
+        }
     }
     fn sign_extend(&mut self, e: ExprRef, by: WidthInt) -> ExprRef {
-        let width = e.get_bv_type(self).unwrap() + by;
-        self.add_node(Expr::BVSignExt { e, by, width })
+        if by == 0 {
+            e
+        } else {
+            let width = e.get_bv_type(self).unwrap() + by;
+            self.add_node(Expr::BVSignExt { e, by, width })
+        }
     }
 
     fn array_store(&mut self, array: ExprRef, index: ExprRef, data: ExprRef) -> ExprRef {
