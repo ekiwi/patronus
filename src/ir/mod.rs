@@ -4,6 +4,7 @@
 mod analysis;
 mod expr;
 mod serialize;
+mod transform;
 mod transition_system;
 mod type_check;
 

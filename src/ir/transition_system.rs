@@ -101,6 +101,16 @@ impl TransitionSystem {
         entry.as_ref()
     }
 
+    pub fn update_signal_expr(&mut self, old: ExprRef, new: ExprRef) {
+        if old != new {
+            if let Some(old_info) = &self.signals[old.index()] {
+                let cloned = old_info.clone();
+                self.signals[new.index()] = Some(cloned);
+                self.signals[new.index()] = None;
+            }
+        }
+    }
+
     pub fn add_input(&mut self, ctx: &impl GetNode<Expr, ExprRef>, symbol: ExprRef) {
         assert!(symbol.is_symbol(ctx));
         let name = symbol.get_symbol_name_ref(ctx);

@@ -103,6 +103,13 @@ impl<T: Default + Clone> ExprMetaData<T> {
     pub fn into_vec(self) -> Vec<T> {
         self.inner
     }
+
+    pub fn iter(&self) -> ExprMetaDataIter<T> {
+        ExprMetaDataIter {
+            inner: self.inner.iter(),
+            index: 0,
+        }
+    }
 }
 
 impl<T: Default + Clone> Index<ExprRef> for ExprMetaData<T> {
@@ -118,6 +125,26 @@ impl<T: Default + Clone> Index<&ExprRef> for ExprMetaData<T> {
 
     fn index(&self, index: &ExprRef) -> &Self::Output {
         self.get(*index)
+    }
+}
+
+pub struct ExprMetaDataIter<'a, T> {
+    inner: std::slice::Iter<'a, T>,
+    index: usize,
+}
+
+impl<'a, T> Iterator for ExprMetaDataIter<'a, T> {
+    type Item = (ExprRef, &'a T);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.inner.next() {
+            None => None,
+            Some(value) => {
+                let index_ref = ExprRef::from_index(self.index);
+                self.index += 1;
+                Some((index_ref, value))
+            }
+        }
     }
 }
 
