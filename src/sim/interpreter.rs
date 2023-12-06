@@ -15,6 +15,8 @@ pub enum InitKind {
 }
 
 pub trait Simulator {
+    type SnapshotId;
+
     /// Load the initial state values.
     fn init(&mut self, kind: InitKind);
 
@@ -30,6 +32,11 @@ pub trait Simulator {
     fn get(&mut self, expr: ExprRef) -> Option<ValueRef<'_>>;
 
     fn step_count(&self) -> u64;
+
+    /// Takes a snapshot of the state (excluding inputs) and saves it internally.
+    fn take_snapshot(&mut self) -> Self::SnapshotId;
+    /// Restores a snapshot that was previously taken with the same simulator.
+    fn restore_snapshot(&mut self, id: Self::SnapshotId);
 }
 
 /// Interpreter based simulator for a transition system.
@@ -67,6 +74,8 @@ impl<'a> Interpreter<'a> {
 }
 
 impl<'a> Simulator for Interpreter<'a> {
+    type SnapshotId = u32;
+
     fn init(&mut self, kind: InitKind) {
         // allocate memory to execute the init program
         let mut init_data = vec![0; self.init.mem_words as usize];
@@ -88,7 +97,7 @@ impl<'a> Simulator for Interpreter<'a> {
 
         // copy init values from init to update program
         for state in self.states.iter() {
-            // println!("{}", state.symbol.get_symbol_name(self.ctx).unwrap());
+            println!("{}", state.symbol.get_symbol_name(self.ctx).unwrap());
             let src = self.init.get_range(&state.symbol).unwrap();
             let dst = self.update.get_range(&state.symbol).unwrap();
             exec::assign(&mut self.data[dst], &init_data[src]);
@@ -135,6 +144,14 @@ impl<'a> Simulator for Interpreter<'a> {
 
     fn step_count(&self) -> u64 {
         self.step_count
+    }
+
+    fn take_snapshot(&mut self) -> Self::SnapshotId {
+        todo!()
+    }
+
+    fn restore_snapshot(&mut self, id: Self::SnapshotId) {
+        todo!()
     }
 }
 
