@@ -753,19 +753,37 @@ impl<'a> Parser<'a> {
 }
 
 fn merge_signal_info(original: &SignalInfo, alias: &SignalInfo) -> SignalInfo {
-    // only overwrite the name if we do not already have one
-    // otherwise inputs might be renamed which is always wrong
-    let name = match original.name {
-        Some(name) => Some(name),
-        None => alias.name,
-    };
-    // TODO: it might be interesting to retain alias names
     // only overwrite the kind if it was a node, since other labels add more info
     let kind = if original.kind == SignalKind::Node {
         alias.kind
     } else {
         original.kind
     };
+
+    let name = match (original.name, alias.name) {
+        (Some(name), None) => Some(name),
+        (None, Some(name)) => Some(name),
+        (None, None) => None,
+        (Some(old_name), Some(new_name)) => {
+            // we decide whether to overwrite depending on the signal kind
+            match kind {
+                SignalKind::Input => {
+                    // inputs must retain their old names in order to be identifiable
+                    Some(old_name)
+                }
+                SignalKind::State => {
+                    // yosys often adds state labels that contain the actual name used in the verilog
+                    Some(new_name)
+                }
+                _ => {
+                    // for other signals, the new name might be better
+                    Some(new_name)
+                }
+            }
+        }
+    };
+    // TODO: it might be interesting to retain alias names
+
     SignalInfo { name, kind }
 }
 
