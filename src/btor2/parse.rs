@@ -753,22 +753,15 @@ impl<'a> Parser<'a> {
 }
 
 fn merge_signal_info(original: &SignalInfo, alias: &SignalInfo) -> SignalInfo {
-    // only overwrite the kind if it was a node, since other labels add more info
-    let kind = if original.kind == SignalKind::Node {
-        alias.kind
-    } else {
-        original.kind
-    };
-
     let name = match (original.name, alias.name) {
         (Some(name), None) => Some(name),
         (None, Some(name)) => Some(name),
         (None, None) => None,
         (Some(old_name), Some(new_name)) => {
-            // we decide whether to overwrite depending on the signal kind
-            match kind {
-                SignalKind::Input => {
-                    // inputs must retain their old names in order to be identifiable
+            // we decide whether to overwrite depending on the old signal kind
+            match original.kind {
+                SignalKind::Input | SignalKind::Output => {
+                    // inputs and outputs must retain their old names in order to be identifiable
                     Some(old_name)
                 }
                 SignalKind::State => {
@@ -783,6 +776,13 @@ fn merge_signal_info(original: &SignalInfo, alias: &SignalInfo) -> SignalInfo {
         }
     };
     // TODO: it might be interesting to retain alias names
+
+    // only overwrite the kind if it was a node, since other labels add more info
+    let kind = if original.kind == SignalKind::Node {
+        alias.kind
+    } else {
+        original.kind
+    };
 
     SignalInfo { name, kind }
 }
