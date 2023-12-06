@@ -6,7 +6,7 @@ use super::{Context, Expr, ExprRef, GetNode, StringRef};
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 
-#[derive(Debug, PartialEq, Eq, Clone, Hash)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
 pub enum SignalKind {
     Node,
     Output,

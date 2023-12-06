@@ -193,7 +193,11 @@ impl<'a> Parser<'a> {
                     }
                 }
             };
-            self.sys.add_signal(e, label, name);
+            let merged = match self.sys.get_signal(e) {
+                Some(info) => merge_signal_info(info, &SignalInfo { name, kind: label }),
+                None => SignalInfo { name, kind: label },
+            };
+            self.sys.add_signal(e, merged.kind, merged.name);
         }
         Ok(())
     }
@@ -748,6 +752,23 @@ impl<'a> Parser<'a> {
     }
 }
 
+fn merge_signal_info(original: &SignalInfo, alias: &SignalInfo) -> SignalInfo {
+    // only overwrite the name if we do not already have one
+    // otherwise inputs might be renamed which is always wrong
+    let name = match original.name {
+        Some(name) => Some(name),
+        None => alias.name,
+    };
+    // TODO: it might be interesting to retain alias names
+    // only overwrite the kind if it was a node, since other labels add more info
+    let kind = if original.kind == SignalKind::Node {
+        alias.kind
+    } else {
+        original.kind
+    };
+    SignalInfo { name, kind }
+}
+
 /// yosys likes to use a lot of $ in the signal names, we want to avoid that for readability reasons
 fn clean_up_name(name: &str) -> String {
     name.replace("$", "_")
@@ -757,7 +778,8 @@ fn clean_up_name(name: &str) -> String {
 fn include_name(name: &str) -> bool {
     // yosys sometime includes complete file paths which are not super helpful
     let yosys_path = name.contains('/') && name.contains(':') && name.len() > 30;
-    !yosys_path
+    let yosys_flatten_output = name.starts_with("$flatten\\");
+    !yosys_path && !yosys_flatten_output
 }
 
 /// When Yosys emits a btor file, it often will not actually name the states correctly.
