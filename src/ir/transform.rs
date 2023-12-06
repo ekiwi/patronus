@@ -21,9 +21,33 @@ pub fn do_transform(
         }
     }
     // update states
-    for state in sys.states() {}
+    for state in sys.states.iter_mut() {
+        if let Some(new_symbol) = changed(&transformed, state.symbol) {
+            state.symbol = new_symbol;
+        }
+        if let Some(old_next) = state.next {
+            if let Some(new_next) = changed(&transformed, old_next) {
+                state.next = Some(new_next);
+            }
+        }
+        if let Some(old_init) = state.init {
+            if let Some(new_init) = changed(&transformed, old_init) {
+                state.init = Some(new_init);
+            }
+        }
+    }
+}
 
-    todo!()
+fn changed(transformed: &ExprMetaData<Option<ExprRef>>, old_expr: ExprRef) -> Option<ExprRef> {
+    if let Some(new_expr) = transformed.get(old_expr) {
+        if *new_expr != old_expr {
+            Some(*new_expr)
+        } else {
+            None
+        }
+    } else {
+        None
+    }
 }
 
 fn do_transform_expr(
@@ -103,7 +127,86 @@ fn get_root_expressions(sys: &TransitionSystem) -> Vec<ExprRef> {
 }
 
 fn update_expr_children(ctx: &mut Context, expr_ref: ExprRef, children: &[ExprRef]) -> ExprRef {
-    todo!("implement code to re-create expression with updated children")
+    let new_expr = match (ctx.get(expr_ref), children) {
+        (Expr::BVSymbol { .. }, _) => panic!("No children, should never get here."),
+        (Expr::BVLiteral { .. }, _) => panic!("No children, should never get here."),
+        (Expr::BVZeroExt { by, width, .. }, [e]) => Expr::BVZeroExt {
+            e: *e,
+            by: *by,
+            width: *width,
+        },
+        (Expr::BVSignExt { by, width, .. }, [e]) => Expr::BVSignExt {
+            e: *e,
+            by: *by,
+            width: *width,
+        },
+        (Expr::BVSlice { hi, lo, .. }, [e]) => Expr::BVSlice {
+            e: *e,
+            hi: *hi,
+            lo: *lo,
+        },
+        (Expr::BVNot(_, width), [e]) => Expr::BVNot(*e, *width),
+        (Expr::BVNegate(_, width), [e]) => Expr::BVNegate(*e, *width),
+        (Expr::BVEqual(_, _), [a, b]) => Expr::BVEqual(*a, *b),
+        (Expr::BVImplies(_, _), [a, b]) => Expr::BVImplies(*a, *b),
+        (Expr::BVGreater(_, _), [a, b]) => Expr::BVGreater(*a, *b),
+        (Expr::BVGreaterSigned(_, _), [a, b]) => Expr::BVGreaterSigned(*a, *b),
+        (Expr::BVGreaterEqual(_, _), [a, b]) => Expr::BVGreaterEqual(*a, *b),
+        (Expr::BVGreaterEqualSigned(_, _), [a, b]) => Expr::BVGreaterEqualSigned(*a, *b),
+        (Expr::BVConcat(_, _, w), [a, b]) => Expr::BVConcat(*a, *b, *w),
+        (Expr::BVAnd(_, _, w), [a, b]) => Expr::BVAnd(*a, *b, *w),
+        (Expr::BVOr(_, _, w), [a, b]) => Expr::BVOr(*a, *b, *w),
+        (Expr::BVXor(_, _, w), [a, b]) => Expr::BVXor(*a, *b, *w),
+        (Expr::BVShiftLeft(_, _, w), [a, b]) => Expr::BVShiftLeft(*a, *b, *w),
+        (Expr::BVArithmeticShiftRight(_, _, w), [a, b]) => Expr::BVArithmeticShiftRight(*a, *b, *w),
+        (Expr::BVShiftRight(_, _, w), [a, b]) => Expr::BVShiftRight(*a, *b, *w),
+        (Expr::BVAdd(_, _, w), [a, b]) => Expr::BVAdd(*a, *b, *w),
+        (Expr::BVMul(_, _, w), [a, b]) => Expr::BVMul(*a, *b, *w),
+        (Expr::BVSignedDiv(_, _, w), [a, b]) => Expr::BVSignedDiv(*a, *b, *w),
+        (Expr::BVUnsignedDiv(_, _, w), [a, b]) => Expr::BVUnsignedDiv(*a, *b, *w),
+        (Expr::BVSignedMod(_, _, w), [a, b]) => Expr::BVSignedMod(*a, *b, *w),
+        (Expr::BVSignedRem(_, _, w), [a, b]) => Expr::BVSignedRem(*a, *b, *w),
+        (Expr::BVUnsignedRem(_, _, w), [a, b]) => Expr::BVUnsignedRem(*a, *b, *w),
+        (Expr::BVSub(_, _, w), [a, b]) => Expr::BVSub(*a, *b, *w),
+        (Expr::BVArrayRead { width, .. }, [array, index]) => Expr::BVArrayRead {
+            array: *array,
+            index: *index,
+            width: *width,
+        },
+        (Expr::BVIte { .. }, [cond, tru, fals]) => Expr::BVIte {
+            cond: *cond,
+            tru: *tru,
+            fals: *fals,
+        },
+        (Expr::ArraySymbol { .. }, _) => panic!("No children, should never get here."),
+        (
+            Expr::ArrayConstant {
+                index_width,
+                data_width,
+                ..
+            },
+            [e],
+        ) => Expr::ArrayConstant {
+            e: *e,
+            index_width: *index_width,
+            data_width: *data_width,
+        },
+        (Expr::ArrayEqual(_, _), [a, b]) => Expr::ArrayEqual(*a, *b),
+        (Expr::ArrayStore { .. }, [array, index, data]) => Expr::ArrayStore {
+            array: *array,
+            index: *index,
+            data: *data,
+        },
+        (Expr::ArrayIte { .. }, [cond, tru, fals]) => Expr::ArrayIte {
+            cond: *cond,
+            tru: *tru,
+            fals: *fals,
+        },
+        (other, _) => {
+            todo!("implement code to re-create expression `{other:?}` with updated children")
+        }
+    };
+    ctx.add_node(new_expr)
 }
 
 /// Slightly different definition from use counts, as we want to retain all inputs in transformation passes.

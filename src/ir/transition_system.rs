@@ -74,7 +74,7 @@ pub struct InputRef(usize);
 #[derive(Debug, PartialEq, Eq)]
 pub struct TransitionSystem {
     pub name: String,
-    states: Vec<State>,
+    pub(crate) states: Vec<State>,
     /// signal meta-data stored in a dense hash map, matching the index of the corresponding expression
     signals: Vec<Option<SignalInfo>>,
 }
@@ -105,8 +105,12 @@ impl TransitionSystem {
         if old != new {
             if let Some(old_info) = &self.signals[old.index()] {
                 let cloned = old_info.clone();
-                self.signals[new.index()] = Some(cloned);
-                self.signals[new.index()] = None;
+                let new_id = new.index();
+                if self.signals.len() <= new_id {
+                    self.signals.resize(new_id + 1, None);
+                }
+                self.signals[new_id] = Some(cloned);
+                self.signals[old.index()] = None;
             }
         }
     }

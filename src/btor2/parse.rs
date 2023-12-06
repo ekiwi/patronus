@@ -85,6 +85,10 @@ impl<'a> Parser<'a> {
             }
         }
 
+        // possibly improve state names through yosys aliases which look like:
+        // better_name = zext(__state__, 0)
+        improve_state_names(&mut self.ctx, &mut self.sys);
+
         // demote states without next or init to input
         let input_states = self
             .sys
@@ -179,11 +183,15 @@ impl<'a> Parser<'a> {
         if let Some((e, token_count)) = expr {
             self.signal_map.insert(line_id, e);
             // try to find a name
-            let name =  match cont.tokens.get(token_count) {
+            let name = match cont.tokens.get(token_count) {
                 None => None,
-                Some(name) => if include_name(name) {
-                    Some(self.ctx.add_unique_str(&clean_up_name(name)))
-                } else { None }
+                Some(name) => {
+                    if include_name(name) {
+                        Some(self.ctx.add_unique_str(&clean_up_name(name)))
+                    } else {
+                        None
+                    }
+                }
             };
             self.sys.add_signal(e, label, name);
         }
@@ -750,6 +758,33 @@ fn include_name(name: &str) -> bool {
     // yosys sometime includes complete file paths which are not super helpful
     let yosys_path = name.contains('/') && name.contains(':') && name.len() > 30;
     !yosys_path
+}
+
+/// When Yosys emits a btor file, it often will not actually name the states correctly.
+/// Instead it creates nodes that just point to the state and carry its name. This function searches
+/// for these nodes and tries to rename the states.
+fn improve_state_names(ctx: &mut Context, sys: &mut TransitionSystem) {
+    let mut renames = HashMap::new();
+    for state in sys.states() {
+        // since the alias signal refers to the same expression as the state symbol,
+        // it will generate a signal info with the better name
+        if let Some(signal) = sys.get_signal(state.symbol) {
+            if let Some(name_ref) = signal.name {
+                let old_name_ref = state.symbol.get_symbol_name_ref(ctx).unwrap();
+                if old_name_ref != name_ref {
+                    renames.insert(state.symbol, name_ref);
+                }
+            }
+        }
+    }
+    if renames.is_empty() {
+        return; // noting to do
+    }
+    do_transform(ctx, sys, |ctx, expr_ref, _| {
+        renames
+            .get(&expr_ref)
+            .map(|new_name_ref| ctx.symbol(*new_name_ref, expr_ref.get_type(ctx)))
+    });
 }
 
 // Line Tokenizer

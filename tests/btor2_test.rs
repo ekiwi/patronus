@@ -49,8 +49,7 @@ fn serialize_quiz1() {
 #[test]
 fn parse_instrumented_decoder() {
     let (ctx, sys) = btor2::parse_file("inputs/repair/decoder_3_to_8.instrumented.btor").unwrap();
-    println!("{}", sys.serialize_to_str(&ctx));
-    //insta::assert_snapshot!(sys.serialize_to_str(&ctx));
+    insta::assert_snapshot!(sys.serialize_to_str(&ctx));
 }
 
 fn skip_first_line(value: &str) -> &str {

@@ -17,5 +17,6 @@ pub use expr::{
     ExprRef, GetNode, StringRef, Type, WidthInt,
 };
 pub use serialize::SerializableIrNode;
+pub use transform::do_transform;
 pub use transition_system::{SignalInfo, SignalKind, State, StateRef, TransitionSystem};
 pub use type_check::{TypeCheck, TypeCheckError};
