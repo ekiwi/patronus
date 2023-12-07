@@ -41,6 +41,7 @@ pub trait Simulator {
 
 /// Interpreter based simulator for a transition system.
 pub struct Interpreter<'a> {
+    #[allow(dead_code)] // ctx is very useful for debugging
     ctx: &'a Context,
     update: Program,
     init: Program,
@@ -307,7 +308,9 @@ fn compile(ctx: &Context, sys: &TransitionSystem, init_mode: bool) -> Program {
 
         // compile expression
         if is_bv_or_symbol {
-            let instr = compile_bv_expr(ctx, sys, compile_expr_ref, loc, &locs, width);
+            let expr = ctx.get(expr_ref);
+            let tpe = compile_bv_res_expr_type(expr, &locs, ctx);
+            let instr = Instr::new(loc, tpe, width);
             instructions.push(instr);
         } else {
             compile_array_expr(
@@ -386,20 +389,20 @@ fn compile_array_expr(
     match expr {
         Expr::ArrayConstant { e, index_width, .. } => {
             let tpe = InstrType::ArrayConst(*index_width, locs[e].unwrap().0);
-            instructions.push(Instr::new(*dst, tpe, SignalKind::Node, 0));
+            instructions.push(Instr::new(*dst, tpe, 0));
         }
         Expr::ArrayIte { cond, tru, fals } => {
             let default_tpe = InstrType::Skip(locs[cond].unwrap().0, false, 0);
             // compile tru branch and then update instruction
             let tru_skip_pos = instructions.len();
-            instructions.push(Instr::new(*dst, default_tpe.clone(), SignalKind::Node, 0));
+            instructions.push(Instr::new(*dst, default_tpe.clone(), 0));
             compile_array_expr(ctx, *tru, dst, index_width, locs, instructions);
             let num_tru_skip = (instructions.len() - 1 - tru_skip_pos) as u32;
             instructions[tru_skip_pos].tpe = InstrType::Skip(locs[cond].unwrap().0, false, num_tru_skip);
 
             // compile fals branch and then update instruction
             let fals_skip_pos = instructions.len();
-            instructions.push(Instr::new(*dst, default_tpe, SignalKind::Node, 0));
+            instructions.push(Instr::new(*dst, default_tpe, 0));
             compile_array_expr(ctx, *fals, dst, index_width, locs, instructions);
             let num_fals_skip = (instructions.len() - 1 - fals_skip_pos) as u32;
             instructions[fals_skip_pos].tpe = InstrType::Skip(locs[cond].unwrap().0, true, num_fals_skip);
@@ -409,7 +412,7 @@ fn compile_array_expr(
             compile_array_expr(ctx, *array, dst, index_width, locs, instructions);
             // now we can execute our store
             let tpe = InstrType::ArrayStore(index_width, locs[index].unwrap().0, locs[data].unwrap().0);
-            instructions.push(Instr::new(*dst, tpe, SignalKind::Node, 0));
+            instructions.push(Instr::new(*dst, tpe, 0));
         }
         Expr::ArraySymbol { index_width, .. } => {
             match locs.get(expr_ref) {
@@ -417,7 +420,7 @@ fn compile_array_expr(
                 Some((src, _)) => {
                     // we implement array copy as a bit vector copy by extending the locations
                     let tpe = InstrType::Unary(UnaryOp::Copy, src.array_loc(*index_width));
-                    instructions.push(Instr::new(dst.array_loc(*index_width), tpe, SignalKind::Node, 0));
+                    instructions.push(Instr::new(dst.array_loc(*index_width), tpe, 0));
                 },
             }
         }
@@ -503,23 +506,6 @@ fn allocate_result_space(tpe: Type, word_count: &mut u32) -> (Loc, WidthInt, Wid
     }
 }
 
-fn compile_bv_expr(
-    ctx: &Context,
-    sys: &TransitionSystem,
-    expr_ref: ExprRef,
-    dst: Loc,
-    locs: &ExprMetaData<Option<(Loc, WidthInt)>>,
-    result_width: WidthInt,
-) -> Instr {
-    let expr = ctx.get(expr_ref);
-    let kind = sys
-        .get_signal(expr_ref)
-        .map(|s| s.kind.clone())
-        .unwrap_or(SignalKind::Node);
-    let tpe = compile_bv_res_expr_type(expr, locs, ctx);
-    Instr::new(dst, tpe, kind, result_width)
-}
-
 fn compile_bv_res_expr_type(
     expr: &Expr,
     locs: &ExprMetaData<Option<(Loc, WidthInt)>>,
@@ -534,7 +520,7 @@ fn compile_bv_res_expr_type(
             InstrType::Unary(UnaryOp::Slice(*hi, *lo), locs[e].unwrap().0)
         }
         Expr::BVNot(e, width) => InstrType::Unary(UnaryOp::Not(*width), locs[e].unwrap().0),
-        Expr::BVNegate(_, _) => todo!(),
+        Expr::BVNegate(e, width) => InstrType::Unary(UnaryOp::Negate(*width), locs[e].unwrap().0),
         Expr::BVEqual(a, b) => {
             InstrType::Binary(BinaryOp::BVEqual, locs[a].unwrap().0, locs[b].unwrap().0)
         }
@@ -645,17 +631,15 @@ impl<'a> ValueRef<'a> {
 struct Instr {
     dst: Loc,
     tpe: InstrType,
-    kind: SignalKind,       // TODO: move to symbol meta-data or similar structure
     result_width: WidthInt, // TODO: move to symbol meta-data
     do_trace: bool,         // for debugging
 }
 
 impl Instr {
-    fn new(dst: Loc, tpe: InstrType, kind: SignalKind, result_width: WidthInt) -> Self {
+    fn new(dst: Loc, tpe: InstrType, result_width: WidthInt) -> Self {
         Self {
             dst,
             tpe,
-            kind,
             result_width,
             do_trace: false,
         }
@@ -686,6 +670,7 @@ enum UnaryOp {
     Slice(WidthInt, WidthInt),
     ZeroExt,
     Not(WidthInt),
+    Negate(WidthInt),
     Copy,
 }
 
@@ -768,6 +753,7 @@ fn exec_instr(instr: &Instr, data: &mut [Word]) -> usize {
             match tpe {
                 UnaryOp::Slice(hi, lo) => exec::slice(dst, a, *hi, *lo),
                 UnaryOp::Not(width) => exec::not(dst, a, *width),
+                UnaryOp::Negate(width) => exec::negate(dst, a, *width),
                 UnaryOp::ZeroExt => exec::zero_extend(dst, a),
                 UnaryOp::Copy => exec::assign(dst, a),
             }
