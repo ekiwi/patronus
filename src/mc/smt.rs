@@ -725,8 +725,8 @@ fn is_simple_smt_identifier(id: &str) -> bool {
             return false; // all allowed characters are ASCII characters
         }
         let ac = cc as u8;
-        let is_alpha = (b'A'..=b'Z').contains(&ac) || (b'a'..=b'z').contains(&ac);
-        let is_num = (b'0'..=b'9').contains(&ac);
+        let is_alpha = ac.is_ascii_uppercase() || ac.is_ascii_lowercase();
+        let is_num = ac.is_ascii_digit();
         let is_other_allowed_char = matches!(
             ac,
             b'+' | b'-'
