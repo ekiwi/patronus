@@ -5,6 +5,7 @@
 use super::exec;
 use super::exec::Word;
 use crate::ir::*;
+use smallvec::SmallVec;
 use std::collections::{HashMap, HashSet};
 
 /// Specifies how to initialize states that do not have
@@ -27,7 +28,7 @@ pub trait Simulator {
     fn step(&mut self);
 
     /// Change the value or an expression in the simulator. Be careful!
-    fn set(&mut self, expr: ExprRef, value: u64);
+    fn set(&mut self, expr: ExprRef, value: &Value);
 
     fn get(&mut self, expr: ExprRef) -> Option<ValueRef<'_>>;
 
@@ -134,11 +135,12 @@ impl<'a> Simulator for Interpreter<'a> {
         self.step_count += 1;
     }
 
-    fn set(&mut self, expr: ExprRef, value: u64) {
+    fn set(&mut self, expr: ExprRef, value: &Value) {
         if let Some(m) = &self.update.symbols.get(&expr) {
             assert_eq!(m.elements, 1, "cannot set array values with this function");
             let dst = &mut self.data[m.loc.range()];
-            exec::assign_word(dst, value);
+            assert!(value.words.len() <= dst.len(), "Value does not fit!");
+            exec::zero_extend(dst, &value.words);
             // println!("Set [{}] = {}", expr.index(), data[0]);
         }
     }
@@ -634,6 +636,26 @@ impl<'a> ValueRef<'a> {
 
     pub fn to_big_uint(&self) -> num_bigint::BigUint {
         exec::to_big_uint(self.words)
+    }
+}
+
+pub struct Value {
+    words: SmallVec<[Word; 1]>,
+}
+
+impl Value {
+    pub fn from_u64(value: u64) -> Self {
+        let buf = [value];
+        Self {
+            words: SmallVec::from_buf(buf),
+        }
+    }
+
+    pub fn from_big_uint(value: &num_bigint::BigUint) -> Self {
+        let words = value.iter_u64_digits().collect::<Vec<_>>();
+        Self {
+            words: SmallVec::from_vec(words),
+        }
     }
 }
 

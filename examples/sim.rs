@@ -5,7 +5,7 @@
 use clap::{arg, Parser};
 use libpatron::ir::*;
 use libpatron::mc::Simulator;
-use libpatron::sim::interpreter::{InitKind, Interpreter};
+use libpatron::sim::interpreter::{InitKind, Interpreter, Value};
 use libpatron::*;
 use num_bigint::BigUint;
 use num_traits::Num;
@@ -127,7 +127,7 @@ fn do_step(
                 let trimmed = cell.trim();
                 if trimmed.to_ascii_lowercase() != "x" {
                     let value = u64::from_str_radix(trimmed, 10).unwrap();
-                    sim.set(input.1, value);
+                    sim.set(input.1, &Value::from_u64(value));
                 }
 
                 // get next input
