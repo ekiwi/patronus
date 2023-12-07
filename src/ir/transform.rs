@@ -7,7 +7,7 @@ use crate::ir::*;
 pub fn do_transform(
     ctx: &mut Context,
     sys: &mut TransitionSystem,
-    mut foo: impl FnMut(&mut Context, ExprRef, &[ExprRef]) -> Option<ExprRef>,
+    foo: impl FnMut(&mut Context, ExprRef, &[ExprRef]) -> Option<ExprRef>,
 ) {
     let todo = get_root_expressions(sys);
     let transformed = do_transform_expr(ctx, todo, foo);

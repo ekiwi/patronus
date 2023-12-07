@@ -48,6 +48,7 @@ pub struct Interpreter<'a> {
     inputs: Vec<ExprRef>,
     data: Vec<Word>,
     step_count: u64,
+    snapshots: Vec<Vec<Word>>,
 }
 
 impl<'a> Interpreter<'a> {
@@ -69,6 +70,7 @@ impl<'a> Interpreter<'a> {
             inputs,
             data,
             step_count: 0,
+            snapshots: Vec::new(),
         }
     }
 }
@@ -77,6 +79,8 @@ impl<'a> Simulator for Interpreter<'a> {
     type SnapshotId = u32;
 
     fn init(&mut self, kind: InitKind) {
+        assert_eq!(kind, InitKind::Zero, "random not supported yet");
+
         // allocate memory to execute the init program
         let mut init_data = vec![0; self.init.mem_words as usize];
 
@@ -147,11 +151,26 @@ impl<'a> Simulator for Interpreter<'a> {
     }
 
     fn take_snapshot(&mut self) -> Self::SnapshotId {
-        todo!()
+        let mut snapshot = Vec::with_capacity(self.states.len());
+        for state in self.states.iter() {
+            let src = self.update.get_range(&state.symbol).unwrap();
+            snapshot.extend_from_slice(&self.data[src]);
+        }
+        let id = self.snapshots.len() as Self::SnapshotId;
+        self.snapshots.push(snapshot);
+        id
     }
 
     fn restore_snapshot(&mut self, id: Self::SnapshotId) {
-        todo!()
+        let snapshot = &self.snapshots[id as usize];
+        let mut offset = 0;
+        for state in self.states.iter() {
+            let dst = self.update.get_range(&state.symbol).unwrap();
+            let len = dst.len();
+            let src = offset..(offset + len);
+            exec::assign(&mut self.data[dst], &snapshot[src]);
+            offset += len;
+        }
     }
 }
 
@@ -639,16 +658,6 @@ impl Instr {
             kind,
             result_width,
             do_trace: false,
-        }
-    }
-
-    /// Computes the data range while taking the number of array elements into account
-    fn range(&self) -> std::ops::Range<usize> {
-        match self.tpe {
-            InstrType::Nullary(NullaryOp::ArraySymbol(index_width)) => {
-                self.dst.array_range(index_width)
-            }
-            _ => self.dst.range(),
         }
     }
 }
