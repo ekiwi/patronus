@@ -7,6 +7,7 @@ mod types;
 
 pub use crate::sim::interpreter::Simulator;
 pub use smt::{
-    ModelCheckResult, SmtModelChecker, SmtModelCheckerOptions, SmtSolverCmd, BITWUZLA_CMD,
+    get_smt_value, ModelCheckResult, SmtModelChecker, SmtModelCheckerOptions, SmtSolverCmd,
+    TransitionSystemEncoding, UnrollSmtEncoding, BITWUZLA_CMD,
 };
 pub use types::{parse_big_uint_from_bit_string, Witness, WitnessArray, WitnessValue};

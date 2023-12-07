@@ -220,7 +220,7 @@ impl SmtModelChecker {
     }
 }
 
-fn get_smt_value(smt_ctx: &mut smt::Context, expr: smt::SExpr) -> Result<WitnessValue> {
+pub fn get_smt_value(smt_ctx: &mut smt::Context, expr: smt::SExpr) -> Result<WitnessValue> {
     let smt_value = smt_ctx.get_value(vec![expr])?[0].1;
     let res = match parse_smt_bit_vec(smt_ctx, smt_value) {
         Some((value, width)) => WitnessValue::Scalar(value, width),
