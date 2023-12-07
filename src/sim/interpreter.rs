@@ -54,8 +54,16 @@ pub struct Interpreter<'a> {
 
 impl<'a> Interpreter<'a> {
     pub fn new(ctx: &'a Context, sys: &TransitionSystem) -> Self {
-        let init = compile(ctx, sys, true);
-        let update = compile(ctx, sys, false);
+        Self::internal_new(ctx, sys, false)
+    }
+
+    pub fn new_with_trace(ctx: &'a Context, sys: &TransitionSystem) -> Self {
+        Self::internal_new(ctx, sys, true)
+    }
+
+    fn internal_new(ctx: &'a Context, sys: &TransitionSystem, do_trace: bool) -> Self {
+        let init = compile(ctx, sys, true, do_trace);
+        let update = compile(ctx, sys, false, do_trace);
         let states = sys.states().cloned().collect::<Vec<_>>();
         let inputs = sys
             .get_signals(|s| s.kind == SignalKind::Input)
@@ -210,7 +218,7 @@ impl Program {
 
 /// Converts a transitions system into instructions and the number of Words that need to be allocated
 /// * `init_mode` - Indicates whether we want to generate a program for the system init or the system update.
-fn compile(ctx: &Context, sys: &TransitionSystem, init_mode: bool) -> Program {
+fn compile(ctx: &Context, sys: &TransitionSystem, init_mode: bool, do_trace: bool) -> Program {
     // we need to be able to indentiy expressions that represent states
     let expr_to_state: HashMap<ExprRef, &State> =
         HashMap::from_iter(sys.states().map(|s| (s.symbol, s)));
@@ -310,7 +318,7 @@ fn compile(ctx: &Context, sys: &TransitionSystem, init_mode: bool) -> Program {
         if is_bv_or_symbol {
             let expr = ctx.get(expr_ref);
             let tpe = compile_bv_res_expr_type(expr, &locs, ctx);
-            let instr = Instr::new(loc, tpe, width);
+            let instr = Instr::new(loc, tpe, width, do_trace);
             instructions.push(instr);
         } else {
             compile_array_expr(
@@ -320,6 +328,7 @@ fn compile(ctx: &Context, sys: &TransitionSystem, init_mode: bool) -> Program {
                 index_width,
                 &mut locs,
                 &mut instructions,
+                do_trace,
             );
         }
     }
@@ -384,35 +393,36 @@ fn compile_array_expr(
     index_width: WidthInt,
     locs: &ExprMetaData<Option<(Loc, WidthInt)>>,
     instructions: &mut Vec<Instr>,
+    do_trace: bool,
 ) {
     let expr = ctx.get(expr_ref);
     match expr {
         Expr::ArrayConstant { e, index_width, .. } => {
             let tpe = InstrType::ArrayConst(*index_width, locs[e].unwrap().0);
-            instructions.push(Instr::new(*dst, tpe, 0));
+            instructions.push(Instr::new(*dst, tpe, 0, do_trace));
         }
         Expr::ArrayIte { cond, tru, fals } => {
             let default_tpe = InstrType::Skip(locs[cond].unwrap().0, false, 0);
             // compile tru branch and then update instruction
             let tru_skip_pos = instructions.len();
-            instructions.push(Instr::new(*dst, default_tpe.clone(), 0));
-            compile_array_expr(ctx, *tru, dst, index_width, locs, instructions);
+            instructions.push(Instr::new(*dst, default_tpe.clone(), 0, do_trace));
+            compile_array_expr(ctx, *tru, dst, index_width, locs, instructions, do_trace);
             let num_tru_skip = (instructions.len() - 1 - tru_skip_pos) as u32;
             instructions[tru_skip_pos].tpe = InstrType::Skip(locs[cond].unwrap().0, false, num_tru_skip);
 
             // compile fals branch and then update instruction
             let fals_skip_pos = instructions.len();
-            instructions.push(Instr::new(*dst, default_tpe, 0));
-            compile_array_expr(ctx, *fals, dst, index_width, locs, instructions);
+            instructions.push(Instr::new(*dst, default_tpe, 0, do_trace));
+            compile_array_expr(ctx, *fals, dst, index_width, locs, instructions, do_trace);
             let num_fals_skip = (instructions.len() - 1 - fals_skip_pos) as u32;
             instructions[fals_skip_pos].tpe = InstrType::Skip(locs[cond].unwrap().0, true, num_fals_skip);
         }
         Expr::ArrayStore { array, data, index } => {
             // first we need to compile all previous stores or copies
-            compile_array_expr(ctx, *array, dst, index_width, locs, instructions);
+            compile_array_expr(ctx, *array, dst, index_width, locs, instructions, do_trace);
             // now we can execute our store
             let tpe = InstrType::ArrayStore(index_width, locs[index].unwrap().0, locs[data].unwrap().0);
-            instructions.push(Instr::new(*dst, tpe, 0));
+            instructions.push(Instr::new(*dst, tpe, 0, do_trace));
         }
         Expr::ArraySymbol { index_width, .. } => {
             match locs.get(expr_ref) {
@@ -420,7 +430,7 @@ fn compile_array_expr(
                 Some((src, _)) => {
                     // we implement array copy as a bit vector copy by extending the locations
                     let tpe = InstrType::Unary(UnaryOp::Copy, src.array_loc(*index_width));
-                    instructions.push(Instr::new(dst.array_loc(*index_width), tpe, 0));
+                    instructions.push(Instr::new(dst.array_loc(*index_width), tpe, 0, do_trace));
                 },
             }
         }
@@ -636,12 +646,12 @@ struct Instr {
 }
 
 impl Instr {
-    fn new(dst: Loc, tpe: InstrType, result_width: WidthInt) -> Self {
+    fn new(dst: Loc, tpe: InstrType, result_width: WidthInt, do_trace: bool) -> Self {
         Self {
             dst,
             tpe,
             result_width,
-            do_trace: false,
+            do_trace,
         }
     }
 }
