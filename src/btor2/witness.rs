@@ -32,7 +32,7 @@ pub fn parse_witnesses(input: &mut impl BufRead, parse_max: usize) -> Result<Vec
     let mut inputs = Vec::default();
 
     let finish_witness = |out: &mut Vec<Witness>, wit: &mut Witness| {
-        out.push(std::mem::replace(wit, Witness::default()));
+        out.push(std::mem::take(wit));
         if out.len() >= parse_max {
             ParserState::Done
         } else {
@@ -45,7 +45,7 @@ pub fn parse_witnesses(input: &mut impl BufRead, parse_max: usize) -> Result<Vec
         ParserState::ParsingInputsAt(at)
     };
     let finish_inputs = |wit: &mut Witness, inputs: &mut Vec<_>| {
-        wit.inputs.push(std::mem::replace(inputs, Vec::default()));
+        wit.inputs.push(std::mem::take(inputs));
     };
     let start_state = |line: &str| {
         let at = u64::from_str_radix(&line[1..], 10).unwrap();
@@ -55,7 +55,7 @@ pub fn parse_witnesses(input: &mut impl BufRead, parse_max: usize) -> Result<Vec
     for line_res in input.lines() {
         let full_line = line_res?;
         let line = full_line.trim();
-        if line.is_empty() || line.starts_with(";") {
+        if line.is_empty() || line.starts_with(';') {
             continue; // skip blank lines and comments
         }
 
@@ -72,10 +72,10 @@ pub fn parse_witnesses(input: &mut impl BufRead, parse_max: usize) -> Result<Vec
             ParserState::WaitForProp => {
                 let tok = tokenize_line(line);
                 for token in tok.tokens {
-                    if token.starts_with("b") {
+                    if token.starts_with('b') {
                         let num = u32::from_str_radix(&token[1..], 10).unwrap();
                         wit.failed_safety.push(num);
-                    } else if token.starts_with("j") {
+                    } else if token.starts_with('j') {
                         panic!("justice props are not supported");
                     } else {
                         panic!("unexpected property token: {}", token);
@@ -84,7 +84,7 @@ pub fn parse_witnesses(input: &mut impl BufRead, parse_max: usize) -> Result<Vec
                 ParserState::WaitForFrame
             }
             ParserState::WaitForFrame => {
-                if line.starts_with("@") {
+                if line.starts_with('@') {
                     // no state initialization frame -> jump straight to inputs
                     start_inputs(line, &wit)
                 } else {
@@ -99,7 +99,7 @@ pub fn parse_witnesses(input: &mut impl BufRead, parse_max: usize) -> Result<Vec
                         break;
                     }
                     next
-                } else if line.starts_with("@") {
+                } else if line.starts_with('@') {
                     start_inputs(line, &wit)
                 } else {
                     let tok = tokenize_line(line);
@@ -119,10 +119,10 @@ pub fn parse_witnesses(input: &mut impl BufRead, parse_max: usize) -> Result<Vec
                 if line == "." {
                     finish_inputs(&mut wit, &mut inputs);
                     finish_witness(&mut out, &mut wit)
-                } else if line.starts_with("@") {
+                } else if line.starts_with('@') {
                     finish_inputs(&mut wit, &mut inputs);
                     start_inputs(line, &wit)
-                } else if line.starts_with("#") {
+                } else if line.starts_with('#') {
                     finish_inputs(&mut wit, &mut inputs);
                     start_state(line)
                 } else {
@@ -188,15 +188,15 @@ fn parse_assignment<'a>(tokens: &'a [&'a str]) -> (usize, &'a str, WitnessValue)
     let name = tokens
         .last()
         .unwrap()
-        .split("@")
+        .split('@')
         .next()
         .unwrap()
-        .split("#")
+        .split('#')
         .next()
         .unwrap();
     if is_array {
         let index_str = tokens[1];
-        assert!(index_str.starts_with("[") && index_str.ends_with("]"));
+        assert!(index_str.starts_with('[') && index_str.ends_with(']'));
         let (index_value, index_width) =
             parse_big_uint_from_bit_string(&index_str[1..index_str.len() - 1]);
         let (data_value, data_width) = parse_big_uint_from_bit_string(tokens[2]);
@@ -229,7 +229,7 @@ pub fn print_witness(out: &mut impl Write, witness: &Witness) -> std::io::Result
         let is_last = ii + 1 == witness.failed_safety.len();
         write!(out, "b{bad_id}")?;
         if is_last {
-            writeln!(out, "")?;
+            writeln!(out)?;
         } else {
             write!(out, " ")?;
         }

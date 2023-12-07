@@ -26,7 +26,7 @@ impl Type {
     }
     fn expect_bv_of(&self, expected_width: WidthInt, op: &str) -> Result<Type, TypeCheckError> {
         match self {
-            Type::BV(width) if *width == expected_width => Ok(self.clone()),
+            Type::BV(width) if *width == expected_width => Ok(*self),
             other => Err(TypeCheckError {
                 msg: format!(
                     "{op} only works on bit-vectors of size {expected_width}, not {other:?}."

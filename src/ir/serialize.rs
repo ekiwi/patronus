@@ -20,7 +20,7 @@ pub trait SerializableIrNode {
 
 impl SerializableIrNode for Expr {
     fn serialize<W: Write>(&self, ctx: &Context, writer: &mut W) -> std::io::Result<()> {
-        serialize_expr(&self, ctx, writer, &|_, _, _| Ok(false))
+        serialize_expr(self, ctx, writer, &|_, _, _| Ok(false))
     }
 }
 
@@ -420,9 +420,8 @@ impl SerializableIrNode for Type {
 }
 
 fn inline_expr_for_transition_system(expr: &Expr, _use_count: u32) -> bool {
-    let always_inline = expr.is_symbol() || expr.is_bv_lit();
     // TODO: re-enable using the use_count for inlining decisions after we add a way to turn it off
-    always_inline // || use_count <= 1
+    expr.is_symbol() || expr.is_bv_lit() // || use_count <= 1
 }
 
 fn serialize_transition_system<W: Write>(
@@ -464,7 +463,7 @@ fn serialize_transition_system<W: Write>(
 
     // signals
     for (ii, signal) in sys.get_signals(|s| !matches!(s.kind, SignalKind::State)) {
-        let use_count = uses.get(ii.index()).map(|v| *v).unwrap_or_default();
+        let use_count = uses.get(ii.index()).copied().unwrap_or_default();
         let expr = ctx.get(ii);
 
         // skip any expressions that not used multiple times, unless it us a usage root signal

@@ -87,7 +87,7 @@ impl<'a> Parser<'a> {
 
         // possibly improve state names through yosys aliases which look like:
         // better_name = zext(__state__, 0)
-        improve_state_names(&mut self.ctx, &mut self.sys);
+        improve_state_names(self.ctx, &mut self.sys);
 
         // demote states without next or init to input
         let input_states = self
@@ -598,7 +598,7 @@ impl<'a> Parser<'a> {
                 );
                 Err(())
             }
-            Some(tpe) => Ok(tpe.clone()),
+            Some(tpe) => Ok(*tpe),
         }
     }
 
@@ -794,7 +794,7 @@ fn merge_signal_info(original: &SignalInfo, alias: &SignalInfo) -> SignalInfo {
 
 /// yosys likes to use a lot of $ in the signal names, we want to avoid that for readability reasons
 fn clean_up_name(name: &str) -> String {
-    name.replace("$", "_")
+    name.replace('$', "_")
 }
 
 /// decides whether a name should be included or ignored

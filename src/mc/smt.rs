@@ -240,13 +240,9 @@ fn parse_smt_bit_vec(smt_ctx: &smt::Context, expr: smt::SExpr) -> Option<(BigUin
 fn parse_smt_array(smt_ctx: &smt::Context, expr: smt::SExpr) -> Option<WitnessArray> {
     let data = smt_ctx.get(expr);
     match data {
-        smt::SExprData::List([p0, p1]) => {
-            let as_const = parse_smt_as_const(smt_ctx, *p0, *p1);
-            as_const
-        }
+        smt::SExprData::List([p0, p1]) => parse_smt_as_const(smt_ctx, *p0, *p1),
         smt::SExprData::List([id, array, index, value]) => {
-            let as_const = parse_smt_store(smt_ctx, *id, *array, *index, *value);
-            as_const
+            parse_smt_store(smt_ctx, *id, *array, *index, *value)
         }
         _ => todo!("Unexpected array expression: {}", smt_ctx.display(expr)),
     }
@@ -259,8 +255,8 @@ fn parse_smt_as_const(
 ) -> Option<WitnessArray> {
     match smt_ctx.get(p0) {
         smt::SExprData::List([as_str, const_str, array_tpe]) => {
-            let _is_as = parse_smt_id(smt_ctx, *as_str, "as")?;
-            let _is_const = parse_smt_id(smt_ctx, *const_str, "const")?;
+            parse_smt_id(smt_ctx, *as_str, "as")?;
+            parse_smt_id(smt_ctx, *const_str, "const")?;
             let tpe = parse_smt_array_tpe(smt_ctx, *array_tpe)?;
             let (default_value, _width) = parse_smt_bit_vec(smt_ctx, p1)?;
             Some(WitnessArray {
@@ -280,7 +276,7 @@ fn parse_smt_store(
     index: smt::SExpr,
     value: smt::SExpr,
 ) -> Option<WitnessArray> {
-    let _is_store = parse_smt_id(smt_ctx, id, "store")?;
+    parse_smt_id(smt_ctx, id, "store")?;
     let mut inner = parse_smt_array(smt_ctx, array)?;
     let (index_val, _) = parse_smt_bit_vec(smt_ctx, index)?;
     let (data_val, _) = parse_smt_bit_vec(smt_ctx, value)?;
@@ -291,7 +287,7 @@ fn parse_smt_store(
 fn parse_smt_array_tpe(smt_ctx: &smt::Context, expr: smt::SExpr) -> Option<ArrayType> {
     match smt_ctx.get(expr) {
         smt::SExprData::List([array, index, data]) => {
-            let _is_array = parse_smt_id(smt_ctx, *array, "Array")?;
+            parse_smt_id(smt_ctx, *array, "Array")?;
             let index_width = parse_smt_bit_vec_tpe(smt_ctx, *index)?;
             let data_width = parse_smt_bit_vec_tpe(smt_ctx, *data)?;
             Some(ArrayType {
@@ -306,8 +302,8 @@ fn parse_smt_array_tpe(smt_ctx: &smt::Context, expr: smt::SExpr) -> Option<Array
 fn parse_smt_bit_vec_tpe(smt_ctx: &smt::Context, expr: smt::SExpr) -> Option<WidthInt> {
     match smt_ctx.get(expr) {
         smt::SExprData::List([under_score, bit_vec, width]) => {
-            let _is_us = parse_smt_id(smt_ctx, *under_score, "_")?;
-            let _is_bit_vec = parse_smt_id(smt_ctx, *bit_vec, "BitVec")?;
+            parse_smt_id(smt_ctx, *under_score, "_")?;
+            parse_smt_id(smt_ctx, *bit_vec, "BitVec")?;
             match smt_ctx.get(*width) {
                 smt::SExprData::Atom(val) => Some(WidthInt::from_str_radix(val, 10).unwrap()),
                 _ => None,
@@ -729,8 +725,8 @@ fn is_simple_smt_identifier(id: &str) -> bool {
             return false; // all allowed characters are ASCII characters
         }
         let ac = cc as u8;
-        let is_alpha = (ac >= b'A' && ac <= b'Z') || (ac >= b'a' && ac <= b'z');
-        let is_num = ac >= b'0' && ac <= b'9';
+        let is_alpha = (b'A'..=b'Z').contains(&ac) || (b'a'..=b'z').contains(&ac);
+        let is_num = (b'0'..=b'9').contains(&ac);
         let is_other_allowed_char = matches!(
             ac,
             b'+' | b'-'

@@ -154,7 +154,7 @@ impl TransitionSystem {
         self.signals
             .iter()
             .enumerate()
-            .filter(|(_, opt)| opt.as_ref().map(|i| filter(i)).unwrap_or(false))
+            .filter(|(_, opt)| opt.as_ref().map(filter).unwrap_or(false))
             .map(|(index, opt_info)| {
                 (
                     ExprRef::from_index(index),
