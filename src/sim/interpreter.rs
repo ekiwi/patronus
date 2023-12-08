@@ -197,12 +197,12 @@ impl<'a> Simulator for Interpreter<'a> {
     }
 }
 
-struct InitValueGenerator {
+pub struct InitValueGenerator {
     rng: Option<rand_xoshiro::Xoshiro256PlusPlus>,
 }
 
 impl InitValueGenerator {
-    fn from_kind(kind: InitKind) -> Self {
+    pub fn from_kind(kind: InitKind) -> Self {
         let rng = match kind {
             InitKind::Zero => None,
             InitKind::Random(seed) => Some(rand_xoshiro::Xoshiro256PlusPlus::seed_from_u64(seed)),
@@ -210,7 +210,7 @@ impl InitValueGenerator {
         Self { rng }
     }
 
-    fn assign(&mut self, dst: &mut [Word], width: WidthInt, elements: u64) {
+    pub fn assign(&mut self, dst: &mut [Word], width: WidthInt, elements: u64) {
         match &mut self.rng {
             Some(rng) => {
                 let words = width_to_words(width) as usize;
