@@ -4,7 +4,8 @@
 
 use crate::ir;
 use crate::ir::{
-    count_expr_uses, ArrayType, Expr, ExprRef, GetNode, SignalInfo, Type, TypeCheck, WidthInt,
+    count_expr_uses, ArrayType, Expr, ExprRef, GetNode, SignalInfo, SignalKind, Type, TypeCheck,
+    WidthInt,
 };
 use crate::mc::{parse_big_uint_from_bit_string, Witness, WitnessArray, WitnessValue};
 use easy_smt as smt;
@@ -79,7 +80,7 @@ impl SmtModelChecker {
         // TODO: use this data in order to optimize the way we print smt expressions!
 
         // TODO: maybe add support for the more compact SMT encoding
-        let mut enc = UnrollSmtEncoding::new(ctx, sys);
+        let mut enc = UnrollSmtEncoding::new(ctx, sys, false);
         enc.define_header(&mut smt_ctx)?;
         enc.init(&mut smt_ctx)?;
 
@@ -352,12 +353,12 @@ pub struct UnrollSmtEncoding<'a> {
     sys: &'a ir::TransitionSystem,
     current_step: Option<u64>,
     inputs: Vec<(ExprRef, ir::SignalInfo)>,
-    /// constraint and bad state signals (for now)
+    /// outputs (depending on option), constraint and bad state signals (for now)
     signals: Vec<(ExprRef, String)>,
 }
 
 impl<'a> UnrollSmtEncoding<'a> {
-    pub fn new(ctx: &'a ir::Context, sys: &'a ir::TransitionSystem) -> Self {
+    pub fn new(ctx: &'a ir::Context, sys: &'a ir::TransitionSystem, include_outputs: bool) -> Self {
         // remember inputs instead of constantly re-filtering them
         let inputs = sys.get_signals(|s| s.kind == ir::SignalKind::Input);
         // name all constraints and bad states
@@ -367,6 +368,12 @@ impl<'a> UnrollSmtEncoding<'a> {
         }
         for (ii, (expr, _)) in sys.bad_states().iter().enumerate() {
             signals.push((*expr, format!("__bad_{ii}")));
+        }
+        // remember all outputs as well
+        if include_outputs {
+            for (expr, info) in sys.get_signals(|s| s.kind == SignalKind::Output) {
+                signals.push((expr, ctx.get(info.name.unwrap()).to_string()))
+            }
         }
 
         Self {
