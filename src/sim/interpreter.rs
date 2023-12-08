@@ -713,6 +713,10 @@ impl Value {
             words: SmallVec::from_vec(words),
         }
     }
+
+    pub fn to_bit_string(&self, width: WidthInt) -> String {
+        exec::to_bit_str(&self.words, width)
+    }
 }
 
 #[derive(Debug, Clone)]
