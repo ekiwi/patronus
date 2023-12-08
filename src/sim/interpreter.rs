@@ -31,7 +31,7 @@ pub trait Simulator {
     /// Change the value or an expression in the simulator. Be careful!
     fn set(&mut self, expr: ExprRef, value: &Value);
 
-    fn get(&mut self, expr: ExprRef) -> Option<ValueRef<'_>>;
+    fn get(&self, expr: ExprRef) -> Option<ValueRef<'_>>;
 
     fn step_count(&self) -> u64;
 
@@ -157,7 +157,7 @@ impl<'a> Simulator for Interpreter<'a> {
         }
     }
 
-    fn get(&mut self, expr: ExprRef) -> Option<ValueRef<'_>> {
+    fn get(&self, expr: ExprRef) -> Option<ValueRef<'_>> {
         // println!("{:?}", expr.get_symbol_name(self.ctx));
         if let Some(m) = &self.update.symbols.get(&expr) {
             assert_eq!(m.elements, 1, "cannot get array values with this function");
