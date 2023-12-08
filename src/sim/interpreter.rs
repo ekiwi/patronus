@@ -5,6 +5,7 @@
 use super::exec;
 use super::exec::Word;
 use crate::ir::*;
+use rand::{RngCore, SeedableRng};
 use smallvec::SmallVec;
 use std::collections::{HashMap, HashSet};
 
@@ -12,7 +13,7 @@ use std::collections::{HashMap, HashSet};
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub enum InitKind {
     Zero,
-    Random,
+    Random(u64), // with seed
 }
 
 pub trait Simulator {
@@ -89,21 +90,30 @@ impl<'a> Simulator for Interpreter<'a> {
     type SnapshotId = u32;
 
     fn init(&mut self, kind: InitKind) {
-        assert_eq!(kind, InitKind::Zero, "random not supported yet");
+        let mut init_gen = InitValueGenerator::from_kind(kind);
 
         // allocate memory to execute the init program
         let mut init_data = vec![0; self.init.mem_words as usize];
 
-        // assign default value to all inputs
+        // Copy input values from regular data structure.
+        // This allows users to employ the `set` function to influence the input values.
         for sym in self.inputs.iter() {
             let dst = self.init.get_range(sym).unwrap();
-            exec::clear(&mut init_data[dst]);
+            if let Some(src) = self.update.get_range(sym) {
+                exec::assign(&mut init_data[dst], &self.data[src]);
+            } else {
+                // if the input does not exist in the update function, we use zero or a random value
+                let info = &self.init.symbols[&sym];
+                let dst = &mut init_data[info.get_range()];
+                init_gen.assign(dst, info.width, info.elements);
+            }
         }
 
-        // assign default value to all states
-        for state in self.states.iter() {
-            let dst = self.init.get_range(&state.symbol).unwrap();
-            exec::clear(&mut init_data[dst]);
+        // assign default value to states that do not have an init expression
+        for state in self.states.iter().filter(|s| s.init.is_none()) {
+            let info = &self.init.symbols[&state.symbol];
+            let dst = &mut init_data[info.get_range()];
+            init_gen.assign(dst, info.width, info.elements);
         }
 
         // execute the init program
@@ -141,6 +151,8 @@ impl<'a> Simulator for Interpreter<'a> {
             let dst = &mut self.data[m.loc.range()];
             assert!(value.words.len() <= dst.len(), "Value does not fit!");
             exec::zero_extend(dst, &value.words);
+            // deal with values that are too large
+            exec::mask_msb(dst, m.width);
             // println!("Set [{}] = {}", expr.index(), data[0]);
         }
     }
@@ -185,6 +197,38 @@ impl<'a> Simulator for Interpreter<'a> {
     }
 }
 
+struct InitValueGenerator {
+    rng: Option<rand_xoshiro::Xoshiro256PlusPlus>,
+}
+
+impl InitValueGenerator {
+    fn from_kind(kind: InitKind) -> Self {
+        let rng = match kind {
+            InitKind::Zero => None,
+            InitKind::Random(seed) => Some(rand_xoshiro::Xoshiro256PlusPlus::seed_from_u64(seed)),
+        };
+        Self { rng }
+    }
+
+    fn assign(&mut self, dst: &mut [Word], width: WidthInt, elements: u64) {
+        match &mut self.rng {
+            Some(rng) => {
+                let words = width_to_words(width) as usize;
+                for ii in 0..(elements as usize) {
+                    let element_dst = &mut dst[(ii * words)..((ii + 1) * words)];
+                    for word in element_dst.iter_mut() {
+                        *word = rng.next_u64();
+                    }
+                    exec::mask_msb(element_dst, width);
+                }
+            }
+            None => {
+                exec::clear(dst);
+            }
+        }
+    }
+}
+
 /// the result of a compilation
 struct Program {
     instructions: Vec<Instr>,
@@ -198,6 +242,14 @@ struct SymbolInfo {
     elements: u64,
 }
 
+impl SymbolInfo {
+    fn get_range(&self) -> std::ops::Range<usize> {
+        let start = self.loc.offset as usize;
+        let len = self.elements as usize * self.loc.words as usize;
+        start..(start + len)
+    }
+}
+
 impl Program {
     fn execute(&self, data: &mut [Word]) {
         let mut ii = 0;
@@ -208,13 +260,7 @@ impl Program {
     }
 
     fn get_range(&self, e: &ExprRef) -> Option<std::ops::Range<usize>> {
-        if let Some(info) = self.symbols.get(e) {
-            let start = info.loc.offset as usize;
-            let len = info.elements as usize * info.loc.words as usize;
-            Some(start..(start + len))
-        } else {
-            None
-        }
+        self.symbols.get(e).map(|i| i.get_range())
     }
 }
 
@@ -498,7 +544,7 @@ fn get_state_next(st: &State) -> Option<ExprRef> {
 fn allocate_result_space(tpe: Type, word_count: &mut u32) -> (Loc, WidthInt, WidthInt) {
     match tpe {
         Type::BV(width) => {
-            let words = width.div_ceil(Word::BITS as WidthInt) as u16;
+            let words = width_to_words(width);
             let offset = *word_count;
             *word_count += words as u32;
             let loc = Loc { offset, words };
@@ -508,7 +554,7 @@ fn allocate_result_space(tpe: Type, word_count: &mut u32) -> (Loc, WidthInt, Wid
             index_width,
             data_width,
         }) => {
-            let words = data_width.div_ceil(Word::BITS as WidthInt) as u16;
+            let words = width_to_words(data_width);
             let offset = *word_count;
             let entries = 1u32 << index_width;
             *word_count += words as u32 * entries;
@@ -516,6 +562,10 @@ fn allocate_result_space(tpe: Type, word_count: &mut u32) -> (Loc, WidthInt, Wid
             (loc, data_width, index_width)
         }
     }
+}
+
+fn width_to_words(width: WidthInt) -> u16 {
+    width.div_ceil(Word::BITS as WidthInt) as u16
 }
 
 fn compile_bv_res_expr_type(

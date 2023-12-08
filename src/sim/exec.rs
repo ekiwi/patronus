@@ -61,7 +61,7 @@ pub(crate) fn zero_extend(dst: &mut [Word], source: &[Word]) {
 }
 
 #[inline]
-fn mask_msb(dst: &mut [Word], width: WidthInt) {
+pub(crate) fn mask_msb(dst: &mut [Word], width: WidthInt) {
     let m = mask(width % Word::BITS);
     *dst.last_mut().unwrap() &= m;
 }

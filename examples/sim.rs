@@ -64,7 +64,7 @@ fn main() {
     // start execution
     let start_load = std::time::Instant::now();
     let mut sim = Interpreter::new(&ctx, &sys);
-    sim.init(InitKind::Zero);
+    sim.init(InitKind::Random(0));
     let delta_load = std::time::Instant::now() - start_load;
     println!("Loaded the design into the interpreter in {:?}", delta_load);
 
