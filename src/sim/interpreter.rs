@@ -651,6 +651,12 @@ impl Value {
         }
     }
 
+    pub fn from_words(words: &[Word]) -> Self {
+        Self {
+            words: SmallVec::from_slice(words),
+        }
+    }
+
     pub fn from_big_uint(value: &num_bigint::BigUint) -> Self {
         let words = value.iter_u64_digits().collect::<Vec<_>>();
         Self {
