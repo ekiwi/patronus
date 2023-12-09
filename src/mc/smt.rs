@@ -562,7 +562,7 @@ where
             convert_simple_binop(true, smt_ctx, ctx, "bvsge", a_ref, b_ref, rename_sym)
         }
         Expr::BVConcat(a_ref, b_ref, _) => {
-            convert_simple_binop(false, smt_ctx, ctx, "concat", a_ref, b_ref, rename_sym)
+            convert_simple_binop(true, smt_ctx, ctx, "concat", a_ref, b_ref, rename_sym)
         }
         Expr::BVAnd(a_ref, b_ref, _) => {
             let a = convert_expr(smt_ctx, ctx, *a_ref, rename_sym);
@@ -673,7 +673,7 @@ where
 
 /// for all bin ops that require a conversion to bit-vec from bool
 fn convert_simple_binop<'a, 'f, F>(
-    res_is_bool: bool,
+    do_not_convert_to_bool: bool,
     smt_ctx: &smt::Context,
     ctx: &'a ir::Context,
     op: &str,
@@ -698,7 +698,7 @@ where
         convert_expr(smt_ctx, ctx, *b_ref, rename_sym),
     );
     let res = smt_ctx.list(vec![smt_ctx.atom(op), a, b]);
-    if !res_is_bool && a_ref.get_bv_type(ctx).unwrap() == 1 {
+    if !do_not_convert_to_bool && a_ref.get_bv_type(ctx).unwrap() == 1 {
         to_bool(smt_ctx, res)
     } else {
         res
