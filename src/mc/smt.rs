@@ -511,7 +511,14 @@ where
             if *lo == 0 && e.get_type(ctx).get_bit_vector_width().unwrap() - 1 == *hi {
                 e_expr
             } else {
-                smt_ctx.extract(*hi as i32, *lo as i32, e_expr)
+                let extracted = smt_ctx.extract(*hi as i32, *lo as i32, e_expr);
+                if hi > lo {
+                    // result width is at least two
+                    extracted
+                } else {
+                    // result width is one => we need to convert to bool
+                    to_bool(smt_ctx, extracted)
+                }
             }
         }
         Expr::BVNot(e_ref, _) => {
@@ -543,19 +550,19 @@ where
             smt_ctx.imp(a, b)
         }
         Expr::BVGreater(a_ref, b_ref) => {
-            convert_simple_binop(smt_ctx, ctx, "bvugt", a_ref, b_ref, rename_sym)
+            convert_simple_binop(true, smt_ctx, ctx, "bvugt", a_ref, b_ref, rename_sym)
         }
         Expr::BVGreaterSigned(a_ref, b_ref) => {
-            convert_simple_binop(smt_ctx, ctx, "bvsgt", a_ref, b_ref, rename_sym)
+            convert_simple_binop(true, smt_ctx, ctx, "bvsgt", a_ref, b_ref, rename_sym)
         }
         Expr::BVGreaterEqual(a_ref, b_ref) => {
-            convert_simple_binop(smt_ctx, ctx, "bvuge", a_ref, b_ref, rename_sym)
+            convert_simple_binop(true, smt_ctx, ctx, "bvuge", a_ref, b_ref, rename_sym)
         }
         Expr::BVGreaterEqualSigned(a_ref, b_ref) => {
-            convert_simple_binop(smt_ctx, ctx, "bvsge", a_ref, b_ref, rename_sym)
+            convert_simple_binop(true, smt_ctx, ctx, "bvsge", a_ref, b_ref, rename_sym)
         }
         Expr::BVConcat(a_ref, b_ref, _) => {
-            convert_simple_binop(smt_ctx, ctx, "concat", a_ref, b_ref, rename_sym)
+            convert_simple_binop(false, smt_ctx, ctx, "concat", a_ref, b_ref, rename_sym)
         }
         Expr::BVAnd(a_ref, b_ref, _) => {
             let a = convert_expr(smt_ctx, ctx, *a_ref, rename_sym);
@@ -585,37 +592,37 @@ where
             }
         }
         Expr::BVShiftLeft(a_ref, b_ref, _) => {
-            convert_simple_binop(smt_ctx, ctx, "bvshl", a_ref, b_ref, rename_sym)
+            convert_simple_binop(false, smt_ctx, ctx, "bvshl", a_ref, b_ref, rename_sym)
         }
         Expr::BVArithmeticShiftRight(a_ref, b_ref, _) => {
-            convert_simple_binop(smt_ctx, ctx, "bvashr", a_ref, b_ref, rename_sym)
+            convert_simple_binop(false, smt_ctx, ctx, "bvashr", a_ref, b_ref, rename_sym)
         }
         Expr::BVShiftRight(a_ref, b_ref, _) => {
-            convert_simple_binop(smt_ctx, ctx, "bvlshr", a_ref, b_ref, rename_sym)
+            convert_simple_binop(false, smt_ctx, ctx, "bvlshr", a_ref, b_ref, rename_sym)
         }
         Expr::BVAdd(a_ref, b_ref, _) => {
-            convert_simple_binop(smt_ctx, ctx, "bvadd", a_ref, b_ref, rename_sym)
+            convert_simple_binop(false, smt_ctx, ctx, "bvadd", a_ref, b_ref, rename_sym)
         }
         Expr::BVMul(a_ref, b_ref, _) => {
-            convert_simple_binop(smt_ctx, ctx, "bvmul", a_ref, b_ref, rename_sym)
+            convert_simple_binop(false, smt_ctx, ctx, "bvmul", a_ref, b_ref, rename_sym)
         }
         Expr::BVSignedDiv(a_ref, b_ref, _) => {
-            convert_simple_binop(smt_ctx, ctx, "bvsdiv", a_ref, b_ref, rename_sym)
+            convert_simple_binop(false, smt_ctx, ctx, "bvsdiv", a_ref, b_ref, rename_sym)
         }
         Expr::BVUnsignedDiv(a_ref, b_ref, _) => {
-            convert_simple_binop(smt_ctx, ctx, "bvudiv", a_ref, b_ref, rename_sym)
+            convert_simple_binop(false, smt_ctx, ctx, "bvudiv", a_ref, b_ref, rename_sym)
         }
         Expr::BVSignedMod(a_ref, b_ref, _) => {
-            convert_simple_binop(smt_ctx, ctx, "bvsmod", a_ref, b_ref, rename_sym)
+            convert_simple_binop(false, smt_ctx, ctx, "bvsmod", a_ref, b_ref, rename_sym)
         }
         Expr::BVSignedRem(a_ref, b_ref, _) => {
-            convert_simple_binop(smt_ctx, ctx, "bvsrem", a_ref, b_ref, rename_sym)
+            convert_simple_binop(false, smt_ctx, ctx, "bvsrem", a_ref, b_ref, rename_sym)
         }
         Expr::BVUnsignedRem(a_ref, b_ref, _) => {
-            convert_simple_binop(smt_ctx, ctx, "bvurem", a_ref, b_ref, rename_sym)
+            convert_simple_binop(false, smt_ctx, ctx, "bvurem", a_ref, b_ref, rename_sym)
         }
         Expr::BVSub(a_ref, b_ref, _) => {
-            convert_simple_binop(smt_ctx, ctx, "bvsub", a_ref, b_ref, rename_sym)
+            convert_simple_binop(false, smt_ctx, ctx, "bvsub", a_ref, b_ref, rename_sym)
         }
         Expr::BVArrayRead { array, index, .. } => {
             let a = convert_expr(smt_ctx, ctx, *array, rename_sym);
@@ -666,6 +673,7 @@ where
 
 /// for all bin ops that require a conversion to bit-vec from bool
 fn convert_simple_binop<'a, 'f, F>(
+    res_is_bool: bool,
     smt_ctx: &smt::Context,
     ctx: &'a ir::Context,
     op: &str,
@@ -689,7 +697,12 @@ where
         *b_ref,
         convert_expr(smt_ctx, ctx, *b_ref, rename_sym),
     );
-    smt_ctx.list(vec![smt_ctx.atom(op), a, b])
+    let res = smt_ctx.list(vec![smt_ctx.atom(op), a, b]);
+    if !res_is_bool && a_ref.get_bv_type(ctx).unwrap() == 1 {
+        to_bool(smt_ctx, res)
+    } else {
+        res
+    }
 }
 
 // adds a cast if the underlying value is 1-bit and thus represented as a Bool in SMT
@@ -709,6 +722,10 @@ fn ensure_bit_vec(
         }
         Type::Array(_) => panic!("This function should never be called on an array!"),
     }
+}
+
+fn to_bool(smt_ctx: &smt::Context, e: smt::SExpr) -> smt::SExpr {
+    smt_ctx.eq(e, smt_ctx.binary(1, 1))
 }
 
 impl<'a> TransitionSystemEncoding for UnrollSmtEncoding<'a> {
