@@ -22,7 +22,7 @@ struct Args {
 
 fn main() {
     let args = Args::parse();
-    let (ctx, sys) = btor2::parse_file(&args.filename).expect("Failed to load btor2 file!");
+    let (mut ctx, sys) = btor2::parse_file(&args.filename).expect("Failed to load btor2 file!");
     if args.verbose {
         println!("Loaded: {}", sys.name);
         println!("{}", sys.serialize_to_str(&ctx));
@@ -43,7 +43,7 @@ fn main() {
         );
     }
     let checker = mc::SmtModelChecker::new(solver, checker_opts);
-    let res = checker.check(&ctx, &sys, k_max).unwrap();
+    let res = checker.check(&mut ctx, &sys, k_max).unwrap();
     match res {
         mc::ModelCheckResult::Success => {
             println!("unsat");

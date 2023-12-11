@@ -142,7 +142,7 @@ impl SmtModelChecker {
             }
 
             // advance
-            enc.unroll(&mut smt_ctx)?;
+            enc.unroll(ctx, &mut smt_ctx)?;
         }
 
         // we have not found any assertion violations
@@ -339,7 +339,7 @@ pub enum ModelCheckResult {
 pub trait TransitionSystemEncoding {
     fn define_header(&self, smt_ctx: &mut smt::Context) -> Result<()>;
     fn init(&mut self, ctx: &mut Context, smt_ctx: &mut smt::Context) -> Result<()>;
-    fn unroll(&mut self, smt_ctx: &mut smt::Context) -> Result<()>;
+    fn unroll(&mut self, ctx: &mut Context, smt_ctx: &mut smt::Context) -> Result<()>;
     /// Allows access to inputs, states, constraints and bad_state expressions.
     fn get_at(
         &self,
@@ -353,40 +353,54 @@ pub trait TransitionSystemEncoding {
 pub struct UnrollSmtEncoding {
     current_step: Option<u64>,
     /// all signals that need to be serialized separately, in the correct order
-    signals: Vec<SmtSignalInfo>,
-    /// order in which states need to be serialized
+    signal_order: Vec<ExprRef>,
+    /// look up table to see if an expression is a reference
+    signals: Vec<Option<SmtSignalInfo>>,
+    /// system states
     states: Vec<State>,
 }
 
+#[derive(Clone)]
 struct SmtSignalInfo {
     expr: ExprRef,
     name: StringRef,
-    init_only: bool,
-    next_only: bool,
+    uses: Uses,
 }
 
 impl UnrollSmtEncoding {
     pub fn new(ctx: &mut Context, sys: &TransitionSystem, include_outputs: bool) -> Self {
         let ser_info = analyze_for_serialization(ctx, sys, include_outputs);
-        let mut signals = Vec::with_capacity(ser_info.signal_order.len());
+        let max_index = ser_info
+            .signal_order
+            .iter()
+            .map(|s| s.expr.index())
+            .max()
+            .unwrap();
+        let mut signals = vec![None; max_index];
+        let mut signal_order = Vec::with_capacity(ser_info.signal_order.len());
 
         for info in ser_info.signal_order.into_iter() {
             let name = sys.get_signal(info.expr).and_then(|i| i.name).unwrap_or({
                 let base = format!("n{}", info.expr.index());
                 ctx.add_unique_str(&base)
             });
-            signals.push(SmtSignalInfo {
+            let info = SmtSignalInfo {
                 expr: info.expr,
                 name,
-                init_only: info.init_only,
-                next_only: info.next_only,
-            })
+                uses: info.uses,
+            };
+            signal_order.push(info.expr);
+            let ii = info.expr.index();
+            signals[ii] = Some(info);
         }
+        let current_step = None;
+        let states = sys.states.clone();
 
         Self {
-            current_step: None,
+            current_step,
             signals,
-            states: ser_info.state_order,
+            signal_order,
+            states,
         }
     }
 
@@ -395,15 +409,20 @@ impl UnrollSmtEncoding {
         ctx: &mut Context,
         smt_ctx: &mut smt::Context,
         step: u64,
+        filter: &impl Fn(&SmtSignalInfo) -> bool,
     ) -> Result<()> {
-        for signal in self.signals {
-            let tpe = convert_tpe(smt_ctx, signal.expr.get_type(ctx));
-            let name = name_at(ctx.get(signal.name), step);
-            if signal.expr.is_symbol(ctx) {
-                smt_ctx.declare_const(escape_smt_identifier(&name), tpe)?;
-            } else {
-                let value = self.expr_in_step(smt_ctx, signal.expr, step);
-                smt_ctx.define_const(escape_smt_identifier(&name), tpe, value)?;
+        for expr in self.signal_order.iter() {
+            let info = self.signals[expr.index()].as_ref().unwrap();
+            let skip = !(filter)(info);
+            if !skip {
+                let tpe = convert_tpe(smt_ctx, expr.get_type(ctx));
+                let name = name_at(ctx.get(info.name), step);
+                if expr.is_symbol(ctx) {
+                    smt_ctx.declare_const(escape_smt_identifier(&name), tpe)?;
+                } else {
+                    let value = self.expr_in_step(smt_ctx, *expr, step);
+                    smt_ctx.define_const(escape_smt_identifier(&name), tpe, value)?;
+                }
             }
         }
         Ok(())
@@ -413,6 +432,90 @@ impl UnrollSmtEncoding {
         // let rename = |name: &str| -> Cow<'_, str> { Cow::Owned(format!("{}@{}", name, step)) };
         // convert_expr(smt_ctx, self.ctx, expr, &rename)
         todo!("expr_in_step")
+    }
+}
+
+impl TransitionSystemEncoding for UnrollSmtEncoding {
+    fn define_header(&self, _smt_ctx: &mut smt::Context) -> Result<()> {
+        // nothing to do in this encoding
+        Ok(())
+    }
+
+    fn init(&mut self, ctx: &mut Context, smt_ctx: &mut smt::Context) -> Result<()> {
+        assert!(self.current_step.is_none(), "init must be called only once");
+        self.current_step = Some(0);
+
+        // define signals that are used to calculate init expressions
+        self.define_signals(ctx, smt_ctx, 0, &|info: &SmtSignalInfo| info.uses.init)?;
+
+        // declare/define initial states
+        for state in self.states.iter() {
+            let name = name_at(state.symbol.get_symbol_name(ctx).unwrap(), 0);
+            let out = convert_tpe(smt_ctx, state.symbol.get_type(ctx));
+            match state.init {
+                Some(value) => {
+                    let body = self.expr_in_step(smt_ctx, value, 0);
+                    smt_ctx.define_const(escape_smt_identifier(&name), out, body)?;
+                }
+                None => {
+                    smt_ctx.declare_const(escape_smt_identifier(&name), out)?;
+                }
+            }
+        }
+
+        // define other signals
+        self.define_signals(ctx, smt_ctx, 0, &|info: &SmtSignalInfo| {
+            info.uses.other && !info.uses.init
+        })?;
+
+        Ok(())
+    }
+
+    fn unroll(&mut self, ctx: &mut Context, smt_ctx: &mut smt::Context) -> Result<()> {
+        let prev_step = self.current_step.unwrap();
+        let next_step = prev_step + 1;
+
+        // define next state signals for previous state
+        self.define_signals(ctx, smt_ctx, prev_step, &|info: &SmtSignalInfo| {
+            info.uses.next && !info.uses.other
+        })?;
+
+        // define next state
+        for state in self.states.iter() {
+            let name = name_at(state.symbol.get_symbol_name(ctx).unwrap(), next_step);
+            let out = convert_tpe(smt_ctx, state.symbol.get_type(ctx));
+            match state.next {
+                Some(value) => {
+                    let body = self.expr_in_step(smt_ctx, value, prev_step);
+                    smt_ctx.define_const(escape_smt_identifier(&name), out, body)?;
+                }
+                None => {
+                    smt_ctx.declare_const(escape_smt_identifier(&name), out)?;
+                }
+            }
+        }
+
+        // define other signals
+        self.define_signals(ctx, smt_ctx, next_step, &|info: &SmtSignalInfo| {
+            info.uses.other
+        })?;
+
+        // update step count
+        self.current_step = Some(next_step);
+        Ok(())
+    }
+    fn get_at(
+        &self,
+        ctx: &Context,
+        smt_ctx: &mut smt::Context,
+        expr: ExprRef,
+        k: u64,
+    ) -> smt::SExpr {
+        assert!(k <= self.current_step.unwrap_or(0));
+        // find signal
+        let info = self.signals[expr.index()].as_ref().unwrap();
+        let name = name_at(ctx.get(info.name), k);
+        smt_ctx.atom(escape_smt_identifier(&name))
     }
 }
 
@@ -703,78 +806,6 @@ fn ensure_bit_vec(
 
 fn to_bool(smt_ctx: &smt::Context, e: smt::SExpr) -> smt::SExpr {
     smt_ctx.eq(e, smt_ctx.binary(1, 1))
-}
-
-impl TransitionSystemEncoding for UnrollSmtEncoding {
-    fn define_header(&self, _smt_ctx: &mut smt::Context) -> Result<()> {
-        // nothing to do in this encoding
-        Ok(())
-    }
-
-    fn init(&mut self, ctx: &mut Context, smt_ctx: &mut smt::Context) -> Result<()> {
-        assert!(self.current_step.is_none(), "init must be called only once");
-        self.current_step = Some(0);
-
-        // define the inputs for the initial state and all signals derived from it
-        self.define_signals(ctx, smt_ctx, 0)?;
-
-        // declare/define initial states
-        for state in self.states.iter() {
-            let name = name_at(state.symbol.get_symbol_name(ctx).unwrap(), 0);
-            let out = convert_tpe(smt_ctx, state.symbol.get_type(ctx));
-            match state.init {
-                Some(value) => {
-                    let body = self.expr_in_step(smt_ctx, value, 0);
-                    smt_ctx.define_const(escape_smt_identifier(&name), out, body)?;
-                }
-                None => {
-                    smt_ctx.declare_const(escape_smt_identifier(&name), out)?;
-                }
-            }
-        }
-
-        Ok(())
-    }
-
-    fn unroll(&mut self, smt_ctx: &mut smt::Context) -> Result<()> {
-        let prev_step = self.current_step.unwrap();
-        let next_step = prev_step + 1;
-
-        // define next state
-        for state in self.sys.states() {
-            let name = self.name_at(state.symbol, next_step);
-            let out = convert_tpe(smt_ctx, state.symbol.get_type(self.ctx));
-            match state.next {
-                Some(value) => {
-                    let body = self.expr_in_step(smt_ctx, value, prev_step);
-                    smt_ctx.define_const(escape_smt_identifier(&name), out, body)?;
-                }
-                None => {
-                    smt_ctx.declare_const(escape_smt_identifier(&name), out)?;
-                }
-            }
-        }
-
-        // declare the inputs and all signals derived from the new state and inputs
-        self.define_signals(smt_ctx, next_step)?;
-
-        // update step count
-        self.current_step = Some(next_step);
-        Ok(())
-    }
-    fn get_at(
-        &self,
-        ctx: &Context,
-        smt_ctx: &mut smt::Context,
-        expr: ExprRef,
-        k: u64,
-    ) -> smt::SExpr {
-        assert!(k <= self.current_step.unwrap_or(0));
-        // find signal
-        let info = self.signals.iter().find(|s| s.expr == expr).unwrap();
-        let name = name_at(ctx.get(info.name), k);
-        smt_ctx.atom(escape_smt_identifier(&name))
-    }
 }
 
 /// See <simple_symbol> definition in the Concrete Syntax Appendix of the SMTLib Spec

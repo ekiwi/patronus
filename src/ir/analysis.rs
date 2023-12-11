@@ -108,13 +108,14 @@ fn count_init_uses(ctx: &Context, sys: &TransitionSystem) -> Vec<UseCountInt> {
 }
 
 /// Counts how often expressions are used. This version _does not_ follow any state symbols.
-fn simple_count_expr_uses(
-    ctx: &Context,
-    sys: &TransitionSystem,
-    roots: Vec<ExprRef>,
-) -> Vec<UseCountInt> {
+fn simple_count_expr_uses(ctx: &Context, roots: Vec<ExprRef>) -> Vec<UseCountInt> {
     let mut use_count = ExprMetaData::default();
     let mut todo = roots;
+
+    // ensure that all roots start with count 1
+    for expr in todo.iter() {
+        *use_count.get_mut(*expr) = 1;
+    }
 
     while let Some(expr) = todo.pop() {
         count_uses(ctx, expr, &mut use_count, &mut todo);
@@ -143,8 +144,15 @@ fn count_uses(
 #[derive(Debug, Clone)]
 pub struct RootInfo {
     pub expr: ExprRef,
-    pub next_only: bool,
-    pub init_only: bool,
+    pub uses: Uses,
+}
+
+/// Indicates which context an expression is used in.
+#[derive(Debug, Clone)]
+pub struct Uses {
+    pub next: bool,
+    pub init: bool,
+    pub other: bool,
 }
 
 /// Meta-data that helps with serialization, no matter if serializing to btor, our custom
@@ -152,7 +160,6 @@ pub struct RootInfo {
 #[derive(Debug, Default, Clone)]
 pub struct SerializeMeta {
     pub signal_order: Vec<RootInfo>,
-    pub state_order: Vec<State>,
 }
 
 pub fn analyze_for_serialization(
@@ -165,16 +172,12 @@ pub fn analyze_for_serialization(
 
     let mut visited = ExprMetaData::default();
     let mut signal_order = Vec::new();
-    let mut state_order = Vec::with_capacity(sys.states.len());
 
     // add all inputs
     for (input, _) in sys.get_signals(|s| s.kind == SignalKind::Input) {
         *visited.get_mut(input) = true;
-        signal_order.push(RootInfo {
-            expr: input,
-            next_only: false,
-            init_only: false,
-        });
+        let (uses, _) = analyze_use(input, &init_count, &next_count, &other_count);
+        signal_order.push(RootInfo { expr: input, uses });
     }
 
     // add all roots to todo list
@@ -192,9 +195,11 @@ pub fn analyze_for_serialization(
     for state in sys.states() {
         if let Some(expr) = state.next {
             todo.push(expr);
+            next_count[expr.index()] = 100; // ensure that this expression will always be serialized
         }
         if let Some(expr) = state.init {
             todo.push(expr);
+            init_count[expr.index()] = 100; // ensure that this expression will always be serialized
         }
     }
 
@@ -233,29 +238,40 @@ pub fn analyze_for_serialization(
         }
 
         // add to signal order if applicable
-        if let Some(state) = states.get(&expr_ref) {
-            state_order.push(**state);
-        } else if num_children > 0 {
-            let ii = expr_ref.index();
-            let total_use = init_count[ii] + next_count[ii] + other_count[ii];
+        if !expr.is_symbol() && num_children > 0 {
+            let (uses, total_use) = analyze_use(expr_ref, &init_count, &next_count, &other_count);
             if total_use > 1 {
-                // it's a root!
-                let init_only = other_count[ii] == 0 && next_count[ii] == 0;
-                let next_only = other_count[ii] == 0 && init_count[ii] == 0;
                 signal_order.push(RootInfo {
                     expr: expr_ref,
-                    init_only,
-                    next_only,
-                })
+                    uses,
+                });
             }
         }
         *visited.get_mut(expr_ref) = true;
     }
 
-    SerializeMeta {
-        signal_order,
-        state_order,
-    }
+    SerializeMeta { signal_order }
+}
+
+fn analyze_use(
+    expr_ref: ExprRef,
+    init_count: &[UseCountInt],
+    next_count: &[UseCountInt],
+    other_count: &[UseCountInt],
+) -> (Uses, UseCountInt) {
+    let ii = expr_ref.index();
+    let init = *init_count.get(ii).unwrap_or(&0);
+    let next = *next_count.get(ii).unwrap_or(&0);
+    let other = *other_count.get(ii).unwrap_or(&0);
+    let total = init + next + other;
+    (
+        Uses {
+            init: init > 0,
+            next: next > 0,
+            other: other > 0,
+        },
+        total,
+    )
 }
 
 fn init_counts(
@@ -281,11 +297,11 @@ fn init_counts(
     };
     let other_roots = Vec::from_iter(sys.get_signals(filter).iter().map(|(e, _)| *e));
 
-    (
-        simple_count_expr_uses(ctx, sys, init_roots),
-        simple_count_expr_uses(ctx, sys, next_roots),
-        simple_count_expr_uses(ctx, sys, other_roots),
-    )
+    let init_count = simple_count_expr_uses(ctx, init_roots);
+    let next_count = simple_count_expr_uses(ctx, next_roots);
+    let other_count = simple_count_expr_uses(ctx, other_roots);
+
+    (init_count, next_count, other_count)
 }
 
 /// A dense hash map to store meta-data related to each expression
@@ -360,7 +376,7 @@ pub trait ForEachChild<T: Clone> {
     fn for_each_child(&self, visitor: impl FnMut(&T));
     fn collect_children(&self, children: &mut Vec<T>) {
         self.for_each_child(|c: &T| {
-            children.push(*c);
+            children.push(c.clone());
         });
     }
 }
@@ -501,7 +517,7 @@ impl ForEachChild<ExprRef> for Expr {
 }
 
 impl ForEachChild<ExprRef> for State {
-    fn for_each_child(&self, visitor: impl FnMut(&ExprRef)) {
+    fn for_each_child(&self, mut visitor: impl FnMut(&ExprRef)) {
         if let Some(next) = &self.next {
             (visitor)(next);
         }
