@@ -9,8 +9,9 @@ mod transition_system;
 mod type_check;
 
 pub use analysis::{
-    count_expr_uses, count_expr_uses_without_init, find_expr_with_multiple_uses,
-    is_usage_root_signal, ExprMetaData, ForEachChild,
+    analyze_for_serialization, count_expr_uses, count_expr_uses_without_init,
+    find_expr_with_multiple_uses, is_usage_root_signal, ExprMetaData, ForEachChild, SerializeMeta,
+    UseCountInt,
 };
 pub use expr::{
     bv_value_fits_width, AddNode, ArrayType, BVLiteralInt, Context, Expr, ExprNodeConstruction,

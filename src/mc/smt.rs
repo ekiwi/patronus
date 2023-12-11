@@ -2,11 +2,7 @@
 // released under BSD 3-Clause License
 // author: Kevin Laeufer <laeufer@berkeley.edu>
 
-use crate::ir;
-use crate::ir::{
-    count_expr_uses, ArrayType, Expr, ExprRef, GetNode, SignalInfo, SignalKind, Type, TypeCheck,
-    WidthInt,
-};
+use crate::ir::*;
 use crate::mc::{parse_big_uint_from_bit_string, Witness, WitnessArray, WitnessValue};
 use easy_smt as smt;
 use num_bigint::BigUint;
@@ -50,8 +46,8 @@ impl SmtModelChecker {
 
     pub fn check(
         &self,
-        ctx: &ir::Context,
-        sys: &ir::TransitionSystem,
+        ctx: &mut Context,
+        sys: &TransitionSystem,
         k_max: u64,
     ) -> Result<ModelCheckResult> {
         assert!(k_max > 0 && k_max <= 2000, "unreasonable k_max={}", k_max);
@@ -82,7 +78,7 @@ impl SmtModelChecker {
         // TODO: maybe add support for the more compact SMT encoding
         let mut enc = UnrollSmtEncoding::new(ctx, sys, false);
         enc.define_header(&mut smt_ctx)?;
-        enc.init(&mut smt_ctx)?;
+        enc.init(ctx, &mut smt_ctx)?;
 
         let constraints = sys.constraints();
         let bad_states = sys.bad_states();
@@ -90,7 +86,7 @@ impl SmtModelChecker {
         for k in 0..=k_max {
             // assume all constraints hold in this step
             for (expr_ref, _) in constraints.iter() {
-                let expr = enc.get_at(&mut smt_ctx, *expr_ref, k);
+                let expr = enc.get_at(ctx, &mut smt_ctx, *expr_ref, k);
                 smt_ctx.assert(expr)?;
             }
 
@@ -107,7 +103,7 @@ impl SmtModelChecker {
 
             if self.opts.check_bad_states_individually {
                 for (_bs_id, (expr_ref, _)) in bad_states.iter().enumerate() {
-                    let expr = enc.get_at(&mut smt_ctx, *expr_ref, k);
+                    let expr = enc.get_at(ctx, &mut smt_ctx, *expr_ref, k);
                     let res = smt_ctx.check_assuming([expr])?;
 
                     if res == smt::Response::Sat {
@@ -126,7 +122,7 @@ impl SmtModelChecker {
             } else {
                 let all_bads = bad_states
                     .iter()
-                    .map(|(expr_ref, _)| enc.get_at(&mut smt_ctx, *expr_ref, k))
+                    .map(|(expr_ref, _)| enc.get_at(ctx, &mut smt_ctx, *expr_ref, k))
                     .collect::<Vec<_>>();
                 let any_bad = smt_ctx.or_many(all_bads);
                 let res = smt_ctx.check_assuming([any_bad])?;
@@ -155,9 +151,9 @@ impl SmtModelChecker {
 
     fn get_witness(
         &self,
-        sys: &ir::TransitionSystem,
-        ctx: &ir::Context,
-        _use_counts: &[u32], // TODO: analyze array expressions in order to record which indices are accessed
+        sys: &TransitionSystem,
+        ctx: &Context,
+        _use_counts: &[UseCountInt], // TODO: analyze array expressions in order to record which indices are accessed
         smt_ctx: &mut smt::Context,
         enc: &UnrollSmtEncoding,
         k_max: u64,
@@ -167,7 +163,7 @@ impl SmtModelChecker {
 
         // which bad states did we hit?
         for (bad_idx, (expr, _)) in bad_states.iter().enumerate() {
-            let sym_at = enc.get_at(smt_ctx, *expr, k_max);
+            let sym_at = enc.get_at(ctx, smt_ctx, *expr, k_max);
             let value = get_smt_value(smt_ctx, sym_at)?;
             if !value.is_zero() {
                 // was the bad state condition fulfilled?
@@ -177,7 +173,7 @@ impl SmtModelChecker {
 
         // collect initial values
         for (state_idx, state) in sys.states().enumerate() {
-            let sym_at = enc.get_at(smt_ctx, state.symbol, 0);
+            let sym_at = enc.get_at(ctx, smt_ctx, state.symbol, 0);
             let value = get_smt_value(smt_ctx, sym_at)?;
             // we assume that state ids are monotonically increasing with +1
             assert_eq!(wit.init.len(), state_idx);
@@ -188,7 +184,7 @@ impl SmtModelChecker {
         }
 
         // collect all inputs
-        let inputs = sys.get_signals(|s| s.kind == ir::SignalKind::Input);
+        let inputs = sys.get_signals(|s| s.kind == SignalKind::Input);
 
         // save input names
         for (input, _) in inputs.iter() {
@@ -199,7 +195,7 @@ impl SmtModelChecker {
         for k in 0..=k_max {
             let mut input_values = Vec::default();
             for (input, _) in inputs.iter() {
-                let sym_at = enc.get_at(smt_ctx, *input, k);
+                let sym_at = enc.get_at(ctx, smt_ctx, *input, k);
                 let value = get_smt_value(smt_ctx, sym_at)?;
                 input_values.push(Some(value));
             }
@@ -342,99 +338,86 @@ pub enum ModelCheckResult {
 
 pub trait TransitionSystemEncoding {
     fn define_header(&self, smt_ctx: &mut smt::Context) -> Result<()>;
-    fn init(&mut self, smt_ctx: &mut smt::Context) -> Result<()>;
+    fn init(&mut self, ctx: &mut Context, smt_ctx: &mut smt::Context) -> Result<()>;
     fn unroll(&mut self, smt_ctx: &mut smt::Context) -> Result<()>;
     /// Allows access to inputs, states, constraints and bad_state expressions.
-    fn get_at(&self, smt_ctx: &mut smt::Context, expr: ExprRef, k: u64) -> smt::SExpr;
+    fn get_at(
+        &self,
+        ctx: &Context,
+        smt_ctx: &mut smt::Context,
+        expr: ExprRef,
+        k: u64,
+    ) -> smt::SExpr;
 }
 
-pub struct UnrollSmtEncoding<'a> {
-    ctx: &'a ir::Context,
-    sys: &'a ir::TransitionSystem,
+pub struct UnrollSmtEncoding {
     current_step: Option<u64>,
-    inputs: Vec<(ExprRef, ir::SignalInfo)>,
-    /// outputs (depending on option), constraint and bad state signals (for now)
-    signals: Vec<(ExprRef, String)>,
+    /// all signals that need to be serialized separately, in the correct order
+    signals: Vec<SmtSignalInfo>,
+    /// order in which states need to be serialized
+    states: Vec<State>,
 }
 
-impl<'a> UnrollSmtEncoding<'a> {
-    pub fn new(ctx: &'a ir::Context, sys: &'a ir::TransitionSystem, include_outputs: bool) -> Self {
-        // remember inputs instead of constantly re-filtering them
-        let inputs = sys.get_signals(|s| s.kind == ir::SignalKind::Input);
-        // name all constraints and bad states
-        let mut signals = Vec::new();
-        for (ii, (expr, _)) in sys.constraints().iter().enumerate() {
-            signals.push((*expr, format!("__constraint_{ii}")));
-        }
-        for (ii, (expr, _)) in sys.bad_states().iter().enumerate() {
-            signals.push((*expr, format!("__bad_{ii}")));
-        }
-        // remember all outputs as well
-        if include_outputs {
-            for (expr, info) in sys.get_signals(|s| s.kind == SignalKind::Output) {
-                signals.push((expr, ctx.get(info.name.unwrap()).to_string()))
-            }
+struct SmtSignalInfo {
+    expr: ExprRef,
+    name: StringRef,
+    init_only: bool,
+    next_only: bool,
+}
+
+impl UnrollSmtEncoding {
+    pub fn new(ctx: &mut Context, sys: &TransitionSystem, include_outputs: bool) -> Self {
+        let ser_info = analyze_for_serialization(ctx, sys, include_outputs);
+        let mut signals = Vec::with_capacity(ser_info.signal_order.len());
+
+        for info in ser_info.signal_order.into_iter() {
+            let name = sys.get_signal(info.expr).and_then(|i| i.name).unwrap_or({
+                let base = format!("n{}", info.expr.index());
+                ctx.add_unique_str(&base)
+            });
+            signals.push(SmtSignalInfo {
+                expr: info.expr,
+                name,
+                init_only: info.init_only,
+                next_only: info.next_only,
+            })
         }
 
         Self {
-            ctx,
-            sys,
             current_step: None,
-            inputs,
             signals,
+            states: ser_info.state_order,
         }
     }
 
-    fn define_inputs_and_signals(&self, smt_ctx: &mut smt::Context, step: u64) -> Result<()> {
-        // declare inputs
-        for (input_sym, _) in self.inputs.iter() {
-            let name = self.name_at(*input_sym, step);
-            let tpe = convert_tpe(smt_ctx, input_sym.get_type(self.ctx));
-            smt_ctx.declare_const(escape_smt_identifier(&name), tpe)?;
+    fn define_signals(
+        &self,
+        ctx: &mut Context,
+        smt_ctx: &mut smt::Context,
+        step: u64,
+    ) -> Result<()> {
+        for signal in self.signals {
+            let tpe = convert_tpe(smt_ctx, signal.expr.get_type(ctx));
+            let name = name_at(ctx.get(signal.name), step);
+            if signal.expr.is_symbol(ctx) {
+                smt_ctx.declare_const(escape_smt_identifier(&name), tpe)?;
+            } else {
+                let value = self.expr_in_step(smt_ctx, signal.expr, step);
+                smt_ctx.define_const(escape_smt_identifier(&name), tpe, value)?;
+            }
         }
-
-        // define signals
-        for (expr, name) in self.signals.iter() {
-            let name = format!("{}@{}", name, step);
-            let tpe = convert_tpe(smt_ctx, expr.get_type(self.ctx));
-            let value = self.expr_in_step(smt_ctx, *expr, step);
-            smt_ctx.define_const(escape_smt_identifier(&name), tpe, value)?;
-        }
-
         Ok(())
     }
 
-    fn get_local_expr_symbol_at(
-        &self,
-        smt_ctx: &mut smt::Context,
-        e: ExprRef,
-        k: u64,
-    ) -> smt::SExpr {
-        // is it already a symbol?
-        if e.is_symbol(self.ctx) {
-            let name = self.name_at(e, k);
-            smt_ctx.atom(escape_smt_identifier(&name))
-        } else {
-            // find our local name
-            let base_name: &str = self
-                .signals
-                .iter()
-                .find(|(id, _)| *id == e)
-                .map(|(_, n)| n)
-                .unwrap();
-            let name = format!("{}@{}", base_name, k);
-            smt_ctx.atom(escape_smt_identifier(&name))
-        }
-    }
-
     fn expr_in_step(&self, smt_ctx: &mut smt::Context, expr: ExprRef, step: u64) -> smt::SExpr {
-        let rename = |name: &str| -> Cow<'_, str> { Cow::Owned(format!("{}@{}", name, step)) };
-        convert_expr(smt_ctx, self.ctx, expr, &rename)
+        // let rename = |name: &str| -> Cow<'_, str> { Cow::Owned(format!("{}@{}", name, step)) };
+        // convert_expr(smt_ctx, self.ctx, expr, &rename)
+        todo!("expr_in_step")
     }
+}
 
-    fn name_at(&self, sym: ExprRef, step: u64) -> String {
-        format!("{}@{}", sym.get_symbol_name(self.ctx).unwrap(), step)
-    }
+fn name_at(name: &str, step: u64) -> String {
+    format!("{}@{}", name, step)
 }
 
 fn convert_tpe(smt_ctx: &mut smt::Context, tpe: Type) -> smt::SExpr {
@@ -449,21 +432,22 @@ fn convert_tpe(smt_ctx: &mut smt::Context, tpe: Type) -> smt::SExpr {
     }
 }
 
-fn convert_expr<'a, 'f, F>(
+fn convert_expr(
     smt_ctx: &smt::Context,
-    ctx: &'a ir::Context,
-    expr: ExprRef,
-    rename_sym: &F,
-) -> smt::SExpr
-where
-    F: Fn(&'f str) -> Cow<'f, str>,
-    'a: 'f,
-{
-    match ctx.get(expr) {
+    ctx: &Context,
+    expr_ref_in: ExprRef,
+    patch_expr: &impl Fn(&ExprRef) -> Option<ExprRef>,
+) -> smt::SExpr {
+    // replace expressions on the flow (generally in order to inject a symbol or change a symbol name)
+    let expr_ref = match (patch_expr)(&expr_ref_in) {
+        Some(patched) => patched,
+        None => expr_ref_in,
+    };
+
+    match ctx.get(expr_ref) {
         Expr::BVSymbol { name, .. } => {
             let name_str = ctx.get(name);
-            let renamed = (rename_sym)(name_str);
-            smt_ctx.atom(escape_smt_identifier(&renamed))
+            smt_ctx.atom(escape_smt_identifier(name_str))
         }
         Expr::BVLiteral { value, width } if *width == 1 => {
             if *value == 1 {
@@ -484,7 +468,7 @@ where
             }
         }
         Expr::BVZeroExt { e, by, .. } => {
-            let e_expr = convert_expr(smt_ctx, ctx, *e, rename_sym);
+            let e_expr = convert_expr(smt_ctx, ctx, *e, patch_expr);
             match e.get_type(ctx) {
                 Type::BV(width) => {
                     if width == 1 {
@@ -506,7 +490,7 @@ where
         }
         Expr::BVSignExt { .. } => todo!(),
         Expr::BVSlice { e, hi, lo } => {
-            let e_expr = convert_expr(smt_ctx, ctx, *e, rename_sym);
+            let e_expr = convert_expr(smt_ctx, ctx, *e, patch_expr);
             // skip no-op bit extracts (this helps us avoid slices on boolean values)
             if *lo == 0 && e.get_type(ctx).get_bit_vector_width().unwrap() - 1 == *hi {
                 e_expr
@@ -522,7 +506,7 @@ where
             }
         }
         Expr::BVNot(e_ref, _) => {
-            let e = convert_expr(smt_ctx, ctx, *e_ref, rename_sym);
+            let e = convert_expr(smt_ctx, ctx, *e_ref, patch_expr);
             if e_ref.get_type(ctx).is_bool() {
                 smt_ctx.not(e)
             } else {
@@ -534,39 +518,39 @@ where
                 smt_ctx,
                 ctx,
                 *e_ref,
-                convert_expr(smt_ctx, ctx, *e_ref, rename_sym),
+                convert_expr(smt_ctx, ctx, *e_ref, patch_expr),
             );
             smt_ctx.negate(e)
         }
         Expr::BVEqual(a_ref, b_ref) => {
-            let a = convert_expr(smt_ctx, ctx, *a_ref, rename_sym);
-            let b = convert_expr(smt_ctx, ctx, *b_ref, rename_sym);
+            let a = convert_expr(smt_ctx, ctx, *a_ref, patch_expr);
+            let b = convert_expr(smt_ctx, ctx, *b_ref, patch_expr);
             smt_ctx.eq(a, b)
         }
         Expr::BVImplies(a_ref, b_ref) => {
             assert!(a_ref.get_type(ctx).is_bool());
-            let a = convert_expr(smt_ctx, ctx, *a_ref, rename_sym);
-            let b = convert_expr(smt_ctx, ctx, *b_ref, rename_sym);
+            let a = convert_expr(smt_ctx, ctx, *a_ref, patch_expr);
+            let b = convert_expr(smt_ctx, ctx, *b_ref, patch_expr);
             smt_ctx.imp(a, b)
         }
         Expr::BVGreater(a_ref, b_ref) => {
-            convert_simple_binop(true, smt_ctx, ctx, "bvugt", a_ref, b_ref, rename_sym)
+            convert_simple_binop(true, smt_ctx, ctx, "bvugt", a_ref, b_ref, patch_expr)
         }
         Expr::BVGreaterSigned(a_ref, b_ref) => {
-            convert_simple_binop(true, smt_ctx, ctx, "bvsgt", a_ref, b_ref, rename_sym)
+            convert_simple_binop(true, smt_ctx, ctx, "bvsgt", a_ref, b_ref, patch_expr)
         }
         Expr::BVGreaterEqual(a_ref, b_ref) => {
-            convert_simple_binop(true, smt_ctx, ctx, "bvuge", a_ref, b_ref, rename_sym)
+            convert_simple_binop(true, smt_ctx, ctx, "bvuge", a_ref, b_ref, patch_expr)
         }
         Expr::BVGreaterEqualSigned(a_ref, b_ref) => {
-            convert_simple_binop(true, smt_ctx, ctx, "bvsge", a_ref, b_ref, rename_sym)
+            convert_simple_binop(true, smt_ctx, ctx, "bvsge", a_ref, b_ref, patch_expr)
         }
         Expr::BVConcat(a_ref, b_ref, _) => {
-            convert_simple_binop(true, smt_ctx, ctx, "concat", a_ref, b_ref, rename_sym)
+            convert_simple_binop(true, smt_ctx, ctx, "concat", a_ref, b_ref, patch_expr)
         }
         Expr::BVAnd(a_ref, b_ref, _) => {
-            let a = convert_expr(smt_ctx, ctx, *a_ref, rename_sym);
-            let b = convert_expr(smt_ctx, ctx, *b_ref, rename_sym);
+            let a = convert_expr(smt_ctx, ctx, *a_ref, patch_expr);
+            let b = convert_expr(smt_ctx, ctx, *b_ref, patch_expr);
             if let Some(1) = a_ref.get_type(ctx).get_bit_vector_width() {
                 smt_ctx.and(a, b)
             } else {
@@ -574,8 +558,8 @@ where
             }
         }
         Expr::BVOr(a_ref, b_ref, _) => {
-            let a = convert_expr(smt_ctx, ctx, *a_ref, rename_sym);
-            let b = convert_expr(smt_ctx, ctx, *b_ref, rename_sym);
+            let a = convert_expr(smt_ctx, ctx, *a_ref, patch_expr);
+            let b = convert_expr(smt_ctx, ctx, *b_ref, patch_expr);
             if let Some(1) = a_ref.get_type(ctx).get_bit_vector_width() {
                 smt_ctx.or(a, b)
             } else {
@@ -583,8 +567,8 @@ where
             }
         }
         Expr::BVXor(a_ref, b_ref, _) => {
-            let a = convert_expr(smt_ctx, ctx, *a_ref, rename_sym);
-            let b = convert_expr(smt_ctx, ctx, *b_ref, rename_sym);
+            let a = convert_expr(smt_ctx, ctx, *a_ref, patch_expr);
+            let b = convert_expr(smt_ctx, ctx, *b_ref, patch_expr);
             if let Some(1) = a_ref.get_type(ctx).get_bit_vector_width() {
                 smt_ctx.xor(a, b)
             } else {
@@ -592,59 +576,56 @@ where
             }
         }
         Expr::BVShiftLeft(a_ref, b_ref, _) => {
-            convert_simple_binop(false, smt_ctx, ctx, "bvshl", a_ref, b_ref, rename_sym)
+            convert_simple_binop(false, smt_ctx, ctx, "bvshl", a_ref, b_ref, patch_expr)
         }
         Expr::BVArithmeticShiftRight(a_ref, b_ref, _) => {
-            convert_simple_binop(false, smt_ctx, ctx, "bvashr", a_ref, b_ref, rename_sym)
+            convert_simple_binop(false, smt_ctx, ctx, "bvashr", a_ref, b_ref, patch_expr)
         }
         Expr::BVShiftRight(a_ref, b_ref, _) => {
-            convert_simple_binop(false, smt_ctx, ctx, "bvlshr", a_ref, b_ref, rename_sym)
+            convert_simple_binop(false, smt_ctx, ctx, "bvlshr", a_ref, b_ref, patch_expr)
         }
         Expr::BVAdd(a_ref, b_ref, _) => {
-            convert_simple_binop(false, smt_ctx, ctx, "bvadd", a_ref, b_ref, rename_sym)
+            convert_simple_binop(false, smt_ctx, ctx, "bvadd", a_ref, b_ref, patch_expr)
         }
         Expr::BVMul(a_ref, b_ref, _) => {
-            convert_simple_binop(false, smt_ctx, ctx, "bvmul", a_ref, b_ref, rename_sym)
+            convert_simple_binop(false, smt_ctx, ctx, "bvmul", a_ref, b_ref, patch_expr)
         }
         Expr::BVSignedDiv(a_ref, b_ref, _) => {
-            convert_simple_binop(false, smt_ctx, ctx, "bvsdiv", a_ref, b_ref, rename_sym)
+            convert_simple_binop(false, smt_ctx, ctx, "bvsdiv", a_ref, b_ref, patch_expr)
         }
         Expr::BVUnsignedDiv(a_ref, b_ref, _) => {
-            convert_simple_binop(false, smt_ctx, ctx, "bvudiv", a_ref, b_ref, rename_sym)
+            convert_simple_binop(false, smt_ctx, ctx, "bvudiv", a_ref, b_ref, patch_expr)
         }
         Expr::BVSignedMod(a_ref, b_ref, _) => {
-            convert_simple_binop(false, smt_ctx, ctx, "bvsmod", a_ref, b_ref, rename_sym)
+            convert_simple_binop(false, smt_ctx, ctx, "bvsmod", a_ref, b_ref, patch_expr)
         }
         Expr::BVSignedRem(a_ref, b_ref, _) => {
-            convert_simple_binop(false, smt_ctx, ctx, "bvsrem", a_ref, b_ref, rename_sym)
+            convert_simple_binop(false, smt_ctx, ctx, "bvsrem", a_ref, b_ref, patch_expr)
         }
         Expr::BVUnsignedRem(a_ref, b_ref, _) => {
-            convert_simple_binop(false, smt_ctx, ctx, "bvurem", a_ref, b_ref, rename_sym)
+            convert_simple_binop(false, smt_ctx, ctx, "bvurem", a_ref, b_ref, patch_expr)
         }
         Expr::BVSub(a_ref, b_ref, _) => {
-            convert_simple_binop(false, smt_ctx, ctx, "bvsub", a_ref, b_ref, rename_sym)
+            convert_simple_binop(false, smt_ctx, ctx, "bvsub", a_ref, b_ref, patch_expr)
         }
         Expr::BVArrayRead { array, index, .. } => {
-            let a = convert_expr(smt_ctx, ctx, *array, rename_sym);
-            let i = convert_expr(smt_ctx, ctx, *index, rename_sym);
+            let a = convert_expr(smt_ctx, ctx, *array, patch_expr);
+            let i = convert_expr(smt_ctx, ctx, *index, patch_expr);
             smt_ctx.select(a, i)
         }
         Expr::BVIte { cond, tru, fals } => {
-            let c = convert_expr(smt_ctx, ctx, *cond, rename_sym);
-            let t = convert_expr(smt_ctx, ctx, *tru, rename_sym);
-            let f = convert_expr(smt_ctx, ctx, *fals, rename_sym);
+            let c = convert_expr(smt_ctx, ctx, *cond, patch_expr);
+            let t = convert_expr(smt_ctx, ctx, *tru, patch_expr);
+            let f = convert_expr(smt_ctx, ctx, *fals, patch_expr);
             smt_ctx.ite(c, t, f)
         }
-        Expr::ArraySymbol { name, .. } => {
-            let renamed = (rename_sym)(ctx.get(name));
-            smt_ctx.atom(escape_smt_identifier(&renamed))
-        }
+        Expr::ArraySymbol { name, .. } => smt_ctx.atom(escape_smt_identifier(ctx.get(name))),
         Expr::ArrayConstant {
             e,
             index_width,
             data_width,
         } => {
-            let e_expr = convert_expr(smt_ctx, ctx, *e, rename_sym);
+            let e_expr = convert_expr(smt_ctx, ctx, *e, patch_expr);
             let tpe = smt_ctx.array_sort(
                 smt_ctx.bit_vec_sort(smt_ctx.numeral(*index_width)),
                 smt_ctx.bit_vec_sort(smt_ctx.numeral(*data_width)),
@@ -652,50 +633,46 @@ where
             smt_ctx.const_array(tpe, e_expr)
         }
         Expr::ArrayEqual(a_ref, b_ref) => {
-            let a = convert_expr(smt_ctx, ctx, *a_ref, rename_sym);
-            let b = convert_expr(smt_ctx, ctx, *b_ref, rename_sym);
+            let a = convert_expr(smt_ctx, ctx, *a_ref, patch_expr);
+            let b = convert_expr(smt_ctx, ctx, *b_ref, patch_expr);
             smt_ctx.eq(a, b)
         }
         Expr::ArrayStore { array, index, data } => {
-            let a = convert_expr(smt_ctx, ctx, *array, rename_sym);
-            let i = convert_expr(smt_ctx, ctx, *index, rename_sym);
-            let d = convert_expr(smt_ctx, ctx, *data, rename_sym);
+            let a = convert_expr(smt_ctx, ctx, *array, patch_expr);
+            let i = convert_expr(smt_ctx, ctx, *index, patch_expr);
+            let d = convert_expr(smt_ctx, ctx, *data, patch_expr);
             smt_ctx.store(a, i, d)
         }
         Expr::ArrayIte { cond, tru, fals } => {
-            let c = convert_expr(smt_ctx, ctx, *cond, rename_sym);
-            let t = convert_expr(smt_ctx, ctx, *tru, rename_sym);
-            let f = convert_expr(smt_ctx, ctx, *fals, rename_sym);
+            let c = convert_expr(smt_ctx, ctx, *cond, patch_expr);
+            let t = convert_expr(smt_ctx, ctx, *tru, patch_expr);
+            let f = convert_expr(smt_ctx, ctx, *fals, patch_expr);
             smt_ctx.ite(c, t, f)
         }
     }
 }
 
 /// for all bin ops that require a conversion to bit-vec from bool
-fn convert_simple_binop<'a, 'f, F>(
+fn convert_simple_binop(
     do_not_convert_to_bool: bool,
     smt_ctx: &smt::Context,
-    ctx: &'a ir::Context,
+    ctx: &Context,
     op: &str,
     a_ref: &ExprRef,
     b_ref: &ExprRef,
-    rename_sym: &F,
-) -> smt::SExpr
-where
-    F: Fn(&'f str) -> Cow<'f, str>,
-    'a: 'f,
-{
+    patch_expr: &impl Fn(&ExprRef) -> Option<ExprRef>,
+) -> smt::SExpr {
     let a = ensure_bit_vec(
         smt_ctx,
         ctx,
         *a_ref,
-        convert_expr(smt_ctx, ctx, *a_ref, rename_sym),
+        convert_expr(smt_ctx, ctx, *a_ref, patch_expr),
     );
     let b = ensure_bit_vec(
         smt_ctx,
         ctx,
         *b_ref,
-        convert_expr(smt_ctx, ctx, *b_ref, rename_sym),
+        convert_expr(smt_ctx, ctx, *b_ref, patch_expr),
     );
     let res = smt_ctx.list(vec![smt_ctx.atom(op), a, b]);
     if !do_not_convert_to_bool && a_ref.get_bv_type(ctx).unwrap() == 1 {
@@ -708,7 +685,7 @@ where
 // adds a cast if the underlying value is 1-bit and thus represented as a Bool in SMT
 fn ensure_bit_vec(
     smt_ctx: &smt::Context,
-    ctx: &ir::Context,
+    ctx: &Context,
     e_ref: ExprRef,
     e: smt::SExpr,
 ) -> smt::SExpr {
@@ -728,19 +705,23 @@ fn to_bool(smt_ctx: &smt::Context, e: smt::SExpr) -> smt::SExpr {
     smt_ctx.eq(e, smt_ctx.binary(1, 1))
 }
 
-impl<'a> TransitionSystemEncoding for UnrollSmtEncoding<'a> {
+impl TransitionSystemEncoding for UnrollSmtEncoding {
     fn define_header(&self, _smt_ctx: &mut smt::Context) -> Result<()> {
         // nothing to do in this encoding
         Ok(())
     }
 
-    fn init(&mut self, smt_ctx: &mut smt::Context) -> Result<()> {
+    fn init(&mut self, ctx: &mut Context, smt_ctx: &mut smt::Context) -> Result<()> {
         assert!(self.current_step.is_none(), "init must be called only once");
         self.current_step = Some(0);
-        // declare initial states
-        for state in self.sys.states() {
-            let name = self.name_at(state.symbol, 0);
-            let out = convert_tpe(smt_ctx, state.symbol.get_type(self.ctx));
+
+        // define the inputs for the initial state and all signals derived from it
+        self.define_signals(ctx, smt_ctx, 0)?;
+
+        // declare/define initial states
+        for state in self.states.iter() {
+            let name = name_at(state.symbol.get_symbol_name(ctx).unwrap(), 0);
+            let out = convert_tpe(smt_ctx, state.symbol.get_type(ctx));
             match state.init {
                 Some(value) => {
                     let body = self.expr_in_step(smt_ctx, value, 0);
@@ -752,8 +733,6 @@ impl<'a> TransitionSystemEncoding for UnrollSmtEncoding<'a> {
             }
         }
 
-        // define the inputs for the initial state and all signals derived from it
-        self.define_inputs_and_signals(smt_ctx, 0)?;
         Ok(())
     }
 
@@ -777,15 +756,24 @@ impl<'a> TransitionSystemEncoding for UnrollSmtEncoding<'a> {
         }
 
         // declare the inputs and all signals derived from the new state and inputs
-        self.define_inputs_and_signals(smt_ctx, next_step)?;
+        self.define_signals(smt_ctx, next_step)?;
 
         // update step count
         self.current_step = Some(next_step);
         Ok(())
     }
-    fn get_at(&self, smt_ctx: &mut smt::Context, expr: ExprRef, k: u64) -> smt::SExpr {
+    fn get_at(
+        &self,
+        ctx: &Context,
+        smt_ctx: &mut smt::Context,
+        expr: ExprRef,
+        k: u64,
+    ) -> smt::SExpr {
         assert!(k <= self.current_step.unwrap_or(0));
-        self.get_local_expr_symbol_at(smt_ctx, expr, k)
+        // find signal
+        let info = self.signals.iter().find(|s| s.expr == expr).unwrap();
+        let name = name_at(ctx.get(info.name), k);
+        smt_ctx.atom(escape_smt_identifier(&name))
     }
 }
 
