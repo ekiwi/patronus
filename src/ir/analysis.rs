@@ -3,9 +3,9 @@
 // author: Kevin Laeufer <laeufer@berkeley.edu>
 
 use crate::ir::{
-    Context, Expr, ExprRef, GetNode, SignalInfo, SignalKind, State, StringRef, TransitionSystem,
+    Context, Expr, ExprRef, GetNode, SignalInfo, SignalKind, State, TransitionSystem,
 };
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::ops::Index;
 
 pub fn find_expr_with_multiple_uses(ctx: &Context, sys: &TransitionSystem) -> Vec<ExprRef> {
@@ -88,25 +88,6 @@ pub fn is_non_output_root_signal(info: &SignalInfo) -> bool {
     )
 }
 
-/// Counts how often expressions are used by state init expressions.
-/// Can be useful in order to find all expressions that are soly used for initialization.
-fn count_init_uses(ctx: &Context, sys: &TransitionSystem) -> Vec<UseCountInt> {
-    let mut use_count = ExprMetaData::default();
-    let mut todo = Vec::new();
-    for state in sys.states() {
-        if let Some(expr) = state.init {
-            *use_count.get_mut(expr) = 1; // "external" / root use
-            todo.push(expr);
-        }
-    }
-
-    while let Some(expr) = todo.pop() {
-        count_uses(ctx, expr, &mut use_count, &mut todo);
-    }
-
-    use_count.into_vec()
-}
-
 /// Counts how often expressions are used. This version _does not_ follow any state symbols.
 fn simple_count_expr_uses(ctx: &Context, roots: Vec<ExprRef>) -> Vec<UseCountInt> {
     let mut use_count = ExprMetaData::default();
@@ -148,7 +129,7 @@ pub struct RootInfo {
 }
 
 /// Indicates which context an expression is used in.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Uses {
     pub next: bool,
     pub init: bool,
@@ -191,7 +172,6 @@ pub fn analyze_for_serialization(
         todo.push(expr);
         other_count[expr.index()] = 100; // ensure that this expression will always be serialized
     }
-    let states: HashMap<ExprRef, &State> = HashMap::from_iter(sys.states().map(|s| (s.symbol, s)));
     for state in sys.states() {
         if let Some(expr) = state.next {
             todo.push(expr);
@@ -207,22 +187,14 @@ pub fn analyze_for_serialization(
     todo.reverse();
 
     // visit expressions
-    let mut children = Vec::with_capacity(4);
     while let Some(expr_ref) = todo.pop() {
         let expr = ctx.get(expr_ref);
 
         // check to see if all children are done
-        children.clear();
-        if let Some(state) = states.get(&expr_ref) {
-            state.collect_children(&mut children);
-        } else {
-            expr.collect_children(&mut children);
-        }
-
         let mut all_done = true;
         let mut num_children = 0;
-        for c in children.iter() {
-            if *visited.get(*c) {
+        expr.for_each_child(|c| {
+            if !*visited.get(*c) {
                 if all_done {
                     todo.push(expr_ref); // return expression to the todo list
                 }
@@ -231,14 +203,14 @@ pub fn analyze_for_serialization(
                 todo.push(*c);
             }
             num_children += 1;
-        }
+        });
 
         if !all_done {
             continue;
         }
 
         // add to signal order if applicable
-        if !expr.is_symbol() && num_children > 0 {
+        if num_children > 0 {
             let (uses, total_use) = analyze_use(expr_ref, &init_count, &next_count, &other_count);
             if total_use > 1 {
                 signal_order.push(RootInfo {

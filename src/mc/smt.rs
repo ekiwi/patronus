@@ -358,40 +358,59 @@ pub struct UnrollSmtEncoding {
     signals: Vec<Option<SmtSignalInfo>>,
     /// system states
     states: Vec<State>,
+    /// symbols of signals at every step
+    symbols_at: Vec<Vec<ExprRef>>,
 }
 
 #[derive(Clone)]
 struct SmtSignalInfo {
-    expr: ExprRef,
+    id: u16, // dense id
     name: StringRef,
     uses: Uses,
+    is_state: bool,
 }
 
 impl UnrollSmtEncoding {
     pub fn new(ctx: &mut Context, sys: &TransitionSystem, include_outputs: bool) -> Self {
         let ser_info = analyze_for_serialization(ctx, sys, include_outputs);
-        let max_index = ser_info
+        let max_ser_index = ser_info
             .signal_order
             .iter()
             .map(|s| s.expr.index())
             .max()
-            .unwrap();
-        let mut signals = vec![None; max_index];
+            .unwrap_or_default();
+        let max_state_index = sys
+            .states()
+            .map(|s| s.symbol.index())
+            .max()
+            .unwrap_or_default();
+        let signals_map_len = std::cmp::max(max_ser_index, max_state_index) + 1;
+        let mut signals = vec![None; signals_map_len];
         let mut signal_order = Vec::with_capacity(ser_info.signal_order.len());
 
-        for info in ser_info.signal_order.into_iter() {
-            let name = sys.get_signal(info.expr).and_then(|i| i.name).unwrap_or({
-                let base = format!("n{}", info.expr.index());
+        for (id, root) in ser_info.signal_order.into_iter().enumerate() {
+            signal_order.push(root.expr);
+            let name = sys.get_signal(root.expr).and_then(|i| i.name).unwrap_or({
+                let base = format!("n{}", root.expr.index());
                 ctx.add_unique_str(&base)
             });
             let info = SmtSignalInfo {
-                expr: info.expr,
+                id: id as u16,
                 name,
-                uses: info.uses,
+                uses: root.uses,
+                is_state: false,
             };
-            signal_order.push(info.expr);
-            let ii = info.expr.index();
-            signals[ii] = Some(info);
+            signals[root.expr.index()] = Some(info);
+        }
+        for (id, state) in sys.states().enumerate() {
+            let id = (id + signal_order.len()) as u16;
+            let info = SmtSignalInfo {
+                id,
+                name: state.symbol.get_symbol_name_ref(ctx).unwrap(),
+                uses: Uses::default(), // irrelevant
+                is_state: true,
+            };
+            signals[state.symbol.index()] = Some(info);
         }
         let current_step = None;
         let states = sys.states.clone();
@@ -401,6 +420,7 @@ impl UnrollSmtEncoding {
             signals,
             signal_order,
             states,
+            symbols_at: Vec::new(),
         }
     }
 
@@ -413,6 +433,9 @@ impl UnrollSmtEncoding {
     ) -> Result<()> {
         for expr in self.signal_order.iter() {
             let info = self.signals[expr.index()].as_ref().unwrap();
+            if info.is_state {
+                continue;
+            }
             let skip = !(filter)(info);
             if !skip {
                 let tpe = convert_tpe(smt_ctx, expr.get_type(ctx));
@@ -420,7 +443,7 @@ impl UnrollSmtEncoding {
                 if expr.is_symbol(ctx) {
                     smt_ctx.declare_const(escape_smt_identifier(&name), tpe)?;
                 } else {
-                    let value = self.expr_in_step(smt_ctx, *expr, step);
+                    let value = self.expr_in_step(ctx, smt_ctx, *expr, step);
                     smt_ctx.define_const(escape_smt_identifier(&name), tpe, value)?;
                 }
             }
@@ -428,10 +451,52 @@ impl UnrollSmtEncoding {
         Ok(())
     }
 
-    fn expr_in_step(&self, smt_ctx: &mut smt::Context, expr: ExprRef, step: u64) -> smt::SExpr {
-        // let rename = |name: &str| -> Cow<'_, str> { Cow::Owned(format!("{}@{}", name, step)) };
-        // convert_expr(smt_ctx, self.ctx, expr, &rename)
-        todo!("expr_in_step")
+    fn create_signal_symbols_in_step(&mut self, ctx: &mut Context, step: u64) {
+        assert_eq!(
+            self.symbols_at.len(),
+            step as usize,
+            "Missing or duplicate step!"
+        );
+        let mut syms = Vec::with_capacity(self.signal_order.len());
+        for signal in self
+            .signal_order
+            .iter()
+            .chain(self.states.iter().map(|s| &s.symbol))
+        {
+            let info = self.signals[signal.index()].as_ref().unwrap();
+            let name = name_at(ctx.get(info.name), step);
+            let name_ref = ctx.add_node(name);
+            let tpe = signal.get_type(ctx);
+            debug_assert_eq!(info.id as usize, syms.len());
+            syms.push(ctx.symbol(name_ref, tpe));
+        }
+        self.symbols_at.push(syms);
+    }
+
+    fn signal_sym_in_step(&self, expr: ExprRef, step: u64) -> Option<ExprRef> {
+        if let Some(Some(info)) = self.signals.get(expr.index()) {
+            Some(self.symbols_at[step as usize][info.id as usize])
+        } else {
+            None
+        }
+    }
+
+    fn expr_in_step(
+        &self,
+        ctx: &Context,
+        smt_ctx: &mut smt::Context,
+        expr: ExprRef,
+        step: u64,
+    ) -> smt::SExpr {
+        let patch = |e: &ExprRef| -> Option<ExprRef> {
+            // make sure the expression we are trying to serialize is not just defined as itself
+            if *e == expr {
+                None
+            } else {
+                self.signal_sym_in_step(*e, step)
+            }
+        };
+        convert_expr(smt_ctx, ctx, expr, &patch)
     }
 }
 
@@ -444,6 +509,7 @@ impl TransitionSystemEncoding for UnrollSmtEncoding {
     fn init(&mut self, ctx: &mut Context, smt_ctx: &mut smt::Context) -> Result<()> {
         assert!(self.current_step.is_none(), "init must be called only once");
         self.current_step = Some(0);
+        self.create_signal_symbols_in_step(ctx, 0);
 
         // define signals that are used to calculate init expressions
         self.define_signals(ctx, smt_ctx, 0, &|info: &SmtSignalInfo| info.uses.init)?;
@@ -454,7 +520,7 @@ impl TransitionSystemEncoding for UnrollSmtEncoding {
             let out = convert_tpe(smt_ctx, state.symbol.get_type(ctx));
             match state.init {
                 Some(value) => {
-                    let body = self.expr_in_step(smt_ctx, value, 0);
+                    let body = self.expr_in_step(ctx, smt_ctx, value, 0);
                     smt_ctx.define_const(escape_smt_identifier(&name), out, body)?;
                 }
                 None => {
@@ -474,6 +540,7 @@ impl TransitionSystemEncoding for UnrollSmtEncoding {
     fn unroll(&mut self, ctx: &mut Context, smt_ctx: &mut smt::Context) -> Result<()> {
         let prev_step = self.current_step.unwrap();
         let next_step = prev_step + 1;
+        self.create_signal_symbols_in_step(ctx, next_step);
 
         // define next state signals for previous state
         self.define_signals(ctx, smt_ctx, prev_step, &|info: &SmtSignalInfo| {
@@ -486,7 +553,7 @@ impl TransitionSystemEncoding for UnrollSmtEncoding {
             let out = convert_tpe(smt_ctx, state.symbol.get_type(ctx));
             match state.next {
                 Some(value) => {
-                    let body = self.expr_in_step(smt_ctx, value, prev_step);
+                    let body = self.expr_in_step(ctx, smt_ctx, value, prev_step);
                     smt_ctx.define_const(escape_smt_identifier(&name), out, body)?;
                 }
                 None => {
@@ -504,18 +571,17 @@ impl TransitionSystemEncoding for UnrollSmtEncoding {
         self.current_step = Some(next_step);
         Ok(())
     }
+
     fn get_at(
         &self,
         ctx: &Context,
         smt_ctx: &mut smt::Context,
         expr: ExprRef,
-        k: u64,
+        step: u64,
     ) -> smt::SExpr {
-        assert!(k <= self.current_step.unwrap_or(0));
-        // find signal
-        let info = self.signals[expr.index()].as_ref().unwrap();
-        let name = name_at(ctx.get(info.name), k);
-        smt_ctx.atom(escape_smt_identifier(&name))
+        assert!(step <= self.current_step.unwrap_or(0));
+        let sym = self.signal_sym_in_step(expr, step).unwrap();
+        convert_expr(smt_ctx, ctx, sym, &|_| None)
     }
 }
 
