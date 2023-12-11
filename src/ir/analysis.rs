@@ -2,9 +2,7 @@
 // released under BSD 3-Clause License
 // author: Kevin Laeufer <laeufer@berkeley.edu>
 
-use crate::ir::{
-    Context, Expr, ExprRef, GetNode, SignalInfo, SignalKind, State, TransitionSystem,
-};
+use crate::ir::{Context, Expr, ExprRef, GetNode, SignalInfo, SignalKind, State, TransitionSystem};
 use std::collections::HashMap;
 use std::ops::Index;
 
