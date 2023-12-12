@@ -5,7 +5,8 @@
 use super::{Context, Expr, ExprRef, GetNode};
 use crate::ir::analysis::UseCountInt;
 use crate::ir::{
-    count_expr_uses, is_usage_root_signal, SignalKind, TransitionSystem, Type, TypeCheck,
+    analyze_for_serialization, count_expr_uses, is_usage_root_signal, SignalKind, TransitionSystem,
+    Type, TypeCheck,
 };
 use std::io::Write;
 
@@ -434,63 +435,50 @@ fn serialize_transition_system<W: Write>(
         writeln!(writer, "{}", sys.name)?;
     }
 
-    let uses = count_expr_uses(ctx, sys);
+    let signals = analyze_for_serialization(ctx, sys, true).signal_order;
+    let max_id = signals
+        .iter()
+        .map(|s| s.expr.index())
+        .max()
+        .unwrap_or_default();
+    let mut names = vec![None; max_id + 1];
+    for root in signals.iter() {
+        let name = sys
+            .get_signal(root.expr)
+            .and_then(|i| i.name)
+            .map(|n| ctx.get(n).to_string())
+            .unwrap_or({ format!("%{}", root.expr.index()) });
+        names[root.expr.index()] = Some(name);
+    }
 
     // this closure allows us to use node names instead of serializing all sub-expressions
     let serialize_child =
         |expr_ref: &ExprRef, ctx: &Context, writer: &mut W| -> std::io::Result<bool> {
-            // for signals we need to decide whether to inline them
-            if let Some(signal_info) = sys.get_signal(*expr_ref) {
-                // we inline, if the expression has only one use
-                let use_count = uses.get(expr_ref.index()).cloned().unwrap_or_default();
-                // assert!(use_count > 0, "{expr_ref:?} {:?}", ctx.get(*expr_ref));
-
-                let expr = ctx.get(*expr_ref);
-                if inline_expr_for_transition_system(expr, use_count) {
-                    Ok(true) // recurse to child
-                } else {
-                    // print the name of the signal
-                    let maybe_name: Option<&str> = signal_info.name.map(|r| ctx.get(r));
-                    match maybe_name {
-                        None => write!(writer, "%{}", expr_ref.index())?,
-                        Some(name) => write!(writer, "{}", name)?,
-                    };
-                    Ok(false)
-                }
+            if let Some(Some(name)) = names.get(expr_ref.index()) {
+                write!(writer, "{}", name)?;
+                Ok(false)
             } else {
                 Ok(true) // recurse to child
             }
         };
 
     // signals
-    for (ii, signal) in sys.get_signals(|s| !matches!(s.kind, SignalKind::State)) {
-        let use_count = uses.get(ii.index()).copied().unwrap_or_default();
-        let expr = ctx.get(ii);
+    for root in signals.iter() {
+        let kind = sys
+            .get_signal(root.expr)
+            .map(|i| i.kind)
+            .unwrap_or(SignalKind::Node);
+        let name = names[root.expr.index()].as_ref().unwrap();
+        let expr = ctx.get(root.expr);
 
-        // skip any expressions that not used multiple times, unless it us a usage root signal
-        let is_input = signal.kind == SignalKind::Input;
-        if !is_input
-            && inline_expr_for_transition_system(expr, use_count)
-            && !is_usage_root_signal(&signal)
-        {
-            continue;
-        }
-
-        // print the kind
-        write!(writer, "{} ", signal.kind)?;
-
-        // we use the position as name if no name is available
-        if let Some(name_ref) = signal.name {
-            write!(writer, "{}", ctx.get(name_ref))?;
-        } else {
-            write!(writer, "%{}", ii.index())?;
-        }
+        // print the kind and name
+        write!(writer, "{} {}", kind, name)?;
 
         // print the type
         let tpe = expr.get_type(ctx);
         write!(writer, " : {tpe}",)?;
 
-        if is_input {
+        if kind == SignalKind::Input {
             writeln!(writer)?;
         } else {
             write!(writer, " = ")?;

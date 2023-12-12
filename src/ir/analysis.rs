@@ -173,11 +173,9 @@ pub fn analyze_for_serialization(
     for state in sys.states() {
         if let Some(expr) = state.next {
             todo.push(expr);
-            next_count[expr.index()] = 100; // ensure that this expression will always be serialized
         }
         if let Some(expr) = state.init {
             todo.push(expr);
-            init_count[expr.index()] = 100; // ensure that this expression will always be serialized
         }
     }
 
