@@ -488,9 +488,11 @@ impl UnrollSmtEncoding {
         expr: ExprRef,
         step: u64,
     ) -> smt::SExpr {
+        let expr_is_symbol = ctx.get(expr).is_symbol();
         let patch = |e: &ExprRef| -> Option<ExprRef> {
-            // make sure the expression we are trying to serialize is not just defined as itself
-            if *e == expr {
+            // If the expression we are trying to serialize is not a symbol, then wo
+            // do not just want to replace it with one, as that would lead us to a tautology!
+            if !expr_is_symbol && *e == expr {
                 None
             } else {
                 self.signal_sym_in_step(*e, step)
