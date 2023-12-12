@@ -147,7 +147,7 @@ pub fn analyze_for_serialization(
     include_outputs: bool,
 ) -> SerializeMeta {
     // first we identify which expressions are used for init and which are used for next
-    let (mut init_count, mut next_count, mut other_count) = init_counts(ctx, sys, include_outputs);
+    let (init_count, next_count, mut other_count) = init_counts(ctx, sys, include_outputs);
 
     let mut visited = ExprMetaData::default();
     let mut signal_order = Vec::new();

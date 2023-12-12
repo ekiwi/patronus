@@ -189,6 +189,7 @@ type StringInternerU16 = string_interner::StringInterner<
 >;
 
 /// The actual context implementation.
+#[derive(Clone)]
 pub struct Context {
     strings: StringInternerU16,
     exprs: indexmap::IndexSet<Expr>,
