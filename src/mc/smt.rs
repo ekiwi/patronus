@@ -14,12 +14,21 @@ pub struct SmtSolverCmd {
     pub name: &'static str,
     pub args: &'static [&'static str],
     pub supports_uf: bool,
+    pub supports_check_assuming: bool,
 }
 
 pub const BITWUZLA_CMD: SmtSolverCmd = SmtSolverCmd {
     name: "bitwuzla",
     args: &["--smt2", "--incremental"],
     supports_uf: false,
+    supports_check_assuming: true,
+};
+
+pub const YICES2_CMD: SmtSolverCmd = SmtSolverCmd {
+    name: "yices-smt2",
+    args: &["--incremental"],
+    supports_uf: false, // actually true, but ignoring for now
+    supports_check_assuming: false,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -104,7 +113,8 @@ impl SmtModelChecker {
             if self.opts.check_bad_states_individually {
                 for (_bs_id, (expr_ref, _)) in bad_states.iter().enumerate() {
                     let expr = enc.get_at(ctx, &mut smt_ctx, *expr_ref, k);
-                    let res = smt_ctx.check_assuming([expr])?;
+                    let res =
+                        check_assuming(&mut smt_ctx, expr, self.solver.supports_check_assuming)?;
 
                     if res == smt::Response::Sat {
                         let wit = self.get_witness(
@@ -125,7 +135,8 @@ impl SmtModelChecker {
                     .map(|(expr_ref, _)| enc.get_at(ctx, &mut smt_ctx, *expr_ref, k))
                     .collect::<Vec<_>>();
                 let any_bad = smt_ctx.or_many(all_bads);
-                let res = smt_ctx.check_assuming([any_bad])?;
+                let res =
+                    check_assuming(&mut smt_ctx, any_bad, self.solver.supports_check_assuming)?;
 
                 if res == smt::Response::Sat {
                     let wit = self.get_witness(
@@ -214,6 +225,23 @@ impl SmtModelChecker {
         }
 
         Ok(wit)
+    }
+}
+
+#[inline]
+pub fn check_assuming(
+    smt_ctx: &mut smt::Context,
+    assumption: smt::SExpr,
+    native_support: bool,
+) -> std::io::Result<smt::Response> {
+    if native_support {
+        smt_ctx.check_assuming([assumption])
+    } else {
+        smt_ctx.push()?;
+        smt_ctx.assert(assumption)?;
+        let res = smt_ctx.check()?;
+        smt_ctx.pop()?;
+        Ok(res)
     }
 }
 

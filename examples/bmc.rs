@@ -2,7 +2,7 @@
 // released under BSD 3-Clause License
 // author: Kevin Laeufer <laeufer@berkeley.edu>
 
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use libpatron::ir::*;
 use libpatron::*;
 
@@ -12,12 +12,25 @@ use libpatron::*;
 #[command(version)]
 #[command(about = "Performs bounded model checking on a btor2 file.", long_about = None)]
 struct Args {
+    #[arg(
+        long,
+        value_enum,
+        default_value = "bitwuzla",
+        help = "the SMT solver to use"
+    )]
+    solver: Solver,
     #[arg(short, long)]
     verbose: bool,
     #[arg(short, long)]
     dump_smt: bool,
     #[arg(value_name = "BTOR2", index = 1)]
     filename: String,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
+pub enum Solver {
+    Bitwuzla,
+    Yices2,
 }
 
 fn main() {
@@ -35,7 +48,10 @@ fn main() {
         check_bad_states_individually: true,
         save_smt_replay: args.dump_smt,
     };
-    let solver = mc::BITWUZLA_CMD;
+    let solver = match args.solver {
+        Solver::Bitwuzla => mc::BITWUZLA_CMD,
+        Solver::Yices2 => mc::YICES2_CMD,
+    };
     if args.verbose {
         println!(
             "Checking up to {k_max} using {} and the following options:\n{checker_opts:?}",

@@ -26,8 +26,55 @@ jobs:
     - name: Run tests
       run: cargo test --verbose
 
-  examples:
-    name: Try Examples
+  bmc:
+    name: Test BMC Example
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      matrix:
+        toolchain:
+          - stable
+        solver:
+          - bitwuzla
+          - yices2
+
+    steps:
+      - uses: YosysHQ/setup-oss-cad-suite@v2
+        with:
+          version: '2023-11-15'
+      - name: Update Rust to ${{ matrix.toolchain }}
+        run: rustup update ${{ matrix.toolchain }} && rustup default ${{ matrix.toolchain }}
+      - uses: actions/checkout@v3
+      - name: Build
+        run: cargo build --verbose --examples --release
+      - name: bmc Quiz1
+        run: |
+          cargo run --release --example bmc -- --solver=${{ matrix.solver }} inputs/chiseltest/Quiz1.btor > Quiz1.wit
+          btorsim inputs/chiseltest/Quiz1.btor Quiz1.wit
+      - name: bmc Quiz1 (with additional assumption)
+        run: |
+          cargo run --release --example bmc -- --solver=${{ matrix.solver }} inputs/chiseltest/Quiz1.unsat.btor
+      - name: bmc const array example
+        run: |
+          cargo run --release --example bmc -- --solver=${{ matrix.solver }} inputs/chiseltest/const_array_example.btor > const_array_example.wit
+          btorsim inputs/chiseltest/const_array_example.btor const_array_example.wit
+      - name: bmc Quiz2
+        run: |
+          cargo run --release --example bmc -- --solver=${{ matrix.solver }} inputs/chiseltest/Quiz2.sat.btor > Quiz2.sat.wit
+          btorsim inputs/chiseltest/Quiz2.sat.btor Quiz2.sat.wit
+      - name: bmc Quiz2 (with counter reset value)
+        run: |
+          cargo run --release --example bmc -- --solver=${{ matrix.solver }} inputs/chiseltest/Quiz2.unsat.btor
+      - name: bmc Quiz4
+        run: |
+          cargo run --release --example bmc -- --solver=${{ matrix.solver }} inputs/chiseltest/Quiz4.sat.btor > Quiz4.sat.wit
+          btorsim inputs/chiseltest/Quiz4.sat.btor Quiz4.sat.wit
+      - name: bmc Quiz4 (with counter reset value)
+        run: |
+          cargo run --release --example bmc -- --solver=${{ matrix.solver }} inputs/chiseltest/Quiz4.unsat.btor
+
+  sim:
+    name: Test SIM Example
     runs-on: ubuntu-latest
     timeout-minutes: 5
     strategy:
@@ -44,31 +91,6 @@ jobs:
       - uses: actions/checkout@v3
       - name: Build
         run: cargo build --verbose --examples --release
-      - name: bmc Quiz1
-        run: |
-          cargo run --release --example bmc -- inputs/chiseltest/Quiz1.btor > Quiz1.wit
-          btorsim inputs/chiseltest/Quiz1.btor Quiz1.wit
-      - name: bmc Quiz1 (with additional assumption)
-        run: |
-          cargo run --release --example bmc -- inputs/chiseltest/Quiz1.unsat.btor
-      - name: bmc const array example
-        run: |
-          cargo run --release --example bmc -- inputs/chiseltest/const_array_example.btor > const_array_example.wit
-          btorsim inputs/chiseltest/const_array_example.btor const_array_example.wit
-      - name: bmc Quiz2
-        run: |
-          cargo run --release --example bmc -- inputs/chiseltest/Quiz2.sat.btor > Quiz2.sat.wit
-          btorsim inputs/chiseltest/Quiz2.sat.btor Quiz2.sat.wit
-      - name: bmc Quiz2 (with counter reset value)
-        run: |
-          cargo run --release --example bmc -- inputs/chiseltest/Quiz2.unsat.btor
-      - name: bmc Quiz4
-        run: |
-          cargo run --release --example bmc -- inputs/chiseltest/Quiz4.sat.btor > Quiz4.sat.wit
-          btorsim inputs/chiseltest/Quiz4.sat.btor Quiz4.sat.wit
-      - name: bmc Quiz4 (with counter reset value)
-        run: |
-          cargo run --release --example bmc -- inputs/chiseltest/Quiz4.unsat.btor
       - name: simulate mux
         run: |
           cargo run --release --example sim -- --testbench=inputs/repair/mux_4_1.original.tb.csv inputs/repair/mux_4_1.original.btor

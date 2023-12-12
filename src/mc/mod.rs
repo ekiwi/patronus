@@ -8,6 +8,6 @@ mod types;
 pub use crate::sim::interpreter::Simulator;
 pub use smt::{
     get_smt_value, ModelCheckResult, SmtModelChecker, SmtModelCheckerOptions, SmtSolverCmd,
-    TransitionSystemEncoding, UnrollSmtEncoding, BITWUZLA_CMD,
+    TransitionSystemEncoding, UnrollSmtEncoding, BITWUZLA_CMD, YICES2_CMD,
 };
 pub use types::{parse_big_uint_from_bit_string, Witness, WitnessArray, WitnessValue};
