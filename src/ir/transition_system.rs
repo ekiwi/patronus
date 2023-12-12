@@ -65,6 +65,13 @@ pub struct State {
     pub init: Option<ExprRef>,
     pub next: Option<ExprRef>,
 }
+
+impl State {
+    pub fn is_const(&self) -> bool {
+        self.next.map(|n| n == self.symbol).unwrap_or(false)
+    }
+}
+
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
 pub struct StateRef(usize);
 

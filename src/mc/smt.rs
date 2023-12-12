@@ -364,10 +364,13 @@ pub struct UnrollSmtEncoding {
 
 #[derive(Clone)]
 struct SmtSignalInfo {
-    id: u16, // dense id
+    /// monotonically increasing unique id
+    id: u16,
     name: StringRef,
     uses: Uses,
     is_state: bool,
+    /// denotes states that do not change and thus can be represented by a single symbol
+    is_const: bool,
 }
 
 impl UnrollSmtEncoding {
@@ -399,6 +402,7 @@ impl UnrollSmtEncoding {
                 name,
                 uses: root.uses,
                 is_state: false,
+                is_const: false,
             };
             signals[root.expr.index()] = Some(info);
         }
@@ -409,6 +413,7 @@ impl UnrollSmtEncoding {
                 name: state.symbol.get_symbol_name_ref(ctx).unwrap(),
                 uses: Uses::default(), // irrelevant
                 is_state: true,
+                is_const: state.is_const(),
             };
             signals[state.symbol.index()] = Some(info);
         }
@@ -464,8 +469,12 @@ impl UnrollSmtEncoding {
             .chain(self.states.iter().map(|s| &s.symbol))
         {
             let info = self.signals[signal.index()].as_ref().unwrap();
-            let name = name_at(ctx.get(info.name), step);
-            let name_ref = ctx.add_node(name);
+            let name_ref = if info.is_const {
+                info.name
+            } else {
+                let name = name_at(ctx.get(info.name), step);
+                ctx.add_node(name)
+            };
             let tpe = signal.get_type(ctx);
             debug_assert_eq!(info.id as usize, syms.len());
             syms.push(ctx.symbol(name_ref, tpe));
@@ -518,7 +527,12 @@ impl TransitionSystemEncoding for UnrollSmtEncoding {
 
         // declare/define initial states
         for state in self.states.iter() {
-            let name = name_at(state.symbol.get_symbol_name(ctx).unwrap(), 0);
+            let base_name = state.symbol.get_symbol_name(ctx).unwrap();
+            let name = if state.is_const() {
+                base_name.to_string()
+            } else {
+                name_at(base_name, 0)
+            };
             let out = convert_tpe(smt_ctx, state.symbol.get_type(ctx));
             match state.init {
                 Some(value) => {
@@ -555,8 +569,12 @@ impl TransitionSystemEncoding for UnrollSmtEncoding {
             let out = convert_tpe(smt_ctx, state.symbol.get_type(ctx));
             match state.next {
                 Some(value) => {
-                    let body = self.expr_in_step(ctx, smt_ctx, value, prev_step);
-                    smt_ctx.define_const(escape_smt_identifier(&name), out, body)?;
+                    let is_const = value == state.symbol;
+                    // constant states never change from their initial value
+                    if !is_const {
+                        let body = self.expr_in_step(ctx, smt_ctx, value, prev_step);
+                        smt_ctx.define_const(escape_smt_identifier(&name), out, body)?;
+                    }
                 }
                 None => {
                     smt_ctx.declare_const(escape_smt_identifier(&name), out)?;
