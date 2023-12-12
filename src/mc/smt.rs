@@ -113,8 +113,7 @@ impl SmtModelChecker {
             if self.opts.check_bad_states_individually {
                 for (_bs_id, (expr_ref, _)) in bad_states.iter().enumerate() {
                     let expr = enc.get_at(ctx, &mut smt_ctx, *expr_ref, k);
-                    let res =
-                        check_assuming(&mut smt_ctx, expr, self.solver.supports_check_assuming)?;
+                    let res = check_assuming(&mut smt_ctx, expr, &self.solver)?;
 
                     if res == smt::Response::Sat {
                         let wit = self.get_witness(
@@ -128,6 +127,7 @@ impl SmtModelChecker {
                         )?;
                         return Ok(ModelCheckResult::Fail(wit));
                     }
+                    check_assuming_end(&mut smt_ctx, &self.solver)?;
                 }
             } else {
                 let all_bads = bad_states
@@ -135,8 +135,7 @@ impl SmtModelChecker {
                     .map(|(expr_ref, _)| enc.get_at(ctx, &mut smt_ctx, *expr_ref, k))
                     .collect::<Vec<_>>();
                 let any_bad = smt_ctx.or_many(all_bads);
-                let res =
-                    check_assuming(&mut smt_ctx, any_bad, self.solver.supports_check_assuming)?;
+                let res = check_assuming(&mut smt_ctx, any_bad, &self.solver)?;
 
                 if res == smt::Response::Sat {
                     let wit = self.get_witness(
@@ -150,6 +149,7 @@ impl SmtModelChecker {
                     )?;
                     return Ok(ModelCheckResult::Fail(wit));
                 }
+                check_assuming_end(&mut smt_ctx, &self.solver)?;
             }
 
             // advance
@@ -232,16 +232,28 @@ impl SmtModelChecker {
 pub fn check_assuming(
     smt_ctx: &mut smt::Context,
     assumption: smt::SExpr,
-    native_support: bool,
+    solver: &SmtSolverCmd,
 ) -> std::io::Result<smt::Response> {
-    if native_support {
+    if solver.supports_check_assuming {
         smt_ctx.check_assuming([assumption])
     } else {
-        smt_ctx.push()?;
+        smt_ctx.push_many(1)?; // add new assertion
         smt_ctx.assert(assumption)?;
         let res = smt_ctx.check()?;
-        smt_ctx.pop()?;
         Ok(res)
+    }
+}
+
+// pops context for solver that do not not support check assuming
+#[inline]
+pub fn check_assuming_end(
+    smt_ctx: &mut smt::Context,
+    solver: &SmtSolverCmd,
+) -> std::io::Result<()> {
+    if !solver.supports_check_assuming {
+        smt_ctx.pop_many(1)
+    } else {
+        Ok(())
     }
 }
 
