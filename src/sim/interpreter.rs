@@ -301,6 +301,10 @@ fn compile(ctx: &Context, sys: &TransitionSystem, init_mode: bool, do_trace: boo
             if let Some(next) = get_state_next(state) {
                 todo.push(next);
             }
+            // make sure that we allocate space for all states (even if they are not used)
+            // TODO: this makes things a little less optimized, but makes it easier for users to
+            //       be able to get all states
+            todo.push(state.symbol)
         }
         // calculate all other signals that might be observable
         for (signal_expr, _) in sys.get_signals(is_usage_root_signal) {
