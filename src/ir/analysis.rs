@@ -184,6 +184,10 @@ pub fn analyze_for_serialization(
 
     // visit expressions
     while let Some(expr_ref) = todo.pop() {
+        if *visited.get(expr_ref) {
+            continue;
+        }
+
         let expr = ctx.get(expr_ref);
 
         // check to see if all children are done
