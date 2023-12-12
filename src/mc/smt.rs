@@ -175,7 +175,7 @@ impl SmtModelChecker {
         // which bad states did we hit?
         for (bad_idx, (expr, _)) in bad_states.iter().enumerate() {
             let sym_at = enc.get_at(ctx, smt_ctx, *expr, k_max);
-            let value = get_smt_value(smt_ctx, sym_at)?;
+            let value = get_smt_value(smt_ctx, sym_at, expr.get_type(ctx))?;
             if !value.is_zero() {
                 // was the bad state condition fulfilled?
                 wit.failed_safety.push(bad_idx as u32);
@@ -185,7 +185,7 @@ impl SmtModelChecker {
         // collect initial values
         for (state_idx, state) in sys.states().enumerate() {
             let sym_at = enc.get_at(ctx, smt_ctx, state.symbol, 0);
-            let value = get_smt_value(smt_ctx, sym_at)?;
+            let value = get_smt_value(smt_ctx, sym_at, state.symbol.get_type(ctx))?;
             // we assume that state ids are monotonically increasing with +1
             assert_eq!(wit.init.len(), state_idx);
             wit.init.push(Some(value));
@@ -207,7 +207,7 @@ impl SmtModelChecker {
             let mut input_values = Vec::default();
             for (input, _) in inputs.iter() {
                 let sym_at = enc.get_at(ctx, smt_ctx, *input, k);
-                let value = get_smt_value(smt_ctx, sym_at)?;
+                let value = get_smt_value(smt_ctx, sym_at, input.get_type(ctx))?;
                 input_values.push(Some(value));
             }
             wit.inputs.push(input_values);
@@ -257,11 +257,17 @@ pub fn check_assuming_end(
     }
 }
 
-pub fn get_smt_value(smt_ctx: &mut smt::Context, expr: smt::SExpr) -> Result<WitnessValue> {
+pub fn get_smt_value(
+    smt_ctx: &mut smt::Context,
+    expr: smt::SExpr,
+    tpe: Type,
+) -> Result<WitnessValue> {
     let smt_value = smt_ctx.get_value(vec![expr])?[0].1;
-    let res = match parse_smt_bit_vec(smt_ctx, smt_value) {
-        Some((value, width)) => WitnessValue::Scalar(value, width),
-        None => WitnessValue::Array(parse_smt_array(smt_ctx, smt_value).unwrap()),
+    let res = if tpe.is_array() {
+        WitnessValue::Array(parse_smt_array(smt_ctx, smt_value).unwrap())
+    } else {
+        let (value, width) = parse_smt_bit_vec(smt_ctx, smt_value).unwrap();
+        WitnessValue::Scalar(value, width)
     };
     Ok(res)
 }
@@ -270,6 +276,10 @@ fn parse_smt_bit_vec(smt_ctx: &smt::Context, expr: smt::SExpr) -> Option<(BigUin
     let data = smt_ctx.get(expr);
     match data {
         smt::SExprData::Atom(value) => Some(smt_bit_vec_str_to_value(value)),
+        // unwraps expressions like: ((a true))
+        smt::SExprData::List([inner]) => parse_smt_bit_vec(smt_ctx, *inner),
+        // unwraps expressions like: (a true)
+        smt::SExprData::List([_, value]) => parse_smt_bit_vec(smt_ctx, *value),
         _ => None,
     }
 }
@@ -1108,5 +1118,16 @@ mod tests {
                 (BigUint::from(store2_index), BigUint::from(store2_data))
             ]
         );
+    }
+
+    #[test]
+    fn test_yices2_result_parsing() {
+        // yices will produce responses like this for a `get-value` call:
+        // ((n9@0 true))
+        let ctx = ContextBuilder::new().build().unwrap();
+        let r0 = ctx.list(vec![ctx.list(vec![ctx.atom("n9@0"), ctx.true_()])]);
+        let (val0, width0) = parse_smt_bit_vec(&ctx, r0).unwrap();
+        assert_eq!(val0, BigUint::from(1u8));
+        assert_eq!(width0, 1);
     }
 }

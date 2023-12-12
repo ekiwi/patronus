@@ -55,6 +55,7 @@ jobs:
         run: |
           cargo run --release --example bmc -- --solver=${{ matrix.solver }} inputs/chiseltest/Quiz1.unsat.btor
       - name: bmc const array example
+        if: ${{ matrix.solver != yices2 }} # yices2 returns memory values that cannot be parsed
         run: |
           cargo run --release --example bmc -- --solver=${{ matrix.solver }} inputs/chiseltest/const_array_example.btor > const_array_example.wit
           btorsim inputs/chiseltest/const_array_example.btor const_array_example.wit
