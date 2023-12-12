@@ -397,6 +397,7 @@ struct SmtSignalInfo {
     name: StringRef,
     uses: Uses,
     is_state: bool,
+    is_input: bool,
     /// denotes states that do not change and thus can be represented by a single symbol
     is_const: bool,
 }
@@ -425,11 +426,16 @@ impl UnrollSmtEncoding {
                 let base = format!("n{}", root.expr.index());
                 ctx.add_unique_str(&base)
             });
+            let is_input = sys
+                .get_signal(root.expr)
+                .map(|i| i.kind == SignalKind::Input)
+                .unwrap_or(false);
             let info = SmtSignalInfo {
                 id: id as u16,
                 name,
                 uses: root.uses,
                 is_state: false,
+                is_input,
                 is_const: false,
             };
             signals[root.expr.index()] = Some(info);
@@ -441,6 +447,7 @@ impl UnrollSmtEncoding {
                 name: state.symbol.get_symbol_name_ref(ctx).unwrap(),
                 uses: Uses::default(), // irrelevant
                 is_state: true,
+                is_input: false,
                 is_const: state.is_const(),
             };
             signals[state.symbol.index()] = Some(info);
@@ -573,9 +580,9 @@ impl TransitionSystemEncoding for UnrollSmtEncoding {
             }
         }
 
-        // define other signals
+        // define other signals including inputs
         self.define_signals(ctx, smt_ctx, 0, &|info: &SmtSignalInfo| {
-            info.uses.other && !info.uses.init
+            (info.uses.other || info.is_input) && !info.uses.init
         })?;
 
         Ok(())
@@ -588,7 +595,7 @@ impl TransitionSystemEncoding for UnrollSmtEncoding {
 
         // define next state signals for previous state
         self.define_signals(ctx, smt_ctx, prev_step, &|info: &SmtSignalInfo| {
-            info.uses.next && !info.uses.other
+            info.uses.next && !info.uses.other && !info.is_input
         })?;
 
         // define next state
@@ -610,9 +617,11 @@ impl TransitionSystemEncoding for UnrollSmtEncoding {
             }
         }
 
-        // define other signals
+        // define other signals and inputs
+        // we always define all inputs, even if they are only used in the "next" expression
+        // since our witness extraction relies on them being available
         self.define_signals(ctx, smt_ctx, next_step, &|info: &SmtSignalInfo| {
-            info.uses.other
+            info.uses.other || info.is_input
         })?;
 
         // update step count
