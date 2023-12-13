@@ -784,13 +784,13 @@ fn convert_expr(
         Expr::BVGreater(a_ref, b_ref) => {
             convert_simple_binop(true, smt_ctx, ctx, "bvugt", a_ref, b_ref, patch_expr)
         }
-        Expr::BVGreaterSigned(a_ref, b_ref) => {
+        Expr::BVGreaterSigned(a_ref, b_ref, _) => {
             convert_simple_binop(true, smt_ctx, ctx, "bvsgt", a_ref, b_ref, patch_expr)
         }
         Expr::BVGreaterEqual(a_ref, b_ref) => {
             convert_simple_binop(true, smt_ctx, ctx, "bvuge", a_ref, b_ref, patch_expr)
         }
-        Expr::BVGreaterEqualSigned(a_ref, b_ref) => {
+        Expr::BVGreaterEqualSigned(a_ref, b_ref, _) => {
             convert_simple_binop(true, smt_ctx, ctx, "bvsge", a_ref, b_ref, patch_expr)
         }
         Expr::BVConcat(a_ref, b_ref, _) => {

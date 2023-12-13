@@ -265,6 +265,23 @@ pub(crate) fn cmp_greater(a: &[Word], b: &[Word]) -> bool {
     is_greater_and_not_less(a, b).unwrap_or(false)
 }
 
+#[inline]
+fn is_neg(src: &[Word], width: WidthInt) -> bool {
+    let msb_bit_id = (width - 1) % WidthInt::BITS;
+    let msb_bit_value = (src.last().unwrap() >> msb_bit_id) & 1;
+    msb_bit_value == 1
+}
+
+#[inline]
+pub(crate) fn cmp_greater_signed(a: &[Word], b: &[Word], width: WidthInt) -> bool {
+    match (is_neg(a, width), is_neg(b, width)) {
+        (true, false) => false, // -|a| < |b|
+        (false, true) => true,  // |a| > -|b|
+        (false, false) => cmp_greater(a, b),
+        (true, true) => cmp_greater(a, b), // TODO: does this actually work?
+    }
+}
+
 /// `Some(true)` if `a > b`, `Some(false)` if `a < b`, None if `a == b`
 #[inline]
 fn is_greater_and_not_less(a: &[Word], b: &[Word]) -> Option<bool> {
@@ -281,6 +298,16 @@ fn is_greater_and_not_less(a: &[Word], b: &[Word]) -> Option<bool> {
 #[inline]
 pub(crate) fn cmp_greater_equal(a: &[Word], b: &[Word]) -> bool {
     is_greater_and_not_less(a, b).unwrap_or(true)
+}
+
+#[inline]
+pub(crate) fn cmp_greater_equal_signed(a: &[Word], b: &[Word], width: WidthInt) -> bool {
+    match (is_neg(a, width), is_neg(b, width)) {
+        (true, false) => false, // -|a| < |b|
+        (false, true) => true,  // |a| > -|b|
+        (false, false) => cmp_greater_equal(a, b),
+        (true, true) => cmp_greater_equal(a, b), // TODO: does this actually work?
+    }
 }
 
 #[inline]
@@ -775,5 +802,65 @@ mod tests {
         do_test_sub(35, &mut rng);
         do_test_sub(35, &mut rng);
         do_test_sub(1789, &mut rng);
+    }
+
+    fn do_test_cmp(
+        a: BigInt,
+        b: BigInt,
+        width: WidthInt,
+        our: fn(&[Word], &[Word], WidthInt) -> bool,
+        big: fn(BigInt, BigInt) -> bool,
+    ) {
+        let a_vec = from_big_int(a.clone(), width);
+        let b_vec = from_big_int(b.clone(), width);
+        let res_bool = (our)(&a_vec, &b_vec, width);
+        let expected_bool = (big)(a.clone(), b.clone());
+        assert_eq!(expected_bool, res_bool, "{a} {b} {expected_bool}");
+    }
+
+    fn do_test_cmp_greater(a: BigUint, b: BigUint, width: WidthInt) {
+        let a_signed = BigInt::from_biguint(Sign::Plus, a);
+        let b_signed = BigInt::from_biguint(Sign::Plus, b);
+        do_test_cmp(
+            a_signed,
+            b_signed,
+            width,
+            |a, b, _| cmp_greater(a, b),
+            |a, b| a > b,
+        )
+    }
+    fn do_test_cmp_greater_signed(a: BigInt, b: BigInt, width: WidthInt) {
+        do_test_cmp(a, b, width, cmp_greater_signed, |a, b| a > b)
+    }
+
+    fn do_test_cmp_greater_equal_signed(a: BigInt, b: BigInt, width: WidthInt) {
+        do_test_cmp(a, b, width, cmp_greater_equal_signed, |a, b| a >= b)
+    }
+
+    #[test]
+    fn test_cmp_greater() {
+        do_test_cmp_greater(BigUint::from(4u32), BigUint::from(3u32), 8);
+    }
+
+    #[test]
+    fn test_cmp_greater_signed() {
+        do_test_cmp_greater_signed(BigInt::from(-4), BigInt::from(3), 8);
+        do_test_cmp_greater_signed(BigInt::from(4), BigInt::from(-3), 8);
+        do_test_cmp_greater_signed(BigInt::from(4), BigInt::from(3), 8);
+        do_test_cmp_greater_signed(BigInt::from(3), BigInt::from(4), 8);
+        do_test_cmp_greater_signed(BigInt::from(-4), BigInt::from(-3), 8);
+        do_test_cmp_greater_signed(BigInt::from(-3), BigInt::from(-4), 8);
+    }
+
+    #[test]
+    fn test_cmp_greater_equal_signed() {
+        do_test_cmp_greater_equal_signed(BigInt::from(-4), BigInt::from(3), 8);
+        do_test_cmp_greater_equal_signed(BigInt::from(4), BigInt::from(-3), 8);
+        do_test_cmp_greater_equal_signed(BigInt::from(4), BigInt::from(3), 8);
+        do_test_cmp_greater_equal_signed(BigInt::from(3), BigInt::from(4), 8);
+        do_test_cmp_greater_equal_signed(BigInt::from(-4), BigInt::from(-3), 8);
+        do_test_cmp_greater_equal_signed(BigInt::from(-3), BigInt::from(-4), 8);
+        do_test_cmp_greater_equal_signed(BigInt::from(-4), BigInt::from(-4), 8);
+        do_test_cmp_greater_equal_signed(BigInt::from(4), BigInt::from(4), 8);
     }
 }

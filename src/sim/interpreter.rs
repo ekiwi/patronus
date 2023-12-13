@@ -594,13 +594,21 @@ fn compile_bv_res_expr_type(
         Expr::BVGreater(a, b) => {
             InstrType::Binary(BinaryOp::Greater, locs[a].unwrap().0, locs[b].unwrap().0)
         }
-        Expr::BVGreaterSigned(_, _) => todo!(),
+        Expr::BVGreaterSigned(a, b, width) => InstrType::Binary(
+            BinaryOp::GreaterSigned(*width),
+            locs[a].unwrap().0,
+            locs[b].unwrap().0,
+        ),
         Expr::BVGreaterEqual(a, b) => InstrType::Binary(
             BinaryOp::GreaterEqual,
             locs[a].unwrap().0,
             locs[b].unwrap().0,
         ),
-        Expr::BVGreaterEqualSigned(_, _) => todo!(),
+        Expr::BVGreaterEqualSigned(a, b, width) => InstrType::Binary(
+            BinaryOp::GreaterEqualSigned(*width),
+            locs[a].unwrap().0,
+            locs[b].unwrap().0,
+        ),
         Expr::BVConcat(a, b, _) => InstrType::Binary(
             BinaryOp::Concat(b.get_bv_type(ctx).unwrap()), // LSB width
             locs[a].unwrap().0,
@@ -783,6 +791,8 @@ enum BinaryOp {
     BVEqual,
     Greater,
     GreaterEqual,
+    GreaterSigned(WidthInt),
+    GreaterEqualSigned(WidthInt),
     Concat(WidthInt), // width of the lsb
     Or,
     And,
@@ -880,8 +890,14 @@ fn exec_instr(instr: &Instr, data: &mut [Word]) -> usize {
             match tpe {
                 BinaryOp::BVEqual => dst[0] = exec::bool_to_word(exec::cmp_equal(a, b)),
                 BinaryOp::Greater => dst[0] = exec::bool_to_word(exec::cmp_greater(a, b)),
+                BinaryOp::GreaterSigned(width) => {
+                    dst[0] = exec::bool_to_word(exec::cmp_greater_signed(a, b, *width))
+                }
                 BinaryOp::GreaterEqual => {
                     dst[0] = exec::bool_to_word(exec::cmp_greater_equal(a, b))
+                }
+                BinaryOp::GreaterEqualSigned(width) => {
+                    dst[0] = exec::bool_to_word(exec::cmp_greater_equal_signed(a, b, *width))
                 }
                 BinaryOp::Concat(lsb_width) => exec::concat(dst, a, b, *lsb_width),
                 BinaryOp::Or => exec::or(dst, a, b),

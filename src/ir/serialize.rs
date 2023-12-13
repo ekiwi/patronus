@@ -114,7 +114,7 @@ where
             }
             write!(writer, ")")
         }
-        Expr::BVGreaterSigned(a, b) => {
+        Expr::BVGreaterSigned(a, b, _) => {
             write!(writer, "sgt(")?;
             if (serialize_child)(a, writer)? {
                 serialize_expr_ref(a, ctx, writer, serialize_child)?;
@@ -136,7 +136,7 @@ where
             }
             write!(writer, ")")
         }
-        Expr::BVGreaterEqualSigned(a, b) => {
+        Expr::BVGreaterEqualSigned(a, b, _) => {
             write!(writer, "sgte(")?;
             if (serialize_child)(a, writer)? {
                 serialize_expr_ref(a, ctx, writer, serialize_child)?;

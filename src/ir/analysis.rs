@@ -385,7 +385,7 @@ impl ForEachChild<ExprRef> for Expr {
                 (visitor)(a);
                 (visitor)(b);
             }
-            Expr::BVGreaterSigned(a, b) => {
+            Expr::BVGreaterSigned(a, b, _) => {
                 (visitor)(a);
                 (visitor)(b);
             }
@@ -393,7 +393,7 @@ impl ForEachChild<ExprRef> for Expr {
                 (visitor)(a);
                 (visitor)(b);
             }
-            Expr::BVGreaterEqualSigned(a, b) => {
+            Expr::BVGreaterEqualSigned(a, b, _) => {
                 (visitor)(a);
                 (visitor)(b);
             }

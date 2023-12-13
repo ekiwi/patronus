@@ -66,14 +66,18 @@ pub trait ExprNodeConstruction:
         self.add_node(Expr::BVImplies(a, b))
     }
     fn greater_signed(&mut self, a: ExprRef, b: ExprRef) -> ExprRef {
-        self.add_node(Expr::BVGreaterSigned(a, b))
+        self.add_node(Expr::BVGreaterSigned(a, b, b.get_bv_type(self).unwrap()))
     }
 
     fn greater(&mut self, a: ExprRef, b: ExprRef) -> ExprRef {
         self.add_node(Expr::BVGreater(a, b))
     }
     fn greater_or_equal_signed(&mut self, a: ExprRef, b: ExprRef) -> ExprRef {
-        self.add_node(Expr::BVGreaterEqualSigned(a, b))
+        self.add_node(Expr::BVGreaterEqualSigned(
+            a,
+            b,
+            b.get_bv_type(self).unwrap(),
+        ))
     }
 
     fn greater_or_equal(&mut self, a: ExprRef, b: ExprRef) -> ExprRef {
@@ -327,9 +331,9 @@ pub enum Expr {
     BVEqual(ExprRef, ExprRef),
     BVImplies(ExprRef, ExprRef),
     BVGreater(ExprRef, ExprRef),
-    BVGreaterSigned(ExprRef, ExprRef),
+    BVGreaterSigned(ExprRef, ExprRef, WidthInt), // width for easier implementation in the simulator
     BVGreaterEqual(ExprRef, ExprRef),
-    BVGreaterEqualSigned(ExprRef, ExprRef),
+    BVGreaterEqualSigned(ExprRef, ExprRef, WidthInt), // width for easier implementation in the simulator
     BVConcat(ExprRef, ExprRef, WidthInt),
     // binary arithmetic
     BVAnd(ExprRef, ExprRef, WidthInt),

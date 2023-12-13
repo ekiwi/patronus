@@ -149,7 +149,7 @@ impl TypeCheck for Expr {
                 expect_same_width_bvs(ctx, "greater", a, b)?;
                 Ok(Type::BV(1))
             }
-            Expr::BVGreaterSigned(a, b) => {
+            Expr::BVGreaterSigned(a, b, _width) => {
                 expect_same_width_bvs(ctx, "greater signed", a, b)?;
                 Ok(Type::BV(1))
             }
@@ -157,7 +157,7 @@ impl TypeCheck for Expr {
                 expect_same_width_bvs(ctx, "greater or equals", a, b)?;
                 Ok(Type::BV(1))
             }
-            Expr::BVGreaterEqualSigned(a, b) => {
+            Expr::BVGreaterEqualSigned(a, b, _width) => {
                 expect_same_width_bvs(ctx, "greater or equals signed", a, b)?;
                 Ok(Type::BV(1))
             }
@@ -282,9 +282,9 @@ impl TypeCheck for Expr {
             Expr::BVEqual(_, _) => Type::BV(1),
             Expr::BVImplies(_, _) => Type::BV(1),
             Expr::BVGreater(_, _) => Type::BV(1),
-            Expr::BVGreaterSigned(_, _) => Type::BV(1),
+            Expr::BVGreaterSigned(_, _, _) => Type::BV(1),
             Expr::BVGreaterEqual(_, _) => Type::BV(1),
-            Expr::BVGreaterEqualSigned(_, _) => Type::BV(1),
+            Expr::BVGreaterEqualSigned(_, _, _) => Type::BV(1),
             Expr::BVConcat(_, _, width) => Type::BV(width),
             Expr::BVAnd(_, _, width) => Type::BV(width),
             Expr::BVOr(_, _, width) => Type::BV(width),
