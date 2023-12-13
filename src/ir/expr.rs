@@ -82,6 +82,9 @@ pub trait ExprNodeConstruction:
     fn not(&mut self, e: ExprRef) -> ExprRef {
         self.add_node(Expr::BVNot(e, e.get_bv_type(self).unwrap()))
     }
+    fn negate(&mut self, e: ExprRef) -> ExprRef {
+        self.add_node(Expr::BVNegate(e, e.get_bv_type(self).unwrap()))
+    }
     fn and(&mut self, a: ExprRef, b: ExprRef) -> ExprRef {
         self.add_node(Expr::BVAnd(a, b, b.get_bv_type(self).unwrap()))
     }

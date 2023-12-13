@@ -768,7 +768,7 @@ fn convert_expr(
                 *e_ref,
                 convert_expr(smt_ctx, ctx, *e_ref, patch_expr),
             );
-            smt_ctx.negate(e)
+            smt_ctx.bvneg(e)
         }
         Expr::BVEqual(a_ref, b_ref) => {
             let a = convert_expr(smt_ctx, ctx, *a_ref, patch_expr);

@@ -261,6 +261,7 @@ impl<'a> Parser<'a> {
                 (self.ctx.slice(e, msb, lsb), 6)
             }
             "not" => (self.ctx.not(e), 4),
+            "neg" => (self.ctx.negate(e), 4),
             "uext" => {
                 self.require_at_least_n_tokens(line, tokens, 5)?;
                 let by = self.parse_width_int(line, tokens[4], "extension amount")?;
