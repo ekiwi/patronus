@@ -611,11 +611,11 @@ impl TransitionSystemEncoding for UnrollSmtEncoding {
 
         // define other signals including inputs
         if step == 0 {
-            self.define_signals(ctx, smt_ctx, 0, &|info: &SmtSignalInfo| {
+            self.define_signals(ctx, smt_ctx, step, &|info: &SmtSignalInfo| {
                 (info.uses.other || info.is_input) && !info.uses.init
             })?;
         } else {
-            self.define_signals(ctx, smt_ctx, 0, &|info: &SmtSignalInfo| {
+            self.define_signals(ctx, smt_ctx, step, &|info: &SmtSignalInfo| {
                 info.uses.other || info.is_input
             })?;
         }
