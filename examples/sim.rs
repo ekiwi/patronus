@@ -23,7 +23,7 @@ struct Args {
     #[arg(short, long, help = "print out signal values for each step")]
     trace: bool,
     #[arg(long, help = "Filename of a testbench.")]
-    testbench: String,
+    testbench: Option<String>,
     #[arg(value_name = "BTOR2", index = 1)]
     filename: String,
 }
@@ -37,8 +37,24 @@ fn main() {
         println!();
         println!();
     }
+
+    // start execution
+    let start_load = std::time::Instant::now();
+    let mut sim = Interpreter::new(&ctx, &sys);
+    sim.init(InitKind::Random(0));
+    let delta_load = std::time::Instant::now() - start_load;
+    println!("Loaded the design into the interpreter in {:?}", delta_load);
+
+    let testbench_file = match args.testbench {
+        None => {
+            println!("No testbench provided. Exiting...");
+            return;
+        }
+        Some(tb) => tb,
+    };
+
     let mut tb = std::io::BufReader::new(
-        std::fs::File::open(args.testbench).expect("Failed to load testbench file"),
+        std::fs::File::open(testbench_file).expect("Failed to load testbench file"),
     );
 
     let name_to_ref = sys.generate_name_to_ref(&ctx);
@@ -60,13 +76,6 @@ fn main() {
         }
         signals_to_print.sort_by_key(|(name, _)| name.clone());
     }
-
-    // start execution
-    let start_load = std::time::Instant::now();
-    let mut sim = Interpreter::new(&ctx, &sys);
-    sim.init(InitKind::Random(0));
-    let delta_load = std::time::Instant::now() - start_load;
-    println!("Loaded the design into the interpreter in {:?}", delta_load);
 
     let start_exec = std::time::Instant::now();
     for (step_id, line) in tb.lines().flatten().enumerate() {

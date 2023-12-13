@@ -615,9 +615,17 @@ fn compile_bv_res_expr_type(
         Expr::BVXor(a, b, _) => {
             InstrType::Binary(BinaryOp::Xor, locs[a].unwrap().0, locs[b].unwrap().0)
         }
-        Expr::BVShiftLeft(_, _, _) => todo!(),
+        Expr::BVShiftLeft(a, b, width) => InstrType::Binary(
+            BinaryOp::ShiftLeft(*width),
+            locs[a].unwrap().0,
+            locs[b].unwrap().0,
+        ),
         Expr::BVArithmeticShiftRight(_, _, _) => todo!(),
-        Expr::BVShiftRight(_, _, _) => todo!(),
+        Expr::BVShiftRight(a, b, width) => InstrType::Binary(
+            BinaryOp::ShiftRight(*width),
+            locs[a].unwrap().0,
+            locs[b].unwrap().0,
+        ),
         Expr::BVAdd(a, b, width) => InstrType::Binary(
             BinaryOp::Add(*width),
             locs[a].unwrap().0,
@@ -781,6 +789,8 @@ enum BinaryOp {
     Xor,
     Add(WidthInt),
     Sub(WidthInt),
+    ShiftRight(WidthInt),
+    ShiftLeft(WidthInt),
 }
 
 #[derive(Debug, Clone)]
@@ -879,6 +889,8 @@ fn exec_instr(instr: &Instr, data: &mut [Word]) -> usize {
                 BinaryOp::Xor => exec::xor(dst, a, b),
                 BinaryOp::Add(width) => exec::add(dst, a, b, *width),
                 BinaryOp::Sub(width) => exec::sub(dst, a, b, *width),
+                BinaryOp::ShiftRight(width) => exec::shift_right(dst, a, b, *width),
+                BinaryOp::ShiftLeft(width) => exec::shift_left(dst, a, b, *width),
             }
             if instr.do_trace {
                 println!(
