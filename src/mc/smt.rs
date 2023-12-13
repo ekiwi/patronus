@@ -401,6 +401,8 @@ pub trait TransitionSystemEncoding {
 }
 
 pub struct UnrollSmtEncoding {
+    /// the offset at which our encoding was initialized
+    offset: Option<u64>,
     current_step: Option<u64>,
     /// all signals that need to be serialized separately, in the correct order
     signal_order: Vec<ExprRef>,
@@ -475,9 +477,11 @@ impl UnrollSmtEncoding {
             signals[state.symbol.index()] = Some(info);
         }
         let current_step = None;
+        let offset = None;
         let states = sys.states.clone();
 
         Self {
+            offset,
             current_step,
             signals,
             signal_order,
@@ -514,11 +518,9 @@ impl UnrollSmtEncoding {
     }
 
     fn create_signal_symbols_in_step(&mut self, ctx: &mut Context, step: u64) {
-        assert_eq!(
-            self.symbols_at.len(),
-            step as usize,
-            "Missing or duplicate step!"
-        );
+        let offset = self.offset.expect("Need to call init_at first!");
+        let index = (step - offset) as usize;
+        assert_eq!(self.symbols_at.len(), index, "Missing or duplicate step!");
         let mut syms = Vec::with_capacity(self.signal_order.len());
         for signal in self
             .signal_order
@@ -541,7 +543,9 @@ impl UnrollSmtEncoding {
 
     fn signal_sym_in_step(&self, expr: ExprRef, step: u64) -> Option<ExprRef> {
         if let Some(Some(info)) = self.signals.get(expr.index()) {
-            Some(self.symbols_at[step as usize][info.id as usize])
+            let offset = self.offset.expect("Need to call init_at first!");
+            let index = (step - offset) as usize;
+            Some(self.symbols_at[index][info.id as usize])
         } else {
             None
         }
@@ -577,6 +581,7 @@ impl TransitionSystemEncoding for UnrollSmtEncoding {
     fn init_at(&mut self, ctx: &mut Context, smt_ctx: &mut smt::Context, step: u64) -> Result<()> {
         assert!(self.current_step.is_none(), "init must be called only once");
         self.current_step = Some(step);
+        self.offset = Some(step);
         self.create_signal_symbols_in_step(ctx, step);
 
         if step == 0 {
