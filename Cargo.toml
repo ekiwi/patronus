@@ -1,6 +1,6 @@
 [package]
 name = "libpatron"
-version = "0.8.4"
+version = "0.9.0"
 edition = "2021"
 authors = ["Kevin Laeufer <laeufer@berkeley.edu>"]
 description = "Hardware bug-finding toolkit."

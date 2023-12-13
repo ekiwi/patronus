@@ -80,14 +80,10 @@ impl SmtModelChecker {
         };
         smt_ctx.set_logic(logic)?;
 
-        // count expression uses
-        let use_counts = count_expr_uses(ctx, sys);
-        // TODO: use this data in order to optimize the way we print smt expressions!
-
         // TODO: maybe add support for the more compact SMT encoding
         let mut enc = UnrollSmtEncoding::new(ctx, sys, false);
         enc.define_header(&mut smt_ctx)?;
-        enc.init(ctx, &mut smt_ctx)?;
+        enc.init_at(ctx, &mut smt_ctx, 0)?;
 
         let constraints = sys.constraints();
         let bad_states = sys.bad_states();
@@ -115,6 +111,8 @@ impl SmtModelChecker {
                     let expr = enc.get_at(ctx, &mut smt_ctx, *expr_ref, k);
                     let res = check_assuming(&mut smt_ctx, expr, &self.solver)?;
 
+                    // count expression uses
+                    let use_counts = count_expr_uses(ctx, sys);
                     if res == smt::Response::Sat {
                         let wit = self.get_witness(
                             sys,
@@ -137,6 +135,8 @@ impl SmtModelChecker {
                 let any_bad = smt_ctx.or_many(all_bads);
                 let res = check_assuming(&mut smt_ctx, any_bad, &self.solver)?;
 
+                // count expression uses
+                let use_counts = count_expr_uses(ctx, sys);
                 if res == smt::Response::Sat {
                     let wit = self.get_witness(
                         sys,
@@ -388,7 +388,7 @@ pub enum ModelCheckResult {
 
 pub trait TransitionSystemEncoding {
     fn define_header(&self, smt_ctx: &mut smt::Context) -> Result<()>;
-    fn init(&mut self, ctx: &mut Context, smt_ctx: &mut smt::Context) -> Result<()>;
+    fn init_at(&mut self, ctx: &mut Context, smt_ctx: &mut smt::Context, step: u64) -> Result<()>;
     fn unroll(&mut self, ctx: &mut Context, smt_ctx: &mut smt::Context) -> Result<()>;
     /// Allows access to inputs, states, constraints and bad_state expressions.
     fn get_at(
@@ -574,13 +574,15 @@ impl TransitionSystemEncoding for UnrollSmtEncoding {
         Ok(())
     }
 
-    fn init(&mut self, ctx: &mut Context, smt_ctx: &mut smt::Context) -> Result<()> {
+    fn init_at(&mut self, ctx: &mut Context, smt_ctx: &mut smt::Context, step: u64) -> Result<()> {
         assert!(self.current_step.is_none(), "init must be called only once");
-        self.current_step = Some(0);
-        self.create_signal_symbols_in_step(ctx, 0);
+        self.current_step = Some(step);
+        self.create_signal_symbols_in_step(ctx, step);
 
-        // define signals that are used to calculate init expressions
-        self.define_signals(ctx, smt_ctx, 0, &|info: &SmtSignalInfo| info.uses.init)?;
+        if step == 0 {
+            // define signals that are used to calculate init expressions
+            self.define_signals(ctx, smt_ctx, 0, &|info: &SmtSignalInfo| info.uses.init)?;
+        }
 
         // declare/define initial states
         for state in self.states.iter() {
@@ -588,24 +590,30 @@ impl TransitionSystemEncoding for UnrollSmtEncoding {
             let name = if state.is_const() {
                 base_name.to_string()
             } else {
-                name_at(base_name, 0)
+                name_at(base_name, step)
             };
             let out = convert_tpe(smt_ctx, state.symbol.get_type(ctx));
-            match state.init {
-                Some(value) => {
-                    let body = self.expr_in_step(ctx, smt_ctx, value, 0);
+            match (step, state.init) {
+                (0, Some(value)) => {
+                    let body = self.expr_in_step(ctx, smt_ctx, value, step);
                     smt_ctx.define_const(escape_smt_identifier(&name), out, body)?;
                 }
-                None => {
+                _ => {
                     smt_ctx.declare_const(escape_smt_identifier(&name), out)?;
                 }
             }
         }
 
         // define other signals including inputs
-        self.define_signals(ctx, smt_ctx, 0, &|info: &SmtSignalInfo| {
-            (info.uses.other || info.is_input) && !info.uses.init
-        })?;
+        if step == 0 {
+            self.define_signals(ctx, smt_ctx, 0, &|info: &SmtSignalInfo| {
+                (info.uses.other || info.is_input) && !info.uses.init
+            })?;
+        } else {
+            self.define_signals(ctx, smt_ctx, 0, &|info: &SmtSignalInfo| {
+                info.uses.other || info.is_input
+            })?;
+        }
 
         Ok(())
     }
