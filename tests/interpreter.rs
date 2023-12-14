@@ -3,7 +3,7 @@
 // author: Kevin Laeufer <laeufer@berkeley.edu>
 
 use libpatron::btor2;
-use libpatron::ir::Context;
+use libpatron::ir::{Context, SerializableIrNode};
 use libpatron::mc::Simulator;
 use libpatron::sim::interpreter::{InitKind, Interpreter};
 
@@ -73,4 +73,31 @@ fn interpret_count_2() {
 
     // the failure is reached when the state is 7
     assert_eq!(sim.get(counter_state).unwrap().to_u64().unwrap(), 7);
+}
+
+#[test]
+fn interpret_delay() {
+    let (ctx, sys) = btor2::parse_file("inputs/unittest/delay.btor").unwrap();
+    println!("{}", sys.serialize_to_str(&ctx));
+    let reg0 = sys.get_state_by_name(&ctx, "reg0").unwrap().symbol;
+    let reg1 = sys.get_state_by_name(&ctx, "reg1").unwrap().symbol;
+    let mut sim = Interpreter::new(&ctx, &sys);
+
+    // init
+    sim.init(InitKind::Zero);
+    sim.update();
+    assert_eq!(sim.get(reg0).unwrap().to_u64().unwrap(), 0, "reg0@0");
+    assert_eq!(sim.get(reg1).unwrap().to_u64().unwrap(), 0, "reg1@0");
+
+    // step 1
+    sim.step();
+    sim.update();
+    assert_eq!(sim.get(reg0).unwrap().to_u64().unwrap(), 1, "reg0@1");
+    assert_eq!(sim.get(reg1).unwrap().to_u64().unwrap(), 0, "reg1@1");
+
+    // step 2
+    sim.step();
+    sim.update();
+    assert_eq!(sim.get(reg0).unwrap().to_u64().unwrap(), 1, "reg0@2");
+    assert_eq!(sim.get(reg1).unwrap().to_u64().unwrap(), 1, "reg1@2");
 }

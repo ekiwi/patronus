@@ -154,6 +154,12 @@ impl TransitionSystem {
         StateRef(id)
     }
 
+    pub fn get_state_by_name(&self, ctx: &Context, name: &str) -> Option<&State> {
+        self.states
+            .iter()
+            .find(|s| s.symbol.get_symbol_name(ctx).unwrap() == name)
+    }
+
     pub fn modify_state<F>(&mut self, reference: StateRef, modify: F)
     where
         F: FnOnce(&mut State),

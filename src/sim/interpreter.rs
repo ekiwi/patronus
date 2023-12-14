@@ -47,6 +47,7 @@ pub struct Interpreter<'a> {
     ctx: &'a Context,
     update: Program,
     init: Program,
+    step: Program,
     states: Vec<State>,
     inputs: Vec<ExprRef>,
     data: Vec<Word>,
@@ -65,7 +66,8 @@ impl<'a> Interpreter<'a> {
 
     fn internal_new(ctx: &'a Context, sys: &TransitionSystem, do_trace: bool) -> Self {
         let init = compile(ctx, sys, true, do_trace);
-        let update = compile(ctx, sys, false, do_trace);
+        let mut update = compile(ctx, sys, false, do_trace);
+        let step = compile_step(ctx, sys, &mut update, do_trace);
         let states = sys.states().cloned().collect::<Vec<_>>();
         let inputs = sys
             .get_signals(|s| s.kind == SignalKind::Input)
@@ -77,6 +79,7 @@ impl<'a> Interpreter<'a> {
             ctx,
             update,
             init,
+            step,
             states,
             inputs,
             data,
@@ -134,14 +137,7 @@ impl<'a> Simulator for Interpreter<'a> {
 
     fn step(&mut self) {
         // assign next expressions to state
-        for state in self.states.iter() {
-            if let Some(next) = get_state_next(state) {
-                let dst_range = self.update.get_range(&state.symbol).unwrap();
-                let src_range = self.update.get_range(&next).unwrap();
-                let (dst, src) = exec::split_borrow_1(&mut self.data, dst_range, src_range);
-                exec::assign(dst, src);
-            }
-        }
+        self.step.execute(&mut self.data);
         self.step_count += 1;
     }
 
@@ -262,6 +258,62 @@ impl Program {
     fn get_range(&self, e: &ExprRef) -> Option<std::ops::Range<usize>> {
         self.symbols.get(e).map(|i| i.get_range())
     }
+}
+
+/// Generates instructions to update states with their next state expressions.
+/// Ensures that this works, even when states update each other directly by allocating additional
+/// space for that possibility.
+fn compile_step(
+    _ctx: &Context,
+    sys: &TransitionSystem,
+    update: &mut Program,
+    do_trace: bool,
+) -> Program {
+    let mut instructions = Vec::new();
+    let state_set: HashSet<ExprRef> = HashSet::from_iter(sys.states().map(|s| s.symbol));
+
+    // see if there are any conflicts
+    let mut next_patched = HashMap::new();
+    for state in sys.states() {
+        if let Some(next) = get_state_next(state) {
+            if state_set.contains(&next) && !next_patched.contains_key(&next) {
+                // if the next expression is reading from a state, copy the value to a temporary location
+                let src = update.get_range(&next).unwrap();
+                let dst = (update.mem_words as usize)..(update.mem_words as usize + src.len());
+                update.mem_words += dst.len() as u32;
+                instructions.push(copy_instr(&dst, &src, do_trace));
+                next_patched.insert(next, dst);
+            }
+        }
+    }
+
+    // generate instructions to copy next value to state
+    for state in sys.states() {
+        if let Some(next) = get_state_next(state) {
+            let src = next_patched
+                .get(&next)
+                .cloned()
+                .unwrap_or(update.get_range(&next).unwrap());
+            let dst = update.get_range(&state.symbol).unwrap();
+            instructions.push(copy_instr(&dst, &src, do_trace));
+        }
+    }
+
+    Program {
+        instructions,
+        symbols: HashMap::default(),
+        mem_words: 0, // shares the memory of the "update" program
+    }
+}
+
+fn copy_instr(dst: &std::ops::Range<usize>, src: &std::ops::Range<usize>, do_trace: bool) -> Instr {
+    assert_ne!(src, dst);
+    Instr::new(
+        Loc::from_range(dst),
+        InstrType::Unary(UnaryOp::Copy, Loc::from_range(src)),
+        0,
+        do_trace,
+    )
 }
 
 /// Converts a transitions system into instructions and the number of Words that need to be allocated
@@ -817,6 +869,13 @@ struct Loc {
 }
 
 impl Loc {
+    fn from_range(r: &std::ops::Range<usize>) -> Self {
+        Self {
+            offset: r.start as u32,
+            words: r.len() as u16,
+        }
+    }
+
     fn range(&self) -> std::ops::Range<usize> {
         let start = self.offset as usize;
         let end = start + self.words as usize;
