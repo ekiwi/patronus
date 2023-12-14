@@ -753,46 +753,6 @@ impl<'a> Parser<'a> {
     }
 }
 
-fn merge_signal_info(original: &SignalInfo, alias: &SignalInfo) -> SignalInfo {
-    let name = match (original.name, alias.name) {
-        (Some(name), None) => Some(name),
-        (None, Some(name)) => Some(name),
-        (None, None) => None,
-        (Some(old_name), Some(new_name)) => {
-            // we decide whether to overwrite depending on the old signal kind
-            match original.kind {
-                SignalKind::Input | SignalKind::Output => {
-                    // inputs and outputs must retain their old names in order to be identifiable
-                    Some(old_name)
-                }
-                SignalKind::State => {
-                    // yosys often adds state labels that contain the actual name used in the verilog
-                    Some(new_name)
-                }
-                _ => {
-                    // for other signals, the new name might be better
-                    Some(new_name)
-                }
-            }
-        }
-    };
-    // TODO: it might be interesting to retain alias names
-
-    // only overwrite the kind if it was a node, since other labels add more info
-    let kind = match (original.kind, alias.kind) {
-        // nodes can always be renamed
-        (SignalKind::Node, alias) => alias,
-        // outputs always overwrite
-        (_, SignalKind::Output) => SignalKind::Output,
-        // otherwise we want to keep the original kind
-        (original, _) => original,
-    };
-    // TODO: it might be interesting to retain alias kinds
-    //       e.g., a single signal could be a state and an output
-
-    SignalInfo { name, kind }
-}
-
 /// yosys likes to use a lot of $ in the signal names, we want to avoid that for readability reasons
 fn clean_up_name(name: &str) -> String {
     name.replace('$', "_")

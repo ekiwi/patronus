@@ -116,7 +116,12 @@ impl TransitionSystem {
                 if self.signals.len() <= new_id {
                     self.signals.resize(new_id + 1, None);
                 }
-                self.signals[new_id] = Some(cloned);
+                let merged = if let Some(new_info) = &self.signals[new_id] {
+                    merge_signal_info(&cloned, new_info)
+                } else {
+                    cloned
+                };
+                self.signals[new_id] = Some(merged);
                 self.signals[old.index()] = None;
             }
         }
@@ -197,6 +202,46 @@ impl TransitionSystem {
 
         out
     }
+}
+
+pub fn merge_signal_info(original: &SignalInfo, alias: &SignalInfo) -> SignalInfo {
+    let name = match (original.name, alias.name) {
+        (Some(name), None) => Some(name),
+        (None, Some(name)) => Some(name),
+        (None, None) => None,
+        (Some(old_name), Some(new_name)) => {
+            // we decide whether to overwrite depending on the old signal kind
+            match original.kind {
+                SignalKind::Input | SignalKind::Output => {
+                    // inputs and outputs must retain their old names in order to be identifiable
+                    Some(old_name)
+                }
+                SignalKind::State => {
+                    // yosys often adds state labels that contain the actual name used in the verilog
+                    Some(new_name)
+                }
+                _ => {
+                    // for other signals, the new name might be better
+                    Some(new_name)
+                }
+            }
+        }
+    };
+    // TODO: it might be interesting to retain alias names
+
+    // only overwrite the kind if it was a node, since other labels add more info
+    let kind = match (original.kind, alias.kind) {
+        // nodes can always be renamed
+        (SignalKind::Node, alias) => alias,
+        // outputs always overwrite
+        (_, SignalKind::Output) => SignalKind::Output,
+        // otherwise we want to keep the original kind
+        (original, _) => original,
+    };
+    // TODO: it might be interesting to retain alias kinds
+    //       e.g., a single signal could be a state and an output
+
+    SignalInfo { name, kind }
 }
 
 impl GetNode<SignalInfo, ExprRef> for TransitionSystem {

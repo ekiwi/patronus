@@ -19,5 +19,7 @@ pub use expr::{
 };
 pub use serialize::SerializableIrNode;
 pub use transform::do_transform;
-pub use transition_system::{SignalInfo, SignalKind, State, StateRef, TransitionSystem};
+pub use transition_system::{
+    merge_signal_info, SignalInfo, SignalKind, State, StateRef, TransitionSystem,
+};
 pub use type_check::{TypeCheck, TypeCheckError};
