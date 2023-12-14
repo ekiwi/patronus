@@ -1,0 +1,59 @@
+---
+source: tests/btor2_test.rs
+expression: sys.serialize_to_str(&ctx)
+---
+sdram_controller.original
+input clk : bv<1>
+input data_in : bv<16>
+input rd_addr : bv<24>
+input rd_enable : bv<1>
+input rst_n : bv<1>
+input wr_addr : bv<24>
+input wr_data : bv<16>
+input wr_enable : bv<1>
+output data_oe : bv<1> = eq(state, 5'b11010)
+node _eq_sdram_controller.no_tri_state.v:276_22 : bv<1> = eq(state, 5'b1110)
+node _or_sdram_controller.no_tri_state.v:253_21 : bv<1> = or(eq(state, 5'b10010), data_oe)
+node _or_sdram_controller.no_tri_state.v:248_18 : bv<1> = or(eq(state, 5'b10000), eq(state, 5'b11000))
+node %37 : bv<1> = state[4]
+output addr : bv<13> = ite(or(%37, _eq_sdram_controller.no_tri_state.v:276_22), ite(_or_sdram_controller.no_tri_state.v:248_18, haddr_r[21:9], ite(_or_sdram_controller.no_tri_state.v:253_21, concat(4'b10, haddr_r[8:0]), ite(_eq_sdram_controller.no_tri_state.v:276_22, 13'x230, 13'x0))), concat(2'b0, concat(command[0], 10'x0)))
+node %41 : bv<2> = haddr_r[23:22]
+output bank_addr : bv<2> = ite(%37, ite(_or_sdram_controller.no_tri_state.v:248_18, %41, ite(_or_sdram_controller.no_tri_state.v:253_21, %41, 2'b0)), command[2:1])
+output cas_n : bv<1> = command[4]
+output clock_enable : bv<1> = command[7]
+output cs_n : bv<1> = command[6]
+node _procmux_147 : bv<2> = ite(%37, 2'b0, 2'b11)
+output data_mask_high : bv<1> = _procmux_147[0]
+output data_mask_low : bv<1> = _procmux_147[1]
+output ras_n : bv<1> = command[5]
+output we_n : bv<1> = command[3]
+node %150 : bv<17> = _state_5[state]
+node _logic_not_sdram_controller.no_tri_state.v:315_26 : bv<1> = not(not(eq(state_cnt, 4'b0)))
+node %287 : bv<8> = or(and(8'b0, 8'b111), 8'b10011000)
+node _ge_sdram_controller.no_tri_state.v:294_25 : bv<1> = ugte(zext(refresh_cnt, 22), 32'x207)
+node _eq_sdram_controller.no_tri_state.v:292_24 : bv<1> = not(not(eq(state, 5'b0)))
+node _auto_opt_dff.cc:195:make_patterns_logic_224 : bv<1> = not(eq(concat(_eq_sdram_controller.no_tri_state.v:292_24, _logic_not_sdram_controller.no_tri_state.v:315_26), 2'b0))
+node _eq_sdram_controller.no_tri_state.v:209_10 : bv<1> = eq(state, 5'b10100)
+node %240 : bv<17> = and(17'x0, 17'xc00)
+state command : bv<8>
+  [next] ite(rst_n, ite(_auto_opt_dff.cc:195:make_patterns_logic_224, ite(_eq_sdram_controller.no_tri_state.v:292_24, ite(_ge_sdram_controller.no_tri_state.v:294_25, 8'b10010001, ite(rd_enable, %287, ite(wr_enable, %287, 8'b10111000))), ite(_logic_not_sdram_controller.no_tri_state.v:315_26, %150[16:9], 8'b0)), command), 8'b10111000)
+state state : bv<5>
+  [next] ite(rst_n, ite(_auto_opt_dff.cc:195:make_patterns_logic_224, ite(_eq_sdram_controller.no_tri_state.v:292_24, ite(_ge_sdram_controller.no_tri_state.v:294_25, 5'b1, ite(rd_enable, 5'b10000, ite(wr_enable, 5'b11000, 5'b0))), ite(_logic_not_sdram_controller.no_tri_state.v:315_26, %150[8:4], 5'b0)), state), 5'b1000)
+state haddr_r : bv<24>
+  [next] ite(rst_n, ite(not(eq(concat(rd_enable, wr_enable), 2'b0)), ite(rd_enable, rd_addr, ite(wr_enable, wr_addr, 24'x0)), haddr_r), 24'x0)
+state busy : bv<1>
+  [next] ite(rst_n, %37, 1'b0)
+state data_out : bv<16>
+  [next] ite(rst_n, ite(wr_enable, wr_data, data_out), 16'x0)
+state rd_data : bv<16>
+  [next] ite(rst_n, ite(_eq_sdram_controller.no_tri_state.v:209_10, data_in, rd_data), 16'x0)
+state rd_ready : bv<1>
+  [next] ite(rst_n, ite(_eq_sdram_controller.no_tri_state.v:209_10, 1'b1, 1'b0), rd_ready)
+state _state_5 : bv<5> -> bv<17>
+  [init] ([17'x0] x 2^5)[5'b0 := 17'x17000][5'b1 := 17'x17020][5'b10 := 17'x11030][5'b11 := 17'x17047][5'b100 := 17'x17000][5'b101 := 17'x110a0][5'b110 := 17'x17000][5'b111 := 17'x17000][5'b1000 := 17'x12290][5'b1001 := 17'x17050][5'b1010 := 17'x170b7][5'b1011 := 17'x110c0][5'b1100 := 17'x170d7][5'b1101 := or(and(17'x0, 17'x200), 17'x100e0)][5'b1110 := 17'x170f1][5'b1111 := 17'x17000][5'b10000 := 17'x17111][5'b10001 := or(%240, 17'x15320)][5'b10010 := 17'x17131][5'b10011 := 17'x17140][5'b10100 := 17'x17000][5'b10101 := 17'x17000][5'b10110 := 17'x17000][5'b10111 := 17'x17000][5'b11000 := 17'x17191][5'b11001 := or(%240, 17'x143a0)][5'b11010 := 17'x171b1][5'b11011 := 17'x17000][5'b11100 := 17'x17000][5'b11101 := 17'x17000][5'b11110 := 17'x17000][5'b11111 := 17'x17000]
+  [next] _state_5
+state state_cnt : bv<4>
+  [next] ite(rst_n, ite(_logic_not_sdram_controller.no_tri_state.v:315_26, ite(_eq_sdram_controller.no_tri_state.v:292_24, 4'b0, %150[3:0]), sub(state_cnt, zext(1'b1, 3))), 4'b1111)
+state refresh_cnt : bv<10>
+  [next] ite(not(eq(concat(not(rst_n), eq(state, 5'b100)), 2'b0)), 10'x0, add(refresh_cnt, zext(1'b1, 9)))
+

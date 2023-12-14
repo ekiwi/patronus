@@ -46,6 +46,12 @@ pub trait ExprNodeConstruction:
     fn zero(&mut self, width: WidthInt) -> ExprRef {
         self.bv_lit(0, width)
     }
+
+    fn zero_array(&mut self, tpe: ArrayType) -> ExprRef {
+        let data = self.bv_lit(0, tpe.data_width);
+        self.array_const(data, tpe.index_width)
+    }
+
     fn mask(&mut self, width: WidthInt) -> ExprRef {
         let value = ((1 as BVLiteralInt) << width) - 1;
         self.bv_lit(value, width)

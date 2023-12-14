@@ -3,8 +3,8 @@
 // author: Kevin Laeufer <laeufer@berkeley.edu>
 
 use libpatron::btor2;
-use libpatron::ir::Context;
 use libpatron::ir::SerializableIrNode;
+use libpatron::ir::{replace_anonymous_inputs_with_zero, Context};
 
 const COUNT_2: &str = r#"
 1 sort bitvec 3
@@ -55,9 +55,18 @@ fn parse_instrumented_decoder() {
 
 #[test]
 fn parse_sdram() {
-    let (ctx, sys) = btor2::parse_file("inputs/repair/sdram_controller.original.btor").unwrap();
-    // insta::assert_snapshot!(sys.serialize_to_str(&ctx));
-    println!("{}", sys.serialize_to_str(&ctx));
+    let (mut ctx, mut sys) =
+        btor2::parse_file("inputs/repair/sdram_controller.original.btor").unwrap();
+    replace_anonymous_inputs_with_zero(&mut ctx, &mut sys);
+    insta::assert_snapshot!(sys.serialize_to_str(&ctx));
+}
+
+#[test]
+fn parse_sdram_and_remove_anonymous_inputs() {
+    let (mut ctx, mut sys) =
+        btor2::parse_file("inputs/repair/sdram_controller.original.btor").unwrap();
+    replace_anonymous_inputs_with_zero(&mut ctx, &mut sys);
+    insta::assert_snapshot!(sys.serialize_to_str(&ctx));
 }
 
 fn skip_first_line(value: &str) -> &str {

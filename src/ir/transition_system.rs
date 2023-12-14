@@ -108,6 +108,13 @@ impl TransitionSystem {
         entry.as_ref()
     }
 
+    pub fn remove_signal(&mut self, expr: ExprRef) {
+        *self
+            .signals
+            .get_mut(expr.index())
+            .expect("trying to remove non-existing signal") = None;
+    }
+
     pub fn update_signal_expr(&mut self, old: ExprRef, new: ExprRef) {
         if old != new {
             if let Some(old_info) = &self.signals[old.index()] {
