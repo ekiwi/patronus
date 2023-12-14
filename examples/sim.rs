@@ -2,7 +2,7 @@
 // released under BSD 3-Clause License
 // author: Kevin Laeufer <laeufer@berkeley.edu>
 
-use clap::{arg, Parser};
+use clap::{arg, Parser, ValueEnum};
 use libpatron::ir::*;
 use libpatron::mc::Simulator;
 use libpatron::sim::interpreter::{InitKind, Interpreter, Value};
@@ -22,10 +22,23 @@ struct Args {
     verbose: bool,
     #[arg(short, long, help = "print out signal values for each step")]
     trace: bool,
+    #[arg(
+        long,
+        value_enum,
+        default_value = "random",
+        help = "initialization strategy"
+    )]
+    init: Init,
     #[arg(long, help = "Filename of a testbench.")]
     testbench: Option<String>,
     #[arg(value_name = "BTOR2", index = 1)]
     filename: String,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
+pub enum Init {
+    Zero,
+    Random,
 }
 
 fn main() {
@@ -41,7 +54,14 @@ fn main() {
     // start execution
     let start_load = std::time::Instant::now();
     let mut sim = Interpreter::new(&ctx, &sys);
-    sim.init(InitKind::Random(0));
+    match args.init {
+        Init::Zero => {
+            sim.init(InitKind::Zero);
+        }
+        Init::Random => {
+            sim.init(InitKind::Random(0));
+        }
+    }
     let delta_load = std::time::Instant::now() - start_load;
     println!("Loaded the design into the interpreter in {:?}", delta_load);
 

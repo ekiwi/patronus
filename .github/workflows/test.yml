@@ -84,9 +84,6 @@ jobs:
           - stable
 
     steps:
-      - uses: YosysHQ/setup-oss-cad-suite@v2
-        with:
-          version: '2023-11-15'
       - name: Update Rust to ${{ matrix.toolchain }}
         run: rustup update ${{ matrix.toolchain }} && rustup default ${{ matrix.toolchain }}
       - uses: actions/checkout@v3
@@ -101,6 +98,9 @@ jobs:
       - name: simulate sdram controller
         run: |
           cargo run --release --example sim -- --testbench=inputs/repair/sdram_controller.original.tb.csv inputs/repair/sdram_controller.original.btor
+      - name: simulate i2c controller
+        run: |
+          cargo run --release --example sim -- --init=zero --testbench=inputs/repair/i2c_m.tb.csv inputs/repair/i2c_m.original.replace_literals.btor
 
   semver:
     name: Check Semantic Versioning
