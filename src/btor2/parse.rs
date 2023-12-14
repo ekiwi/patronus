@@ -53,6 +53,9 @@ struct Parser<'a> {
 
 type LineId = u32;
 
+pub const DEFAULT_INPUT_PREFIX: &str = "_input";
+pub const DEFAULT_STATE_PREFIX: &str = "_state";
+
 impl<'a> Parser<'a> {
     fn new(ctx: &'a mut Context) -> Self {
         Parser {
@@ -71,6 +74,10 @@ impl<'a> Parser<'a> {
         input: impl std::io::BufRead,
         backup_name: Option<&str>,
     ) -> Result<TransitionSystem, Errors> {
+        // ensure that default input and state names are reserved in order to get nicer names
+        self.ctx.add_node(DEFAULT_INPUT_PREFIX);
+        self.ctx.add_node(DEFAULT_STATE_PREFIX);
+
         for line_res in input.lines() {
             let line = line_res.expect("failed to read line");
             let _ignore_errors = self.parse_line(&line);
@@ -417,7 +424,7 @@ impl<'a> Parser<'a> {
         line_id: LineId,
     ) -> ParseLineResult<()> {
         let tpe = self.get_tpe_from_id(line, cont.tokens[2])?;
-        let name = self.get_label_name(cont, "state");
+        let name = self.get_label_name(cont, DEFAULT_STATE_PREFIX);
         let sym = self.ctx.symbol(name, tpe);
         let state_ref = self.sys.add_state(self.ctx, sym);
         self.state_map.insert(line_id, state_ref);
@@ -432,7 +439,7 @@ impl<'a> Parser<'a> {
         line_id: LineId,
     ) -> ParseLineResult<()> {
         let tpe = self.get_tpe_from_id(line, cont.tokens[2])?;
-        let name = self.get_label_name(cont, "input");
+        let name = self.get_label_name(cont, DEFAULT_INPUT_PREFIX);
         let sym = self.ctx.symbol(name, tpe);
         self.sys.add_input(self.ctx, sym);
         self.signal_map.insert(line_id, sym);

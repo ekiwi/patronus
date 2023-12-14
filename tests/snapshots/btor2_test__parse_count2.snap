@@ -3,8 +3,8 @@ source: tests/btor2_test.rs
 expression: sys.serialize_to_str(&ctx)
 ---
 count2
-bad %5 : bv<1> = eq(state, 3'b111)
-state state : bv<3>
+bad %5 : bv<1> = eq(_state_0, 3'b111)
+state _state_0 : bv<3>
   [init] 3'b0
-  [next] add(state, 3'b1)
+  [next] add(_state_0, 3'b1)
 
