@@ -5,6 +5,7 @@ edition = "2021"
 authors = ["Kevin Laeufer <laeufer@berkeley.edu>"]
 description = "Hardware bug-finding toolkit."
 readme = "Readme.md"
+repository = "https://github.com/ekiwi/patron"
 homepage = "https://kevinlaeufer.com"
 license = "BSD-3-Clause"
 keywords = ["RTL", "btor", "model-checking", "SMT", "bit-vector"]

@@ -36,7 +36,6 @@ pub fn simplify_expressions(ctx: &mut Context, sys: &mut TransitionSystem) {
 }
 
 fn simplify(ctx: &mut Context, expr: ExprRef, children: &[ExprRef]) -> Option<ExprRef> {
-    let tpe = expr.get_type(ctx);
     match (ctx.get(expr).clone(), children) {
         (Expr::BVIte { .. }, [cond, tru, fals]) => {
             if tru == fals {
