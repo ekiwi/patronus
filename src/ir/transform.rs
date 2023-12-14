@@ -30,6 +30,63 @@ pub fn replace_anonymous_inputs_with_zero(ctx: &mut Context, sys: &mut Transitio
     });
 }
 
+/// Applies simplifications to the expressions used in the system.
+pub fn simplify_expressions(ctx: &mut Context, sys: &mut TransitionSystem) {
+    do_transform(ctx, sys, simplify);
+}
+
+fn simplify(ctx: &mut Context, expr: ExprRef, children: &[ExprRef]) -> Option<ExprRef> {
+    let tpe = expr.get_type(ctx);
+    match (ctx.get(expr).clone(), children) {
+        (Expr::BVIte { .. }, [cond, tru, fals]) => {
+            if tru == fals {
+                // condition does not matter
+                Some(*tru)
+            } else if let Expr::BVLiteral { value, .. } = ctx.get(*cond) {
+                if *value == 0 {
+                    Some(*fals)
+                } else {
+                    Some(*tru)
+                }
+            } else {
+                None
+            }
+        }
+        (Expr::BVAnd(_, _, width), [a, b]) => {
+            if let (Expr::BVLiteral { value: va, .. }, Expr::BVLiteral { value: vb, .. }) =
+                (ctx.get(*a), ctx.get(*b))
+            {
+                Some(ctx.bv_lit(*va & *vb, width))
+            } else {
+                None
+            }
+        }
+        (Expr::BVOr(_, _, width), [a, b]) => {
+            if let (Expr::BVLiteral { value: va, .. }, Expr::BVLiteral { value: vb, .. }) =
+                (ctx.get(*a), ctx.get(*b))
+            {
+                Some(ctx.bv_lit(*va | *vb, width))
+            } else {
+                None
+            }
+        }
+        (Expr::BVNot(_, width), [e]) => {
+            match ctx.get(*e) {
+                Expr::BVNot(inner, _) => Some(*inner), // double negation
+                Expr::BVLiteral { value, .. } => {
+                    Some(ctx.bv_lit((!*value) & crate::sim::exec::mask(width), width))
+                }
+                _ => None,
+            }
+        }
+        (Expr::BVZeroExt { width, .. }, [e]) => match ctx.get(*e) {
+            Expr::BVLiteral { value, .. } => Some(ctx.bv_lit(*value, width)),
+            _ => None,
+        },
+        _ => None, // no matching simplification
+    }
+}
+
 pub fn do_transform(
     ctx: &mut Context,
     sys: &mut TransitionSystem,

@@ -18,7 +18,7 @@ pub use expr::{
     ExprRef, GetNode, StringRef, Type, WidthInt,
 };
 pub use serialize::SerializableIrNode;
-pub use transform::{do_transform, replace_anonymous_inputs_with_zero};
+pub use transform::{do_transform, replace_anonymous_inputs_with_zero, simplify_expressions};
 pub use transition_system::{
     merge_signal_info, SignalInfo, SignalKind, State, StateRef, TransitionSystem,
 };
