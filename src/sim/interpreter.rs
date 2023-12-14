@@ -311,7 +311,7 @@ fn copy_instr(dst: &std::ops::Range<usize>, src: &std::ops::Range<usize>, do_tra
     Instr::new(
         Loc::from_range(dst),
         InstrType::Unary(UnaryOp::Copy, Loc::from_range(src)),
-        0,
+        (dst.len() * Word::BITS as usize) as WidthInt, // approximation
         do_trace,
     )
 }
@@ -420,8 +420,7 @@ fn compile(ctx: &Context, sys: &TransitionSystem, init_mode: bool, do_trace: boo
 
         // compile expression
         if is_bv_or_symbol {
-            let expr = ctx.get(expr_ref);
-            let tpe = compile_bv_res_expr_type(expr, &locs, ctx);
+            let tpe = compile_bv_res_expr_type(compile_expr, &locs, ctx);
             let instr = Instr::new(loc, tpe, width, do_trace);
             instructions.push(instr);
         } else {
