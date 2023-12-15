@@ -1,0 +1,3 @@
+[submodule "easy-smt"]
+	path = easy-smt
+	url = git@github.com:ekiwi/easy-smt.git
