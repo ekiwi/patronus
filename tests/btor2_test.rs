@@ -86,7 +86,16 @@ fn parse_sha3_keccak_and_check_that_all_anonymous_inputs_are_there() {
     let (ctx, sys) =
         btor2::parse_file("inputs/repair/sha3_keccak.w2.replace_variables.btor").unwrap();
     insta::assert_snapshot!(sys.serialize_to_str(&ctx));
-    println!("{}", sys.serialize_to_str(&ctx));
+}
+
+/// Regression test to make sure that when an input that is also an output is set to zero,
+/// it is maintained.
+#[test]
+fn parse_sha3_keccak_and_replace_anonymous_inputs() {
+    let (mut ctx, mut sys) =
+        btor2::parse_file("inputs/repair/sha3_keccak.w2.replace_variables.btor").unwrap();
+    replace_anonymous_inputs_with_zero(&mut ctx, &mut sys);
+    insta::assert_snapshot!(sys.serialize_to_str(&ctx));
 }
 
 fn skip_first_line(value: &str) -> &str {

@@ -467,7 +467,6 @@ fn serialize_transition_system<W: Write>(
     let mut aliases = Vec::new();
     for root in signals.iter() {
         let maybe_info = sys.get_signal(root.expr);
-        let is_input = maybe_info.map(|i| i.is_input()).unwrap_or(false);
         let name = names[root.expr.index()].as_ref().unwrap();
         let expr = ctx.get(root.expr);
 
@@ -479,7 +478,7 @@ fn serialize_transition_system<W: Write>(
         let tpe = expr.get_type(ctx);
         write!(writer, " : {tpe}",)?;
 
-        if is_input {
+        if expr.is_symbol() && expr.get_symbol_name(ctx).unwrap() == name {
             writeln!(writer)?;
         } else {
             write!(writer, " = ")?;
@@ -527,10 +526,7 @@ fn find_type(maybe_info: Option<&SignalInfo>, aliases: &mut Vec<&'static str>) -
             collect_aliases(info.labels, aliases);
             return "input";
         }
-        if info.is_state() {
-            collect_aliases(info.labels, aliases);
-            return "state";
-        }
+        // NOTE: state does not matter here since they are serialized later
         if info.labels.is_output() {
             collect_aliases(info.labels.clear(&SignalLabels::output()), aliases);
             return "output";

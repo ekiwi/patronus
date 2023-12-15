@@ -12,7 +12,7 @@ use std::collections::HashMap;
 pub fn replace_anonymous_inputs_with_zero(ctx: &mut Context, sys: &mut TransitionSystem) {
     // find and remove inputs
     let mut replace_map = HashMap::new();
-    for (expr, _) in sys.get_signals(|s| s.kind == SignalKind::Input) {
+    for (expr, signal_info) in sys.get_signals(|s| s.is_input()) {
         let name = expr.get_symbol_name(ctx).unwrap();
         if name.starts_with(DEFAULT_INPUT_PREFIX) || name.starts_with(DEFAULT_STATE_PREFIX) {
             let replacement = match expr.get_type(ctx) {
@@ -21,6 +21,15 @@ pub fn replace_anonymous_inputs_with_zero(ctx: &mut Context, sys: &mut Transitio
             };
             replace_map.insert(expr, replacement);
             sys.remove_signal(expr);
+            // re-insert signal info if the input has labels
+            if !signal_info.labels.is_none() {
+                sys.add_signal(
+                    replacement,
+                    SignalKind::Node,
+                    signal_info.labels,
+                    signal_info.name,
+                );
+            }
         }
     }
 

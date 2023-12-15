@@ -27,6 +27,10 @@ output data_mask_high : bv<1> = _procmux_147[0]
 output data_mask_low : bv<1> = _procmux_147[1]
 output ras_n : bv<1> = command[5]
 output we_n : bv<1> = command[3]
+output rd_ready : bv<1>
+output rd_data : bv<16>
+output data_out : bv<16>
+output busy : bv<1>
 node %150 : bv<17> = _state_5[state]
 node _logic_not_sdram_controller.no_tri_state.v:315_26 : bv<1> = eq(state_cnt, 4'b0)
 node _ge_sdram_controller.no_tri_state.v:294_25 : bv<1> = ugte(zext(refresh_cnt, 22), 32'x207)

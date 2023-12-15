@@ -207,7 +207,12 @@ pub fn analyze_for_serialization(
         }
 
         // add to signal order if applicable
-        if num_children > 0 {
+        if num_children > 0
+            || sys
+                .get_signal(expr_ref)
+                .map(|i| !i.labels.is_none())
+                .unwrap_or(false)
+        {
             let (uses, total_use) = analyze_use(expr_ref, &init_count, &next_count, &other_count);
             if total_use > 1 {
                 signal_order.push(RootInfo {
