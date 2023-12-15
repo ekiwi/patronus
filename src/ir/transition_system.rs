@@ -308,8 +308,8 @@ pub fn merge_signal_info(original: &SignalInfo, alias: &SignalInfo) -> SignalInf
         (None, None) => None,
         (Some(old_name), Some(new_name)) => {
             // we decide whether to overwrite depending on the old signal kind
-            if original.is_input() || original.labels.is_output() {
-                // inputs and outputs must retain their old names in order to be identifiable
+            if original.labels.is_output() {
+                // outputs must retain their old names in order to be identifiable
                 Some(old_name)
             } else {
                 Some(new_name)

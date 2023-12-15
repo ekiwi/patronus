@@ -10,7 +10,7 @@ input in : bv<32>
 input reset : bv<1>
 input clk : bv<1>
 input _input_0 : bv<1>
-output _input_0 : bv<1> = _input_0
+output buffer_full : bv<1> = _input_0
 input _input_1 : bv<1>
 input _input_2 : bv<1>
 input _input_3 : bv<1>

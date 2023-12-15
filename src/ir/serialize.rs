@@ -436,11 +436,20 @@ fn serialize_transition_system<W: Write>(
         .unwrap_or_default();
     let mut names = vec![None; max_id + 1];
     for root in signals.iter() {
-        let name = sys
-            .get_signal(root.expr)
-            .and_then(|i| i.name)
-            .map(|n| ctx.get(n).to_string())
-            .unwrap_or(format!("%{}", root.expr.index()));
+        // try names in this order:
+        // - symbol name
+        // - signal name
+        // - %{id}
+        let name = root
+            .expr
+            .get_symbol_name(ctx)
+            .map(|n| n.to_string())
+            .unwrap_or_else(|| {
+                sys.get_signal(root.expr)
+                    .and_then(|i| i.name)
+                    .map(|n| ctx.get(n).to_string())
+                    .unwrap_or(format!("%{}", root.expr.index()))
+            });
         names[root.expr.index()] = Some(name);
     }
 
@@ -480,7 +489,10 @@ fn serialize_transition_system<W: Write>(
 
         // print aliases
         for alias in aliases.iter() {
-            writeln!(writer, "{alias} {name} : {tpe} = {name}")?;
+            // for aliases, we prefer the signal name
+            // this allows us to e.g. print the name of an output which is also an input correctly
+            let alias_name = maybe_info.unwrap().name.map(|n| ctx.get(n)).unwrap_or(name);
+            writeln!(writer, "{alias} {alias_name} : {tpe} = {name}")?;
         }
     }
 

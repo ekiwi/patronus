@@ -86,6 +86,7 @@ fn parse_sha3_keccak_and_check_that_all_anonymous_inputs_are_there() {
     let (ctx, sys) =
         btor2::parse_file("inputs/repair/sha3_keccak.w2.replace_variables.btor").unwrap();
     insta::assert_snapshot!(sys.serialize_to_str(&ctx));
+    println!("{}", sys.serialize_to_str(&ctx));
 }
 
 fn skip_first_line(value: &str) -> &str {
