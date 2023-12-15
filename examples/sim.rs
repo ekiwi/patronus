@@ -128,10 +128,11 @@ fn read_header(
         let name = cell.trim();
         if let Some(signal_ref) = name_to_ref.get(name) {
             let signal = sys.get_signal(*signal_ref).unwrap();
-            match signal.kind {
-                SignalKind::Input => inputs.push((cell_id, *signal_ref, name.to_string())),
-                SignalKind::Output => outputs.push((cell_id, *signal_ref, name.to_string())),
-                _ => {} // ignore
+            if signal.is_input() {
+                inputs.push((cell_id, *signal_ref, name.to_string()));
+            }
+            if signal.is_output() {
+                outputs.push((cell_id, *signal_ref, name.to_string()));
             }
         }
     }

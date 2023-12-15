@@ -3,7 +3,9 @@
 // author: Kevin Laeufer <laeufer@berkeley.edu>
 
 use super::{Context, Expr, ExprRef, GetNode};
-use crate::ir::{analyze_for_serialization, SignalKind, TransitionSystem, Type, TypeCheck};
+use crate::ir::{
+    analyze_for_serialization, SignalInfo, SignalLabels, TransitionSystem, Type, TypeCheck,
+};
 use std::io::Write;
 
 pub trait SerializableIrNode {
@@ -453,27 +455,32 @@ fn serialize_transition_system<W: Write>(
     };
 
     // signals
+    let mut aliases = Vec::new();
     for root in signals.iter() {
-        let kind = sys
-            .get_signal(root.expr)
-            .map(|i| i.kind)
-            .unwrap_or(SignalKind::Node);
+        let maybe_info = sys.get_signal(root.expr);
+        let is_input = maybe_info.map(|i| i.is_input()).unwrap_or(false);
         let name = names[root.expr.index()].as_ref().unwrap();
         let expr = ctx.get(root.expr);
 
         // print the kind and name
+        let kind = find_type(maybe_info, &mut aliases);
         write!(writer, "{} {}", kind, name)?;
 
         // print the type
         let tpe = expr.get_type(ctx);
         write!(writer, " : {tpe}",)?;
 
-        if kind == SignalKind::Input {
+        if is_input {
             writeln!(writer)?;
         } else {
             write!(writer, " = ")?;
             serialize_expr(expr, ctx, writer, &serialize_child)?;
             writeln!(writer)?;
+        }
+
+        // print aliases
+        for alias in aliases.iter() {
+            writeln!(writer, "{alias} {name} : {tpe} = {name}")?;
         }
     }
 
@@ -499,6 +506,52 @@ fn serialize_transition_system<W: Write>(
     }
 
     Ok(())
+}
+
+fn find_type(maybe_info: Option<&SignalInfo>, aliases: &mut Vec<&'static str>) -> &'static str {
+    aliases.clear();
+    if let Some(info) = maybe_info {
+        if info.is_input() {
+            collect_aliases(info.labels, aliases);
+            return "input";
+        }
+        if info.is_state() {
+            collect_aliases(info.labels, aliases);
+            return "state";
+        }
+        if info.labels.is_output() {
+            collect_aliases(info.labels.clear(&SignalLabels::output()), aliases);
+            return "output";
+        }
+        if info.labels.is_fair() {
+            collect_aliases(info.labels.clear(&SignalLabels::fair()), aliases);
+            return "fair";
+        }
+        if info.labels.is_bad() {
+            collect_aliases(info.labels.clear(&SignalLabels::bad()), aliases);
+            return "bad";
+        }
+        if info.labels.is_constraint() {
+            collect_aliases(info.labels.clear(&SignalLabels::constraint()), aliases);
+            return "constraint";
+        }
+    }
+    "node"
+}
+
+fn collect_aliases(labels: SignalLabels, aliases: &mut Vec<&'static str>) {
+    if labels.is_output() {
+        aliases.push("output");
+    }
+    if labels.is_fair() {
+        aliases.push("fair");
+    }
+    if labels.is_bad() {
+        aliases.push("bad");
+    }
+    if labels.is_constraint() {
+        aliases.push("constraint");
+    }
 }
 
 impl SerializableIrNode for TransitionSystem {

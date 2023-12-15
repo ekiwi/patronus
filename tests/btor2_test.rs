@@ -79,6 +79,15 @@ fn parse_sdram_and_simplify_expressions() {
     insta::assert_snapshot!(sys.serialize_to_str(&ctx));
 }
 
+/// Regression test for a bug that would prevent "_input_0" from being listed as a system input.
+/// The reason was that we did not handle inputs that are also outputs well.
+#[test]
+fn parse_sha3_keccak_and_check_that_all_anonymous_inputs_are_there() {
+    let (ctx, sys) =
+        btor2::parse_file("inputs/repair/sha3_keccak.w2.replace_variables.btor").unwrap();
+    insta::assert_snapshot!(sys.serialize_to_str(&ctx));
+}
+
 fn skip_first_line(value: &str) -> &str {
     match value.char_indices().find(|(_, c)| *c == '\n') {
         None => "",

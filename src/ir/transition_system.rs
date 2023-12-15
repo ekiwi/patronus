@@ -6,13 +6,13 @@ use super::{Context, Expr, ExprRef, GetNode, StringRef};
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 
+/// Represents three fundamental signal kinds that are mutually exclusive:
+/// - inputs
+/// - states
+/// - everything else (a node!)
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
 pub enum SignalKind {
     Node,
-    Output,
-    Bad,
-    Constraint,
-    Fair,
     Input,
     State,
 }
@@ -22,10 +22,6 @@ impl SignalKind {
     pub fn to_string(&self) -> &'static str {
         match &self {
             SignalKind::Node => "node",
-            SignalKind::Output => "output",
-            SignalKind::Bad => "bad",
-            SignalKind::Constraint => "constraint",
-            SignalKind::Fair => "fair",
             SignalKind::Input => "input",
             SignalKind::State => "state",
         }
@@ -38,18 +34,82 @@ impl Display for SignalKind {
     }
 }
 
-impl std::str::FromStr for SignalKind {
+#[derive(Copy, Clone, Default, Eq, PartialEq, Hash)]
+pub struct SignalLabels(u8);
+
+impl SignalLabels {
+    pub fn output() -> Self {
+        Self::set(0)
+    }
+    pub fn is_output(&self) -> bool {
+        self.get(0)
+    }
+    pub fn bad() -> Self {
+        Self::set(1)
+    }
+    pub fn is_bad(&self) -> bool {
+        self.get(1)
+    }
+    pub fn constraint() -> Self {
+        Self::set(2)
+    }
+    pub fn is_constraint(&self) -> bool {
+        self.get(2)
+    }
+    pub fn fair() -> Self {
+        Self::set(3)
+    }
+    pub fn is_fair(&self) -> bool {
+        self.get(3)
+    }
+    #[inline]
+    fn get(&self, pos: usize) -> bool {
+        (self.0 >> pos) & 1 == 1
+    }
+    #[inline]
+    fn set(pos: usize) -> Self {
+        Self(1 << pos)
+    }
+
+    pub fn union(&self, other: &Self) -> Self {
+        Self(self.0 | other.0)
+    }
+
+    pub fn clear(&self, other: &Self) -> Self {
+        Self(self.0 & !other.0)
+    }
+}
+
+impl std::str::FromStr for SignalLabels {
     type Err = ();
 
-    fn from_str(kind: &str) -> Result<Self, Self::Err> {
-        match kind {
-            "node" => Ok(SignalKind::Node),
-            "output" => Ok(SignalKind::Output),
-            "bad" => Ok(SignalKind::Bad),
-            "constraint" => Ok(SignalKind::Constraint),
-            "fair" => Ok(SignalKind::Fair),
+    fn from_str(label: &str) -> Result<Self, Self::Err> {
+        match label {
+            "output" => Ok(SignalLabels::output()),
+            "bad" => Ok(SignalLabels::bad()),
+            "constraint" => Ok(SignalLabels::constraint()),
+            "fair" => Ok(SignalLabels::fair()),
             _ => Err(()),
         }
+    }
+}
+
+impl std::fmt::Debug for SignalLabels {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "SignalLabels(")?;
+        if self.is_output() {
+            write!(f, "output ")?;
+        }
+        if self.is_bad() {
+            write!(f, "bad ")?;
+        }
+        if self.is_constraint() {
+            write!(f, "constraint ")?;
+        }
+        if self.is_fair() {
+            write!(f, "fair ")?;
+        }
+        write!(f, ")")
     }
 }
 
@@ -57,6 +117,19 @@ impl std::str::FromStr for SignalKind {
 pub struct SignalInfo {
     pub name: Option<StringRef>,
     pub kind: SignalKind,
+    pub labels: SignalLabels,
+}
+
+impl SignalInfo {
+    pub fn is_input(&self) -> bool {
+        self.kind == SignalKind::Input
+    }
+    pub fn is_state(&self) -> bool {
+        self.kind == SignalKind::State
+    }
+    pub fn is_output(&self) -> bool {
+        self.labels.is_output()
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Hash)]
@@ -95,12 +168,18 @@ impl TransitionSystem {
         }
     }
 
-    pub fn add_signal(&mut self, expr: ExprRef, kind: SignalKind, name: Option<StringRef>) {
+    pub fn add_signal(
+        &mut self,
+        expr: ExprRef,
+        kind: SignalKind,
+        labels: SignalLabels,
+        name: Option<StringRef>,
+    ) {
         let id = expr.index();
         if self.signals.len() <= id {
             self.signals.resize(id + 1, None);
         }
-        self.signals[id] = Some(SignalInfo { name, kind });
+        self.signals[id] = Some(SignalInfo { name, kind, labels });
     }
 
     pub fn get_signal(&self, expr: ExprRef) -> Option<&SignalInfo> {
@@ -137,14 +216,14 @@ impl TransitionSystem {
     pub fn add_input(&mut self, ctx: &impl GetNode<Expr, ExprRef>, symbol: ExprRef) {
         assert!(symbol.is_symbol(ctx));
         let name = symbol.get_symbol_name_ref(ctx);
-        self.add_signal(symbol, SignalKind::Input, name);
+        self.add_signal(symbol, SignalKind::Input, SignalLabels::default(), name);
     }
 
     pub fn add_state(&mut self, ctx: &impl GetNode<Expr, ExprRef>, symbol: ExprRef) -> StateRef {
         assert!(symbol.is_symbol(ctx));
         // also add as a signal
         let name = symbol.get_symbol_name_ref(ctx);
-        self.add_signal(symbol, SignalKind::State, name);
+        self.add_signal(symbol, SignalKind::State, SignalLabels::default(), name);
         let id = self.states.len();
         self.states.push(State {
             symbol,
@@ -190,11 +269,11 @@ impl TransitionSystem {
     }
 
     pub fn constraints(&self) -> Vec<(ExprRef, SignalInfo)> {
-        self.get_signals(|info| info.kind == SignalKind::Constraint)
+        self.get_signals(|info| info.labels.is_constraint())
     }
 
     pub fn bad_states(&self) -> Vec<(ExprRef, SignalInfo)> {
-        self.get_signals(|info| info.kind == SignalKind::Bad)
+        self.get_signals(|info| info.labels.is_bad())
     }
 
     /// Uses signal names to generate a lookup map from name to the expression that represents it.
@@ -224,37 +303,27 @@ pub fn merge_signal_info(original: &SignalInfo, alias: &SignalInfo) -> SignalInf
         (None, None) => None,
         (Some(old_name), Some(new_name)) => {
             // we decide whether to overwrite depending on the old signal kind
-            match original.kind {
-                SignalKind::Input | SignalKind::Output => {
-                    // inputs and outputs must retain their old names in order to be identifiable
-                    Some(old_name)
-                }
-                SignalKind::State => {
-                    // yosys often adds state labels that contain the actual name used in the verilog
-                    Some(new_name)
-                }
-                _ => {
-                    // for other signals, the new name might be better
-                    Some(new_name)
-                }
+            if original.is_input() || original.labels.is_output() {
+                // inputs and outputs must retain their old names in order to be identifiable
+                Some(old_name)
+            } else {
+                Some(new_name)
             }
         }
     };
     // TODO: it might be interesting to retain alias names
 
-    // only overwrite the kind if it was a node, since other labels add more info
+    // only overwrite the kind if it was a node
     let kind = match (original.kind, alias.kind) {
         // nodes can always be renamed
         (SignalKind::Node, alias) => alias,
-        // outputs always overwrite
-        (_, SignalKind::Output) => SignalKind::Output,
         // otherwise we want to keep the original kind
         (original, _) => original,
     };
-    // TODO: it might be interesting to retain alias kinds
-    //       e.g., a single signal could be a state and an output
 
-    SignalInfo { name, kind }
+    let labels = original.labels.union(&alias.labels);
+
+    SignalInfo { name, kind, labels }
 }
 
 impl GetNode<SignalInfo, ExprRef> for TransitionSystem {
@@ -277,6 +346,8 @@ mod tests {
     fn ir_type_size() {
         // Simple C-like enum
         assert_eq!(std::mem::size_of::<SignalKind>(), 1);
+        // simple bit flags
+        assert_eq!(std::mem::size_of::<SignalLabels>(), 1);
         // Optional name (saved as a string ref) + SignalKind
         assert_eq!(std::mem::size_of::<SignalInfo>(), 4);
         // the option type can use unused values and thus takes no extra space

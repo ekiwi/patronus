@@ -73,17 +73,14 @@ fn internal_count_expr_uses(
 
 /// Returns whether a signal is always "used", i.e. visible to the outside world or not.
 pub fn is_usage_root_signal(info: &SignalInfo) -> bool {
-    matches!(
-        info.kind,
-        SignalKind::Bad | SignalKind::Constraint | SignalKind::Output | SignalKind::Fair
-    )
+    info.labels.is_output()
+        || info.labels.is_constraint()
+        || info.labels.is_bad()
+        || info.labels.is_fair()
 }
 
 pub fn is_non_output_root_signal(info: &SignalInfo) -> bool {
-    matches!(
-        info.kind,
-        SignalKind::Bad | SignalKind::Constraint | SignalKind::Fair
-    )
+    info.labels.is_constraint() || info.labels.is_bad() || info.labels.is_fair()
 }
 
 /// Counts how often expressions are used. This version _does not_ follow any state symbols.

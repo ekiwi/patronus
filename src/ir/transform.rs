@@ -293,12 +293,9 @@ fn update_expr_children(ctx: &mut Context, expr_ref: ExprRef, children: &[ExprRe
 
 /// Slightly different definition from use counts, as we want to retain all inputs in transformation passes.
 fn is_usage_root_signal(info: &SignalInfo) -> bool {
-    matches!(
-        info.kind,
-        SignalKind::Bad
-            | SignalKind::Constraint
-            | SignalKind::Output
-            | SignalKind::Fair
-            | SignalKind::Input
-    )
+    info.is_input()
+        || info.labels.is_output()
+        || info.labels.is_constraint()
+        || info.labels.is_bad()
+        || info.labels.is_fair()
 }

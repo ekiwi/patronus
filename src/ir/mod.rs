@@ -20,6 +20,6 @@ pub use expr::{
 pub use serialize::SerializableIrNode;
 pub use transform::{do_transform, replace_anonymous_inputs_with_zero, simplify_expressions};
 pub use transition_system::{
-    merge_signal_info, SignalInfo, SignalKind, State, StateRef, TransitionSystem,
+    merge_signal_info, SignalInfo, SignalKind, SignalLabels, State, StateRef, TransitionSystem,
 };
 pub use type_check::{TypeCheck, TypeCheckError};

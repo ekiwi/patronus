@@ -142,7 +142,7 @@ impl<'a> Parser<'a> {
         };
 
         // check op
-        let mut label = SignalKind::Node;
+        let mut labels = SignalLabels::default();
         let expr = if UNARY_OPS_SET.contains(op) {
             Some(self.parse_unary_op(line, tokens)?)
         } else if BINARY_OPS_SET.contains(op) {
@@ -175,7 +175,7 @@ impl<'a> Parser<'a> {
                     None
                 }
                 "output" | "bad" | "constraint" | "fair" => {
-                    label = SignalKind::from_str(op).unwrap();
+                    labels = SignalLabels::from_str(op).unwrap();
                     Some((self.get_expr_from_line_id(line, tokens[2])?, 3))
                 }
                 other => {
@@ -200,11 +200,14 @@ impl<'a> Parser<'a> {
                     }
                 }
             };
+            // inputs and states do not get here
+            let kind = SignalKind::Node;
             let merged = match self.sys.get_signal(e) {
-                Some(info) => merge_signal_info(info, &SignalInfo { name, kind: label }),
-                None => SignalInfo { name, kind: label },
+                Some(info) => merge_signal_info(info, &SignalInfo { name, kind, labels }),
+                None => SignalInfo { name, kind, labels },
             };
-            self.sys.add_signal(e, merged.kind, merged.name);
+            self.sys
+                .add_signal(e, merged.kind, merged.labels, merged.name);
         }
         Ok(())
     }
