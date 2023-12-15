@@ -79,7 +79,7 @@ fn main() {
 
     let name_to_ref = sys.generate_name_to_ref(&ctx);
     let (inputs, outputs) =
-        read_header(&mut tb, &name_to_ref, &sys).expect("Failed to read testbench header");
+        read_header(&mut tb, &name_to_ref, &sys, &ctx).expect("Failed to read testbench header");
     if args.verbose {
         println!("Inputs: {inputs:?}");
         println!("Outputs: {outputs:?}");
@@ -112,13 +112,14 @@ fn main() {
     println!("Executed {} steps in {:?}", sim.step_count(), delta_exec);
 }
 
-type IOInfo = Vec<(usize, ExprRef, String)>;
+type IOInfo = Vec<(usize, ExprRef, String, WidthInt)>;
 
 /// Correlates the header with the inputs and outputs of the system.
 fn read_header(
     input: &mut impl BufRead,
     name_to_ref: &HashMap<String, ExprRef>,
     sys: &TransitionSystem,
+    ctx: &Context,
 ) -> std::io::Result<(IOInfo, IOInfo)> {
     let mut line = String::new();
     input.read_line(&mut line)?;
@@ -127,12 +128,13 @@ fn read_header(
     for (cell_id, cell) in line.split(",").enumerate() {
         let name = cell.trim();
         if let Some(signal_ref) = name_to_ref.get(name) {
+            let width = signal_ref.get_bv_type(ctx).unwrap();
             let signal = sys.get_signal(*signal_ref).unwrap();
             if signal.is_input() {
-                inputs.push((cell_id, *signal_ref, name.to_string()));
+                inputs.push((cell_id, *signal_ref, name.to_string(), width));
             }
             if signal.is_output() {
-                outputs.push((cell_id, *signal_ref, name.to_string()));
+                outputs.push((cell_id, *signal_ref, name.to_string(), width));
             }
         }
     }
@@ -144,8 +146,8 @@ fn do_step(
     step_id: usize,
     sim: &mut impl Simulator,
     line: &str,
-    inputs: &[(usize, ExprRef, String)],
-    outputs: &[(usize, ExprRef, String)],
+    inputs: &[(usize, ExprRef, String, WidthInt)],
+    outputs: &[(usize, ExprRef, String, WidthInt)],
     signal_to_print: &[(String, ExprRef)],
 ) {
     // apply inputs
@@ -157,7 +159,8 @@ fn do_step(
                 let trimmed = cell.trim();
                 if trimmed.to_ascii_lowercase() != "x" {
                     let value = u64::from_str_radix(trimmed, 10).unwrap();
-                    sim.set(input.1, &Value::from_u64(value));
+                    let width = input.3;
+                    sim.set(input.1, (&Value::from_u64(value, width)).into());
                 }
 
                 // get next input

@@ -29,7 +29,7 @@ pub trait Simulator {
     fn step(&mut self);
 
     /// Change the value or an expression in the simulator. Be careful!
-    fn set(&mut self, expr: ExprRef, value: &Value);
+    fn set(&mut self, expr: ExprRef, value: ValueRef<'_>);
 
     fn get(&self, expr: ExprRef) -> Option<ValueRef<'_>>;
 
@@ -141,12 +141,12 @@ impl<'a> Simulator for Interpreter<'a> {
         self.step_count += 1;
     }
 
-    fn set(&mut self, expr: ExprRef, value: &Value) {
+    fn set(&mut self, expr: ExprRef, value: ValueRef<'_>) {
         if let Some(m) = &self.update.symbols.get(&expr) {
             assert_eq!(m.elements, 1, "cannot set array values with this function");
             let dst = &mut self.data[m.loc.range()];
             assert!(value.words.len() <= dst.len(), "Value does not fit!");
-            exec::zero_extend(dst, &value.words);
+            exec::zero_extend(dst, value.words);
             // deal with values that are too large
             exec::mask_msb(dst, m.width);
             // println!("Set [{}] = {}", expr.index(), data[0]);
@@ -159,7 +159,7 @@ impl<'a> Simulator for Interpreter<'a> {
             assert_eq!(m.elements, 1, "cannot get array values with this function");
             let words = &self.data[m.loc.range()];
             let bits = m.width;
-            Some(ValueRef { words, bits })
+            Some(ValueRef { words, width: bits })
         } else {
             None
         }
@@ -730,15 +730,20 @@ fn compile_bv_res_expr_type(
 
 /// Contains a pointer to a value.
 pub struct ValueRef<'a> {
-    bits: WidthInt,
+    width: WidthInt,
     words: &'a [Word],
 }
 
 impl<'a> ValueRef<'a> {
+    pub fn new(words: &'a [Word], width: WidthInt) -> Self {
+        assert_eq!(width_to_words(width) as usize, words.len());
+        Self { words, width }
+    }
+
     pub fn to_u64(&self) -> Option<u64> {
         match self.words.len() {
             0 => Some(0),
-            1 => Some(self.words[0] & exec::mask(self.bits)),
+            1 => Some(self.words[0] & exec::mask(self.width)),
             _ => {
                 // check to see if all msbs are zero
                 for word in self.words.iter().skip(1) {
@@ -752,7 +757,7 @@ impl<'a> ValueRef<'a> {
     }
 
     pub fn to_bit_string(&self) -> String {
-        exec::to_bit_str(self.words, self.bits)
+        exec::to_bit_str(self.words, self.width)
     }
 
     pub fn to_big_uint(&self) -> num_bigint::BigUint {
@@ -760,33 +765,48 @@ impl<'a> ValueRef<'a> {
     }
 }
 
+impl<'a> From<&'a Value> for ValueRef<'a> {
+    fn from(value: &'a Value) -> Self {
+        ValueRef {
+            width: value.width,
+            words: value.words.as_ref(),
+        }
+    }
+}
+
 pub struct Value {
+    width: WidthInt,
     words: SmallVec<[Word; 1]>,
 }
 
 impl Value {
-    pub fn from_u64(value: u64) -> Self {
+    pub fn from_u64(value: u64, width: WidthInt) -> Self {
+        assert!(width <= Word::BITS);
         let buf = [value];
         Self {
             words: SmallVec::from_buf(buf),
+            width,
         }
     }
 
-    pub fn from_words(words: &[Word]) -> Self {
+    pub fn from_words(words: &[Word], width: WidthInt) -> Self {
+        assert_eq!(width_to_words(width) as usize, words.len());
         Self {
             words: SmallVec::from_slice(words),
+            width,
         }
     }
 
-    pub fn from_big_uint(value: &num_bigint::BigUint) -> Self {
-        let words = value.iter_u64_digits().collect::<Vec<_>>();
+    pub fn from_big_uint(value: &num_bigint::BigUint, width: WidthInt) -> Self {
+        let words = exec::from_big_uint(value, width);
         Self {
             words: SmallVec::from_vec(words),
+            width,
         }
     }
 
-    pub fn to_bit_string(&self, width: WidthInt) -> String {
-        exec::to_bit_str(&self.words, width)
+    pub fn to_bit_string(&self) -> String {
+        exec::to_bit_str(&self.words, self.width)
     }
 }
 

@@ -415,21 +415,21 @@ fn words_to_u32(words: &[Word]) -> Vec<u32> {
     words32
 }
 
+pub(crate) fn from_big_uint(value: &num_bigint::BigUint, width: WidthInt) -> Vec<Word> {
+    let mut words = value.iter_u64_digits().collect::<Vec<_>>();
+    let num_words = width.div_ceil(Word::BITS);
+    // add any missing (because they are zero) msb words
+    words.resize(num_words as usize, 0);
+    mask_msb(&mut words, width);
+    words
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use num_bigint::{BigInt, BigUint, Sign};
     use rand::Rng;
     use rand_xoshiro::rand_core::SeedableRng;
-
-    fn from_big_uint(value: BigUint, width: WidthInt) -> Vec<Word> {
-        let mut words = value.iter_u64_digits().collect::<Vec<_>>();
-        let num_words = width.div_ceil(Word::BITS);
-        // add any missing (because they are zero) msb words
-        words.resize(num_words as usize, 0);
-        mask_msb(&mut words, width);
-        words
-    }
 
     fn get_sign(value: &[Word], width: WidthInt) -> Sign {
         let sign_bit = (width - 1) % Word::BITS;
@@ -456,7 +456,7 @@ mod tests {
         BigInt::from_slice(sign, &words32)
     }
 
-    fn from_big_int(value: BigInt, width: WidthInt) -> Vec<Word> {
+    fn from_big_int(value: &BigInt, width: WidthInt) -> Vec<Word> {
         let mut words = value.iter_u64_digits().collect::<Vec<_>>();
         let num_words = width.div_ceil(Word::BITS);
         // add any missing (because they are zero) msb words
@@ -566,8 +566,8 @@ mod tests {
         let mut rng = rand_xoshiro::Xoshiro256PlusPlus::seed_from_u64(1);
         for _ in 0..10 {
             let (a_vec, a_width) = from_bit_str(&random_bit_str(1345, &mut rng));
-            assert_eq!(a_vec, from_big_uint(to_big_uint(&a_vec), a_width));
-            assert_eq!(a_vec, from_big_int(to_big_int(&a_vec, a_width), a_width));
+            assert_eq!(a_vec, from_big_uint(&to_big_uint(&a_vec), a_width));
+            assert_eq!(a_vec, from_big_int(&to_big_int(&a_vec, a_width), a_width));
         }
     }
 
@@ -770,7 +770,7 @@ mod tests {
         // check result
         let (a_num, b_num) = (to_big_int(&a_vec, width), to_big_int(&b_vec, width));
         let expected_num = (big)(a_num.clone(), b_num.clone());
-        let expected = from_big_int(expected_num.clone(), width);
+        let expected = from_big_int(&expected_num, width);
         assert_eq!(expected, res_vec, "{a_num} {b_num} {expected_num}");
     }
 
@@ -811,8 +811,8 @@ mod tests {
         our: fn(&[Word], &[Word], WidthInt) -> bool,
         big: fn(BigInt, BigInt) -> bool,
     ) {
-        let a_vec = from_big_int(a.clone(), width);
-        let b_vec = from_big_int(b.clone(), width);
+        let a_vec = from_big_int(&a, width);
+        let b_vec = from_big_int(&b, width);
         let res_bool = (our)(&a_vec, &b_vec, width);
         let expected_bool = (big)(a.clone(), b.clone());
         assert_eq!(expected_bool, res_bool, "{a} {b} {expected_bool}");
