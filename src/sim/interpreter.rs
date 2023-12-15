@@ -75,6 +75,8 @@ impl<'a> Interpreter<'a> {
             .map(|(e, _)| *e)
             .collect::<Vec<_>>();
         let data = vec![0; update.mem_words as usize];
+        println!("{} bytes of data", data.len() * (Word::BITS / 8) as usize);
+        println!("{} bytes of instructions ({} per)", update.instructions.len() * std::mem::size_of::<Instr>(), std::mem::size_of::<Instr>());
         Self {
             ctx,
             update,
@@ -796,15 +798,18 @@ struct Instr {
     tpe: InstrType,
     result_width: WidthInt, // TODO: move to symbol meta-data
     do_trace: bool,         // for debugging
+    one_word: bool,         // source and destination values all fit into a single word
 }
 
 impl Instr {
     fn new(dst: Loc, tpe: InstrType, result_width: WidthInt, do_trace: bool) -> Self {
+        let one_word = dst.one_word() && tpe.all_one_word();
         Self {
             dst,
             tpe,
             result_width,
             do_trace,
+            one_word,
         }
     }
 }
@@ -819,6 +824,21 @@ enum InstrType {
     ArrayStore(WidthInt, Loc, Loc), // array index width + index loc + data loc
     ArrayConst(WidthInt, Loc),     // array index with + data
     Skip(Loc, bool, u32), // conditional skip, condition, invert, number of instructions to skip
+}
+
+impl InstrType {
+    fn all_one_word(&self) -> bool {
+        match &self {
+            InstrType::Nullary(_) => true,
+            InstrType::Unary(_, a) => a.one_word(),
+            InstrType::Binary(_, a, b) => a.one_word() && b.one_word(),
+            InstrType::Tertiary(_, a, b, c) => a.one_word() && b.one_word() && c.one_word(),
+            InstrType::ArrayRead(a, _, b) => a.one_word() && b.one_word(),
+            InstrType::ArrayStore(_, a, b) => a.one_word() && b.one_word(),
+            InstrType::ArrayConst(_, a) => a.one_word(),
+            InstrType::Skip(a, _, _) => a.one_word(),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -895,9 +915,134 @@ impl Loc {
             words: self.words * num_elements,
         }
     }
+
+    fn one_word(&self) -> bool { self.words == 1 }
+
+    fn index(&self) -> usize {
+        debug_assert!(self.one_word());
+        self.offset as usize
+    }
 }
 
 fn exec_instr(instr: &Instr, data: &mut [Word]) -> usize {
+    if instr.one_word {
+        exec_instr_single_word(instr, data)
+    } else {
+        exec_instr_multi_word(instr, data)
+    }
+}
+
+fn exec_instr_single_word(instr: &Instr, data: &mut [Word]) -> usize {
+    match &instr.tpe {
+        InstrType::Skip(cond, invert, num_instr) => {
+            let cond_value = exec::read_bool(&data[cond.range()]);
+            if (cond_value && !*invert) || (!cond_value && *invert) {
+                return *num_instr as usize + 1;
+            }
+        }
+        InstrType::Nullary(tpe) => {
+            match tpe {
+                NullaryOp::BVSymbol => {}
+                NullaryOp::ArraySymbol(_) => {}
+                NullaryOp::BVLiteral(value) => {
+                    data[instr.dst.index()] = *value;
+                    if instr.do_trace {
+                        println!(
+                            "{} <= {tpe:?} = ",
+                            exec::to_bit_str(&data[instr.dst.range()], instr.result_width)
+                        );
+                    }
+                }
+            }
+        }
+        InstrType::Unary(tpe, a_loc) => {
+            let a = &[data[a_loc.index()]];
+            let mut dst = [0 as Word];
+            match tpe {
+                UnaryOp::Slice(hi, lo) => exec::slice(&mut dst, a, *hi, *lo),
+                UnaryOp::Not(width) => exec::not(&mut dst, a, *width),
+                UnaryOp::Negate(width) => exec::negate(&mut dst, a, *width),
+                UnaryOp::ZeroExt => exec::zero_extend(&mut dst, a),
+                UnaryOp::Copy => dst[0] = a[0],
+            }
+            data[instr.dst.index()] = dst[0];
+            if instr.do_trace {
+                println!(
+                    "{} <= {tpe:?} = {}",
+                    exec::to_bit_str(&dst, instr.result_width),
+                    exec::to_bit_str(a, a.len() as WidthInt * Word::BITS)
+                );
+            }
+        }
+        InstrType::Binary(tpe, a_loc, b_loc) => {
+            let a = &[data[a_loc.index()]];
+            let b = &[data[b_loc.index()]];
+            let mut dst = [0 as Word];
+            if instr.do_trace {
+                println!("Old dst: {}", exec::to_bit_str(&dst, instr.result_width));
+            }
+            match tpe {
+                BinaryOp::BVEqual => dst[0] = exec::bool_to_word(exec::cmp_equal(a, b)),
+                BinaryOp::Greater => dst[0] = exec::bool_to_word(exec::cmp_greater(a, b)),
+                BinaryOp::GreaterSigned(width) => {
+                    dst[0] = exec::bool_to_word(exec::cmp_greater_signed(a, b, *width))
+                }
+                BinaryOp::GreaterEqual => {
+                    dst[0] = exec::bool_to_word(exec::cmp_greater_equal(a, b))
+                }
+                BinaryOp::GreaterEqualSigned(width) => {
+                    dst[0] = exec::bool_to_word(exec::cmp_greater_equal_signed(a, b, *width))
+                }
+                BinaryOp::Concat(lsb_width) => exec::concat(&mut dst, a, b, *lsb_width),
+                BinaryOp::Or => exec::or(&mut dst, a, b),
+                BinaryOp::And => exec::and(&mut dst, a, b),
+                BinaryOp::Xor => exec::xor(&mut dst, a, b),
+                BinaryOp::Add(width) => exec::add(&mut dst, a, b, *width),
+                BinaryOp::Sub(width) => exec::sub(&mut dst, a, b, *width),
+                BinaryOp::ShiftRight(width) => exec::shift_right(&mut dst, a, b, *width),
+                BinaryOp::ShiftLeft(width) => exec::shift_left(&mut dst, a, b, *width),
+            }
+            data[instr.dst.index()] = dst[0];
+            if instr.do_trace {
+                println!(
+                    "{} <= {tpe:?} = {}, {}",
+                    exec::to_bit_str(&dst, instr.result_width),
+                    exec::to_bit_str(a, a.len() as WidthInt * Word::BITS),
+                    exec::to_bit_str(b, b.len() as WidthInt * Word::BITS)
+                );
+            }
+        }
+        InstrType::Tertiary(tpe, a_loc, b_loc, c_loc) => match tpe {
+            TertiaryOp::BVIte => {
+                let cond_value = exec::read_bool(&data[a_loc.range()]);
+                if cond_value {
+                    data[instr.dst.index()] = data[b_loc.index()];
+                } else {
+                    data[instr.dst.index()] = data[c_loc.index()];
+                }
+            }
+        },
+        InstrType::ArrayRead(array, index_width, index) => {
+            let index_value = data[index.index()] & exec::mask(*index_width);
+            debug_assert!(array.words == 1);
+            let src_index = array.offset as usize + index_value as usize;
+            data[instr.dst.index()] = data[src_index];
+        }
+        InstrType::ArrayStore(index_width, index, data_loc) => {
+            let index_value = data[index.index()] & exec::mask(*index_width);
+            debug_assert!(instr.dst.words == 1);
+            let dst_index = instr.dst.offset as usize +  index_value as usize;
+            data[dst_index] = data[data_loc.index()];
+        }
+        InstrType::ArrayConst(_index_width, _data_loc) => {
+            unreachable!("should not get here (unless the array has a single element?)")
+        }
+    }
+    // by default we advance to the next instruction
+    1
+}
+
+fn exec_instr_multi_word(instr: &Instr, data: &mut [Word]) -> usize {
     match &instr.tpe {
         InstrType::Skip(cond, invert, num_instr) => {
             let cond_value = exec::read_bool(&data[cond.range()]);

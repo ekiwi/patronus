@@ -43,13 +43,17 @@ pub enum Init {
 
 fn main() {
     let args = Args::parse();
-    let (ctx, sys) = btor2::parse_file(&args.filename).expect("Failed to load btor2 file!");
+    let (mut ctx, mut sys) = btor2::parse_file(&args.filename).expect("Failed to load btor2 file!");
     if args.verbose {
         println!("Loaded: {}", sys.name);
         println!("{}", sys.serialize_to_str(&ctx));
         println!();
         println!();
     }
+
+    // optimize
+    replace_anonymous_inputs_with_zero(&mut ctx, &mut sys);
+    simplify_expressions(&mut ctx, &mut sys);
 
     // start execution
     let start_load = std::time::Instant::now();
