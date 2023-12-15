@@ -71,6 +71,10 @@ impl SignalLabels {
         Self(1 << pos)
     }
 
+    pub fn is_none(&self) -> bool {
+        self.0 == 0
+    }
+
     pub fn union(&self, other: &Self) -> Self {
         Self(self.0 | other.0)
     }
@@ -282,7 +286,8 @@ impl TransitionSystem {
         let mut out = HashMap::new();
         for (idx, maybe_signal) in self.signals.iter().enumerate() {
             if let Some(signal) = maybe_signal {
-                if signal.kind != SignalKind::Node {
+                let skip = signal.kind == SignalKind::Node && signal.labels.is_none();
+                if !skip {
                     // ignore nodes
                     if let Some(name) = signal.name {
                         let name_str = ctx.get(name).to_string();
