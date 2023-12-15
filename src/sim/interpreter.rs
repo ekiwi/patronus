@@ -7,6 +7,7 @@ use super::exec::Word;
 use crate::ir::*;
 use rand::{RngCore, SeedableRng};
 use smallvec::SmallVec;
+use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 
 /// Specifies how to initialize states that do not have
@@ -773,6 +774,28 @@ impl<'a> From<&'a Value> for ValueRef<'a> {
         }
     }
 }
+
+impl<'a> PartialEq for ValueRef<'a> {
+    fn eq(&self, other: &Self) -> bool {
+        let same = self
+            .words
+            .iter()
+            .zip(other.words.iter())
+            .all(|(a, b)| *a == *b);
+        if same {
+            // check to make sure that the msbs of the longer value are all zero
+            match self.words.len().cmp(&other.words.len()) {
+                Ordering::Less => other.words.iter().skip(self.words.len()).all(|w| *w == 0),
+                Ordering::Equal => true,
+                Ordering::Greater => self.words.iter().skip(other.words.len()).all(|w| *w == 0),
+            }
+        } else {
+            false
+        }
+    }
+}
+
+impl<'a> Eq for ValueRef<'a> {}
 
 pub struct Value {
     width: WidthInt,
