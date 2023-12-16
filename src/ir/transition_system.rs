@@ -254,6 +254,10 @@ impl TransitionSystem {
         self.states.iter()
     }
 
+    pub fn state_map(&self) -> HashMap<ExprRef, &State> {
+        HashMap::from_iter(self.states().map(|s| (s.symbol, s)))
+    }
+
     pub fn remove_state(&mut self, index: usize) -> State {
         self.states.remove(index)
     }

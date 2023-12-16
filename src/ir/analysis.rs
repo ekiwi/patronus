@@ -3,28 +3,12 @@
 // author: Kevin Laeufer <laeufer@berkeley.edu>
 
 use crate::ir::{Context, Expr, ExprRef, GetNode, SignalInfo, SignalKind, State, TransitionSystem};
-use std::collections::HashMap;
 use std::ops::Index;
-
-pub fn find_expr_with_multiple_uses(ctx: &Context, sys: &TransitionSystem) -> Vec<ExprRef> {
-    let counts = count_expr_uses(ctx, sys);
-    let mut out = Vec::new();
-    for (idx, count) in counts.iter().enumerate() {
-        if *count > 1 {
-            out.push(ExprRef::from_index(idx));
-        }
-    }
-    out
-}
 
 pub type UseCountInt = u16;
 
 pub fn count_expr_uses(ctx: &Context, sys: &TransitionSystem) -> Vec<UseCountInt> {
     internal_count_expr_uses(ctx, sys, false)
-}
-
-pub fn count_expr_uses_without_init(ctx: &Context, sys: &TransitionSystem) -> Vec<UseCountInt> {
-    internal_count_expr_uses(ctx, sys, true)
 }
 
 fn internal_count_expr_uses(
@@ -33,7 +17,7 @@ fn internal_count_expr_uses(
     ignore_init: bool,
 ) -> Vec<UseCountInt> {
     let mut use_count = ExprMetaData::default();
-    let states: HashMap<ExprRef, &State> = HashMap::from_iter(sys.states().map(|s| (s.symbol, s)));
+    let states = sys.state_map();
     let mut todo = Vec::from_iter(
         sys.get_signals(is_usage_root_signal)
             .iter()
@@ -69,6 +53,51 @@ fn internal_count_expr_uses(
     }
 
     use_count.into_vec()
+}
+
+/// Generates a list of all inputs and states that can influence the `root` expression.
+pub fn cone_of_influence(ctx: &Context, sys: &TransitionSystem, root: ExprRef) -> Vec<ExprRef> {
+    let mut out = vec![];
+    let mut todo = vec![root];
+    let mut visited = ExprMetaData::default();
+    let states = sys.state_map();
+
+    while let Some(expr_ref) = todo.pop() {
+        if *visited.get(expr_ref) {
+            continue;
+        }
+
+        // make sure children are visited
+        let expr = ctx.get(expr_ref);
+        expr.for_each_child(|c| {
+            if !*visited.get(*c) {
+                todo.push(*c);
+            }
+        });
+
+        // for states we want to follow the next and init expressions
+        if let Some(state) = states.get(&expr_ref) {
+            state.for_each_child(|c| {
+                if !*visited.get(*c) {
+                    todo.push(*c);
+                }
+            });
+        }
+
+        // check to see if this is a state or input
+        if expr.is_symbol() {
+            let is_state_or_input = sys
+                .get_signal(expr_ref)
+                .map(|i| i.is_input() || i.is_state())
+                .unwrap_or(false);
+            if is_state_or_input {
+                out.push(expr_ref);
+            }
+        }
+        *visited.get_mut(expr_ref) = true;
+    }
+
+    out
 }
 
 /// Returns whether a signal is always "used", i.e. visible to the outside world or not.
@@ -498,5 +527,30 @@ impl ForEachChild<ExprRef> for State {
         if let Some(init) = &self.init {
             (visitor)(init);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::btor2;
+
+    fn format_symbol_list(ctx: &Context, symbols: &[ExprRef]) -> String {
+        let v: Vec<_> = symbols
+            .iter()
+            .map(|s| s.get_symbol_name(ctx).unwrap())
+            .collect();
+        v.join(", ")
+    }
+
+    #[test]
+    fn test_cone_of_influence() {
+        let (ctx, sys) = btor2::parse_file("inputs/unittest/delay.btor").unwrap();
+        let reg0 = sys.get_state_by_name(&ctx, "reg0").unwrap().symbol;
+        let reg1 = sys.get_state_by_name(&ctx, "reg1").unwrap().symbol;
+        let cone0 = cone_of_influence(&ctx, &sys, reg0);
+        let cone1 = cone_of_influence(&ctx, &sys, reg1);
+        insta::assert_snapshot!(format_symbol_list(&ctx, &cone0));
+        insta::assert_snapshot!(format_symbol_list(&ctx, &cone1));
     }
 }
