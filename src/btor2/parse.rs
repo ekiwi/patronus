@@ -100,7 +100,6 @@ impl<'a> Parser<'a> {
         let input_states = self
             .sys
             .states()
-            .enumerate()
             .rev() // this reverse is needed in order to properly remove elements from back to front
             .filter(|(_, s)| s.init.is_none() && s.next.is_none())
             .map(|(i, _)| i)
@@ -781,7 +780,7 @@ fn include_name(name: &str) -> bool {
 /// for these nodes and tries to rename the states.
 fn improve_state_names(ctx: &mut Context, sys: &mut TransitionSystem) {
     let mut renames = HashMap::new();
-    for state in sys.states() {
+    for (_, state) in sys.states() {
         // since the alias signal refers to the same expression as the state symbol,
         // it will generate a signal info with the better name
         if let Some(signal) = sys.get_signal(state.symbol) {

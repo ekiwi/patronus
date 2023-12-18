@@ -183,11 +183,11 @@ impl SmtModelChecker {
         }
 
         // collect initial values
-        for (state_idx, state) in sys.states().enumerate() {
+        for (state_cnt, (_, state)) in sys.states().enumerate() {
             let sym_at = enc.get_at(ctx, smt_ctx, state.symbol, 0);
             let value = get_smt_value(smt_ctx, sym_at, state.symbol.get_type(ctx))?;
             // we assume that state ids are monotonically increasing with +1
-            assert_eq!(wit.init.len(), state_idx);
+            assert_eq!(wit.init.len(), state_cnt);
             wit.init.push(Some(value));
             // also save state name
             wit.init_names
@@ -437,7 +437,7 @@ impl UnrollSmtEncoding {
             .unwrap_or_default();
         let max_state_index = sys
             .states()
-            .map(|s| s.symbol.index())
+            .map(|(_, s)| s.symbol.index())
             .max()
             .unwrap_or_default();
         let signals_map_len = std::cmp::max(max_ser_index, max_state_index) + 1;
@@ -464,8 +464,8 @@ impl UnrollSmtEncoding {
             };
             signals[root.expr.index()] = Some(info);
         }
-        for (id, state) in sys.states().enumerate() {
-            let id = (id + signal_order.len()) as u16;
+        for (id, state) in sys.states() {
+            let id = (id.to_index() + signal_order.len()) as u16;
             let info = SmtSignalInfo {
                 id,
                 name: state.symbol.get_symbol_name_ref(ctx).unwrap(),
@@ -734,7 +734,7 @@ fn convert_expr(
             let e_expr = convert_expr(smt_ctx, ctx, *e, patch_expr);
             match e.get_type(ctx) {
                 Type::BV(width) => {
-                    let inner_ite_encoding = true;
+                    let inner_ite_encoding = false;
                     if width == 1 {
                         if inner_ite_encoding {
                             // this encoding sticks an ite into the zext

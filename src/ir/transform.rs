@@ -204,7 +204,7 @@ fn get_root_expressions(sys: &TransitionSystem) -> Vec<ExprRef> {
     );
 
     // include all states
-    for state in sys.states() {
+    for (_, state) in sys.states() {
         out.push(state.symbol);
         if let Some(init) = state.init {
             out.push(init);

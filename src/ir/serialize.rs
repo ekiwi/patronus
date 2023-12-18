@@ -496,7 +496,7 @@ fn serialize_transition_system<W: Write>(
     }
 
     // states
-    for state in sys.states() {
+    for (_, state) in sys.states() {
         let name = state
             .symbol
             .get_symbol_name(ctx)

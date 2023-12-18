@@ -70,7 +70,7 @@ impl<'a> Interpreter<'a> {
         let init = compile(ctx, sys, true, do_trace);
         let mut update = compile(ctx, sys, false, do_trace);
         let step = compile_step(ctx, sys, &mut update, do_trace);
-        let states = sys.states().cloned().collect::<Vec<_>>();
+        let states = sys.states.clone();
         let inputs = sys
             .get_signals(|s| s.kind == SignalKind::Input)
             .iter()
@@ -272,11 +272,11 @@ fn compile_step(
     do_trace: bool,
 ) -> Program {
     let mut instructions = Vec::new();
-    let state_set: HashSet<ExprRef> = HashSet::from_iter(sys.states().map(|s| s.symbol));
+    let state_set: HashSet<ExprRef> = HashSet::from_iter(sys.states.iter().map(|s| s.symbol));
 
     // see if there are any conflicts
     let mut next_patched = HashMap::new();
-    for state in sys.states() {
+    for (_, state) in sys.states() {
         if let Some(next) = get_state_next(state) {
             if state_set.contains(&next) && !next_patched.contains_key(&next) {
                 // if the next expression is reading from a state, copy the value to a temporary location
@@ -290,7 +290,7 @@ fn compile_step(
     }
 
     // generate instructions to copy next value to state
-    for state in sys.states() {
+    for (_, state) in sys.states() {
         if let Some(next) = get_state_next(state) {
             let src = next_patched
                 .get(&next)
@@ -323,7 +323,7 @@ fn copy_instr(dst: &std::ops::Range<usize>, src: &std::ops::Range<usize>, do_tra
 fn compile(ctx: &Context, sys: &TransitionSystem, init_mode: bool, do_trace: bool) -> Program {
     // we need to be able to identify expressions that represent states
     let expr_to_state: HashMap<ExprRef, &State> =
-        HashMap::from_iter(sys.states().map(|s| (s.symbol, s)));
+        HashMap::from_iter(sys.states.iter().map(|s| (s.symbol, s)));
 
     // used to track instruction result allocations
     let mut locs: ExprMetaData<Option<(Loc, WidthInt)>> = ExprMetaData::default();
@@ -342,7 +342,7 @@ fn compile(ctx: &Context, sys: &TransitionSystem, init_mode: bool, do_trace: boo
     // define roots depending on mode
     if init_mode {
         // calculate the value for each state (which in init mode is the value of the init expression)
-        for state in sys.states() {
+        for (_, state) in sys.states() {
             todo.push(state.symbol);
         }
         // allocate space for inputs
@@ -351,7 +351,7 @@ fn compile(ctx: &Context, sys: &TransitionSystem, init_mode: bool, do_trace: boo
         }
     } else {
         // calculate the next expression for each state
-        for state in sys.states() {
+        for (_, state) in sys.states() {
             if let Some(next) = get_state_next(state) {
                 todo.push(next);
             }
@@ -575,7 +575,7 @@ fn get_array_expr_children(ctx: &Context, expr: ExprRef) -> Vec<ExprRef> {
 
 fn get_next_and_init_refs(sys: &TransitionSystem) -> HashSet<ExprRef> {
     let mut out: HashSet<ExprRef> = HashSet::new();
-    for state in sys.states() {
+    for (_, state) in sys.states() {
         if let Some(init) = state.init {
             out.insert(init);
         }

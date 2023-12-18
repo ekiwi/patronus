@@ -196,7 +196,7 @@ pub fn analyze_for_serialization(
         todo.push(expr);
         other_count[expr.index()] = 100; // ensure that this expression will always be serialized
     }
-    for state in sys.states() {
+    for (_, state) in sys.states() {
         if let Some(expr) = state.next {
             todo.push(expr);
         }
@@ -284,7 +284,7 @@ fn init_counts(
 ) -> (Vec<UseCountInt>, Vec<UseCountInt>, Vec<UseCountInt>) {
     let mut init_roots = Vec::new();
     let mut next_roots = Vec::new();
-    for state in sys.states() {
+    for (_, state) in sys.states() {
         if let Some(next) = state.next {
             next_roots.push(next);
         }

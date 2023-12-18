@@ -25,7 +25,7 @@ const COUNT_2: &str = r#"
 fn interpret_count_2() {
     let mut ctx = Context::default();
     let sys = btor2::parse_str(&mut ctx, COUNT_2, Some("count2")).unwrap();
-    let counter_state = sys.states().next().unwrap().symbol;
+    let counter_state = sys.states().next().unwrap().1.symbol;
     let bad = sys.bad_states().first().unwrap().0;
     let mut sim = Interpreter::new(&ctx, &sys);
 

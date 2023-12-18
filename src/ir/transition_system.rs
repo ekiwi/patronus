@@ -5,6 +5,7 @@
 use super::{Context, Expr, ExprRef, GetNode, StringRef};
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
+use std::iter::Enumerate;
 
 /// Represents three fundamental signal kinds that are mutually exclusive:
 /// - inputs
@@ -152,6 +153,12 @@ impl State {
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
 pub struct StateRef(usize);
 
+impl StateRef {
+    pub fn to_index(&self) -> usize {
+        self.0
+    }
+}
+
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
 pub struct InputRef(usize);
 
@@ -250,16 +257,18 @@ impl TransitionSystem {
         modify(self.states.get_mut(reference.0).unwrap())
     }
 
-    pub fn states(&self) -> core::slice::Iter<'_, State> {
-        self.states.iter()
+    pub fn states(&self) -> StateIter<'_> {
+        StateIter {
+            underlying: self.states.iter().enumerate(),
+        }
     }
 
     pub fn state_map(&self) -> HashMap<ExprRef, &State> {
-        HashMap::from_iter(self.states().map(|s| (s.symbol, s)))
+        HashMap::from_iter(self.states.iter().map(|s| (s.symbol, s)))
     }
 
-    pub fn remove_state(&mut self, index: usize) -> State {
-        self.states.remove(index)
+    pub fn remove_state(&mut self, state: StateRef) -> State {
+        self.states.remove(state.0)
     }
 
     pub fn get_signals(&self, filter: fn(&SignalInfo) -> bool) -> Vec<(ExprRef, SignalInfo)> {
@@ -307,6 +316,24 @@ impl TransitionSystem {
         }
 
         out
+    }
+}
+
+pub struct StateIter<'a> {
+    underlying: Enumerate<std::slice::Iter<'a, State>>,
+}
+
+impl<'a> Iterator for StateIter<'a> {
+    type Item = (StateRef, &'a State);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.underlying.next().map(|(i, s)| (StateRef(i), s))
+    }
+}
+
+impl<'a> DoubleEndedIterator for StateIter<'a> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.underlying.next_back().map(|(i, s)| (StateRef(i), s))
     }
 }
 
