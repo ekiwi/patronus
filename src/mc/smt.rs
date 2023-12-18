@@ -579,7 +579,9 @@ impl TransitionSystemEncoding for UnrollSmtEncoding {
     }
 
     fn init_at(&mut self, ctx: &mut Context, smt_ctx: &mut smt::Context, step: u64) -> Result<()> {
-        assert!(self.current_step.is_none(), "init must be called only once");
+        // delete old mutable state
+        self.symbols_at.clear();
+        // remember current step and starting offset
         self.current_step = Some(step);
         self.offset = Some(step);
         self.create_signal_symbols_in_step(ctx, step);
