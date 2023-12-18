@@ -1,5 +1,0 @@
----
-source: src/ir/analysis.rs
-expression: "format_symbol_list(&ctx, &cone0)"
----
-reg0
