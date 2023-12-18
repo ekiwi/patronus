@@ -9,6 +9,7 @@ use rand::{RngCore, SeedableRng};
 use smallvec::SmallVec;
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
+use std::fmt::{Debug, Formatter};
 
 /// Specifies how to initialize states that do not have
 #[derive(Debug, PartialEq, Copy, Clone)]
@@ -797,6 +798,25 @@ impl<'a> PartialEq for ValueRef<'a> {
 
 impl<'a> Eq for ValueRef<'a> {}
 
+impl<'a> PartialEq<Value> for ValueRef<'a> {
+    fn eq(&self, other: &Value) -> bool {
+        let other_ref: ValueRef = other.into();
+        self.eq(&other_ref)
+    }
+}
+
+impl<'a> PartialEq<ValueRef<'a>> for Value {
+    fn eq(&self, other: &ValueRef<'a>) -> bool {
+        other.eq(self)
+    }
+}
+
+impl<'a> Debug for ValueRef<'a> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "ValueRef({})", self.to_bit_string())
+    }
+}
+
 pub struct Value {
     width: WidthInt,
     words: SmallVec<[Word; 1]>,
@@ -830,6 +850,12 @@ impl Value {
 
     pub fn to_bit_string(&self) -> String {
         exec::to_bit_str(&self.words, self.width)
+    }
+}
+
+impl Debug for Value {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Value({})", self.to_bit_string())
     }
 }
 
