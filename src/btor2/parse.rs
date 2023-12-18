@@ -515,15 +515,15 @@ impl<'a> Parser<'a> {
         self.require_at_least_n_tokens(line, tokens, 3)?;
         // derive width from type
         let width = self.get_bv_width(line, tokens[2])?;
-        let res = if width > BVLiteralInt::BITS {
+        let res = if width > u64::BITS {
             todo!("Add support for literals of size: {width}")
         } else {
-            let value = if width == BVLiteralInt::BITS {
-                BVLiteralInt::MAX
+            let value = if width == u64::BITS {
+                u64::MAX
             } else {
-                ((1 as BVLiteralInt) << width) - 1
+                ((1u64) << width) - 1
             };
-            self.ctx.bv_lit(value, width)
+            self.ctx.bv_lit_from_u64(value, width)
         };
         Ok((res, 3))
     }

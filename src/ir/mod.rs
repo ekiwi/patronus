@@ -13,8 +13,8 @@ pub use analysis::{
     ExprMetaData, ForEachChild, SerializeMeta, UseCountInt, Uses,
 };
 pub use expr::{
-    bv_value_fits_width, AddNode, ArrayType, BVLiteralInt, Context, Expr, ExprNodeConstruction,
-    ExprRef, GetNode, StringRef, Type, WidthInt,
+    bv_value_fits_width, AddNode, ArrayType, Context, Expr, ExprNodeConstruction, ExprRef, GetNode,
+    StringRef, Type, WidthInt,
 };
 pub use serialize::SerializableIrNode;
 pub use transform::{do_transform, replace_anonymous_inputs_with_zero, simplify_expressions};

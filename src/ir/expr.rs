@@ -3,14 +3,12 @@
 // author: Kevin Laeufer <laeufer@berkeley.edu>
 
 use crate::ir::TypeCheck;
+use crate::sim::exec::Word;
 use std::fmt::{Debug, Formatter};
 use std::num::NonZeroU32;
 
 /// This type restricts the maximum width that a bit-vector type is allowed to have in our IR.
 pub type WidthInt = u32;
-
-/// This restricts the maximum value that a bit-vector literal can carry.
-pub type BVLiteralInt = u64;
 
 /// Add an IR node to the context.
 pub trait AddNode<D, I: Clone + Copy> {
@@ -39,7 +37,7 @@ pub trait ExprNodeConstruction:
     fn symbol(&mut self, name: StringRef, tpe: Type) -> ExprRef {
         self.add_node(Expr::symbol(name, tpe))
     }
-    fn bv_lit(&mut self, value: BVLiteralInt, width: WidthInt) -> ExprRef {
+    fn bv_lit_from_u64(&mut self, value: u64, width: WidthInt) -> ExprRef {
         assert!(bv_value_fits_width(value, width));
         self.add_node(Expr::BVLiteral { value, width })
     }
@@ -53,8 +51,8 @@ pub trait ExprNodeConstruction:
     }
 
     fn mask(&mut self, width: WidthInt) -> ExprRef {
-        let value = ((1 as BVLiteralInt) << width) - 1;
-        self.bv_lit(value, width)
+        let value = ((1 as u64) << width) - 1;
+        self.bv_lit_from_u64(value, width)
     }
     fn one(&mut self, width: WidthInt) -> ExprRef {
         self.bv_lit(1, width)
@@ -192,8 +190,8 @@ pub trait ExprNodeConstruction:
     }
 }
 
-pub fn bv_value_fits_width(value: BVLiteralInt, width: WidthInt) -> bool {
-    let bits_required = BVLiteralInt::BITS - value.leading_zeros();
+pub fn bv_value_fits_width(value: u64, width: WidthInt) -> bool {
+    let bits_required = u64::BITS - value.leading_zeros();
     width >= bits_required
 }
 
@@ -206,6 +204,8 @@ type StringInternerU16 = string_interner::StringInterner<
 pub struct Context {
     strings: StringInternerU16,
     exprs: indexmap::IndexSet<Expr>,
+    /// store for large integer constants, used by BVLiteral
+    words: Vec<Word>,
 }
 
 impl Default for Context {
@@ -213,6 +213,7 @@ impl Default for Context {
         Context {
             strings: StringInternerU16::new(),
             exprs: indexmap::IndexSet::default(),
+            words: Vec::default(),
         }
     }
 }
@@ -303,6 +304,9 @@ impl ExprRef {
     }
 }
 
+/// Reference to a bit vector value saved in a context.
+pub struct BVValueRef(u32, u16);
+
 #[derive(Debug, PartialEq, Eq, Clone, Hash)]
 /// Represents a SMT bit-vector or array expression.
 pub enum Expr {
@@ -314,7 +318,7 @@ pub enum Expr {
     },
     // TODO: support literals that do not fit into 64-bit
     BVLiteral {
-        value: BVLiteralInt,
+        value: BVValueRef,
         width: WidthInt,
     },
     // unary operations

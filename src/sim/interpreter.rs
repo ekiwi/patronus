@@ -894,7 +894,6 @@ enum InstrType {
 enum NullaryOp {
     BVSymbol,
     ArraySymbol(WidthInt), // index width
-    BVLiteral(BVLiteralInt),
 }
 
 #[derive(Debug, Clone)]
