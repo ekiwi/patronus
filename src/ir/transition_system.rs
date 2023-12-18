@@ -290,12 +290,17 @@ impl TransitionSystem {
         let mut out = HashMap::new();
         for (idx, maybe_signal) in self.signals.iter().enumerate() {
             if let Some(signal) = maybe_signal {
+                // ignore nodes
                 let skip = signal.kind == SignalKind::Node && signal.labels.is_none();
                 if !skip {
-                    // ignore nodes
+                    let expr_ref = ExprRef::from_index(idx);
                     if let Some(name) = signal.name {
                         let name_str = ctx.get(name).to_string();
-                        out.insert(name_str, ExprRef::from_index(idx));
+                        out.insert(name_str, expr_ref);
+                    }
+                    // sometimes symbols might have a different name than the signal, because of aliasing
+                    if let Some(name) = expr_ref.get_symbol_name(ctx) {
+                        out.insert(name.to_string(), expr_ref);
                     }
                 }
             }
