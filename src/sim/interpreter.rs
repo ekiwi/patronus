@@ -321,7 +321,7 @@ fn copy_instr(dst: &std::ops::Range<usize>, src: &std::ops::Range<usize>, do_tra
 /// Converts a transitions system into instructions and the number of Words that need to be allocated
 /// * `init_mode` - Indicates whether we want to generate a program for the system init or the system update.
 fn compile(ctx: &Context, sys: &TransitionSystem, init_mode: bool, do_trace: bool) -> Program {
-    // we need to be able to indentiy expressions that represent states
+    // we need to be able to identify expressions that represent states
     let expr_to_state: HashMap<ExprRef, &State> =
         HashMap::from_iter(sys.states().map(|s| (s.symbol, s)));
 
