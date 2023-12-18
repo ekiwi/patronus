@@ -447,8 +447,8 @@ impl UnrollSmtEncoding {
         for (id, root) in ser_info.signal_order.into_iter().enumerate() {
             signal_order.push(root.expr);
             let name = sys.get_signal(root.expr).and_then(|i| i.name).unwrap_or({
-                let base = format!("n{}", root.expr.index());
-                ctx.add_unique_str(&base)
+                let default_name = format!("__n{}", root.expr.index());
+                ctx.add_node(default_name)
             });
             let is_input = sys
                 .get_signal(root.expr)

@@ -219,7 +219,10 @@ impl Default for Context {
 
 impl Context {
     /// ensures that the value is unique (by appending a number if necessary) and then adds it to the store
-    pub fn add_unique_str(&mut self, value: &str) -> StringRef {
+    /// TODO: move this functionality to the parser, since it is only really good to use when we
+    ///       have a fresh context. Otherwise, we might encounter "false" conflicts, leading to
+    ///       unstable names.
+    pub(crate) fn add_unique_str(&mut self, value: &str) -> StringRef {
         let mut name: String = value.to_string();
         let mut count: usize = 0;
         while self.is_interned(&name) {
