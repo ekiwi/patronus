@@ -734,14 +734,23 @@ fn convert_expr(
             let e_expr = convert_expr(smt_ctx, ctx, *e, patch_expr);
             match e.get_type(ctx) {
                 Type::BV(width) => {
+                    let inner_ite_encoding = true;
                     if width == 1 {
-                        let res_size = (by + 1) as usize;
-                        // in the one bit case, the underlying expression is represented as a Bool in SMT
-                        smt_ctx.ite(
-                            e_expr,
-                            smt_ctx.binary(res_size, 1),
-                            smt_ctx.binary(res_size, 0),
-                        )
+                        if inner_ite_encoding {
+                            // this encoding sticks an ite into the zext
+                            let inner =
+                                smt_ctx.ite(e_expr, smt_ctx.binary(1, 1), smt_ctx.binary(0, 0));
+                            smt_ctx.zext(inner, *by as usize)
+                        } else {
+                            // this encoding avoids the zext by using an ite on the expanded true/false case
+                            let res_size = (by + 1) as usize;
+                            // in the one bit case, the underlying expression is represented as a Bool in SMT
+                            smt_ctx.ite(
+                                e_expr,
+                                smt_ctx.binary(res_size, 1),
+                                smt_ctx.binary(res_size, 0),
+                            )
+                        }
                     } else {
                         smt_ctx.zext(e_expr, *by as usize)
                     }
