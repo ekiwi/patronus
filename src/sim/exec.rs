@@ -126,9 +126,9 @@ pub(crate) fn not(dst: &mut [Word], source: &[Word], width: WidthInt) {
 }
 
 #[inline]
-fn bitwise_un_op(dst: &mut [Word], source: &[Word], foo: fn(Word) -> Word) {
+fn bitwise_un_op(dst: &mut [Word], source: &[Word], op: fn(Word) -> Word) {
     for (d, s) in dst.iter_mut().zip(source.iter()) {
-        *d = (foo)(*s);
+        *d = (op)(*s);
     }
 }
 
@@ -148,9 +148,9 @@ pub(crate) fn xor(dst: &mut [Word], a: &[Word], b: &[Word]) {
 }
 
 #[inline]
-fn bitwise_bin_op(dst: &mut [Word], a: &[Word], b: &[Word], foo: fn(Word, Word) -> Word) {
+fn bitwise_bin_op(dst: &mut [Word], a: &[Word], b: &[Word], op: fn(Word, Word) -> Word) {
     for (d, (a, b)) in dst.iter_mut().zip(a.iter().zip(b.iter())) {
-        *d = (foo)(*a, *b);
+        *d = (op)(*a, *b);
     }
 }
 

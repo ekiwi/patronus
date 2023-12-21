@@ -21,12 +21,6 @@ pub struct Witness {
     pub failed_safety: Vec<u32>,
 }
 
-impl Witness {
-    pub fn len(&self) -> usize {
-        self.inputs.len()
-    }
-}
-
 #[derive(Debug, Clone)]
 pub enum WitnessValue {
     Scalar(BigUint, WidthInt),

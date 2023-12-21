@@ -430,7 +430,7 @@ fn compile(ctx: &Context, sys: &TransitionSystem, init_mode: bool, do_trace: boo
                 compile_expr_ref,
                 &loc,
                 index_width,
-                &mut locs,
+                &locs,
                 &mut instructions,
                 do_trace,
             );

@@ -216,11 +216,8 @@ impl SmtModelChecker {
         // TODO: get rid of default values in a more intelligent fashion,
         //       e.g., by recording which indices are accessed
         for init in wit.init.iter_mut() {
-            match init.as_mut() {
-                Some(WitnessValue::Array(a)) => {
-                    a.default = None;
-                }
-                _ => {}
+            if let Some(WitnessValue::Array(a)) = init.as_mut() {
+                a.default = None;
             }
         }
 
