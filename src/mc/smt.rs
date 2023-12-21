@@ -160,6 +160,7 @@ impl SmtModelChecker {
         Ok(ModelCheckResult::Success)
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn get_witness(
         &self,
         sys: &TransitionSystem,
