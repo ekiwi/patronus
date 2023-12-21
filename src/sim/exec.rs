@@ -5,11 +5,11 @@
 // contains implementations of our smt operations
 // values are stored in an array of words in little endian form
 
+use super::value::Word;
 use crate::ir::WidthInt;
 use std::cmp::Ordering;
 use std::ops::Range;
 
-pub(crate) type Word = u64;
 type DoubleWord = u128;
 
 #[inline]

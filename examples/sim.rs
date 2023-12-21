@@ -5,7 +5,8 @@
 use clap::{arg, Parser, ValueEnum};
 use libpatron::ir::*;
 use libpatron::mc::Simulator;
-use libpatron::sim::interpreter::{InitKind, Interpreter, Value};
+use libpatron::sim::interpreter::{InitKind, Interpreter};
+use libpatron::sim::Value;
 use libpatron::*;
 use num_bigint::BigUint;
 use num_traits::Num;
