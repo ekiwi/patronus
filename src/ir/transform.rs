@@ -98,10 +98,10 @@ fn simplify(ctx: &mut Context, expr: ExprRef, children: &[ExprRef]) -> Option<Ex
 pub fn do_transform(
     ctx: &mut Context,
     sys: &mut TransitionSystem,
-    foo: impl FnMut(&mut Context, ExprRef, &[ExprRef]) -> Option<ExprRef>,
+    tran: impl FnMut(&mut Context, ExprRef, &[ExprRef]) -> Option<ExprRef>,
 ) {
     let todo = get_root_expressions(sys);
-    let transformed = do_transform_expr(ctx, todo, foo);
+    let transformed = do_transform_expr(ctx, todo, tran);
 
     // update transition system signals
     for (old_expr, maybe_new_expr) in transformed.iter() {
@@ -144,7 +144,7 @@ fn changed(transformed: &ExprMetaData<Option<ExprRef>>, old_expr: ExprRef) -> Op
 fn do_transform_expr(
     ctx: &mut Context,
     mut todo: Vec<ExprRef>,
-    mut foo: impl FnMut(&mut Context, ExprRef, &[ExprRef]) -> Option<ExprRef>,
+    mut tran: impl FnMut(&mut Context, ExprRef, &[ExprRef]) -> Option<ExprRef>,
 ) -> ExprMetaData<Option<ExprRef>> {
     let mut transformed = ExprMetaData::default();
     let mut children = Vec::with_capacity(4);
@@ -176,8 +176,8 @@ fn do_transform_expr(
         }
 
         // call out to the transform
-        let foo_res = (foo)(ctx, expr_ref, &children);
-        let new_expr_ref = match foo_res {
+        let tran_res = (tran)(ctx, expr_ref, &children);
+        let new_expr_ref = match tran_res {
             Some(e) => e,
             None => {
                 if children_changed {

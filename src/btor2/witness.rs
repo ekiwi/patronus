@@ -40,7 +40,7 @@ pub fn parse_witnesses(input: &mut impl BufRead, parse_max: usize) -> Result<Vec
         }
     };
     let start_inputs = |line: &str, wit: &Witness| {
-        let at = u64::from_str_radix(&line[1..], 10).unwrap();
+        let at = line[1..].parse::<u64>().unwrap();
         assert_eq!(at as usize, wit.inputs.len());
         ParserState::ParsingInputsAt(at)
     };
@@ -48,7 +48,7 @@ pub fn parse_witnesses(input: &mut impl BufRead, parse_max: usize) -> Result<Vec
         wit.inputs.push(std::mem::take(inputs));
     };
     let start_state = |line: &str| {
-        let at = u64::from_str_radix(&line[1..], 10).unwrap();
+        let at = line[1..].parse::<u64>().unwrap();
         ParserState::ParsingStatesAt(at)
     };
 
@@ -72,8 +72,8 @@ pub fn parse_witnesses(input: &mut impl BufRead, parse_max: usize) -> Result<Vec
             ParserState::WaitForProp => {
                 let tok = tokenize_line(line);
                 for token in tok.tokens {
-                    if token.starts_with('b') {
-                        let num = u32::from_str_radix(&token[1..], 10).unwrap();
+                    if let Some(stripped) = token.strip_prefix('b') {
+                        let num = stripped.parse::<u32>().unwrap();
                         wit.failed_safety.push(num);
                     } else if token.starts_with('j') {
                         panic!("justice props are not supported");
@@ -181,7 +181,7 @@ fn parse_assignment<'a>(tokens: &'a [&'a str]) -> (usize, &'a str, WitnessValue)
         ),
     };
     // index of the state or input
-    let index = u64::from_str_radix(tokens[0], 10).unwrap() as usize;
+    let index = tokens[0].parse::<u64>().unwrap() as usize;
     // often the real name is followed by `@0` or `#0`, etc.
     // while `#` is generally used for states, it is not 100% consistent, e.g., btormc
     // might use `@0` instead of `#0` for arrays
