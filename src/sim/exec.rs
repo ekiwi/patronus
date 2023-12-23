@@ -7,6 +7,7 @@
 
 use super::value::Word;
 use crate::ir::WidthInt;
+use crate::sim::mask;
 use std::cmp::Ordering;
 use std::ops::Range;
 
@@ -39,16 +40,6 @@ pub(crate) fn assign_word(dst: &mut [Word], value: Word) {
     // zero extend
     for other in dst.iter_mut().skip(1) {
         *other = 0;
-    }
-}
-
-#[inline]
-pub(crate) fn mask(bits: WidthInt) -> Word {
-    if bits == Word::BITS || bits == 0 {
-        Word::MAX
-    } else {
-        assert!(bits < Word::BITS);
-        ((1 as Word) << bits) - 1
     }
 }
 
@@ -372,138 +363,14 @@ pub(crate) fn split_borrow_2(
     (dst_words, a_words, b_words)
 }
 
-pub(crate) fn to_bit_str(values: &[Word], width: WidthInt) -> String {
-    let start_bit = (width - 1) % Word::BITS;
-    let mut out = String::with_capacity(width as usize);
-    let msb = values.last().unwrap();
-    for ii in (0..(start_bit + 1)).rev() {
-        let value = (msb >> ii) & 1;
-        if value == 1 {
-            out.push('1');
-        } else {
-            out.push('0');
-        }
-    }
-    for word in values.iter().rev().skip(1) {
-        for ii in (0..Word::BITS).rev() {
-            let value = (word >> ii) & 1;
-            if value == 1 {
-                out.push('1');
-            } else {
-                out.push('0');
-            }
-        }
-    }
-    out
-}
-
-pub(crate) fn to_big_uint(words: &[Word]) -> num_bigint::BigUint {
-    let words32 = words_to_u32(words);
-    num_bigint::BigUint::from_slice(&words32)
-}
-
-fn words_to_u32(words: &[Word]) -> Vec<u32> {
-    let mut words32 = Vec::with_capacity(words.len() * 2);
-    let mask32 = mask(32);
-    for w in words.iter() {
-        let word = *w;
-        let lsb = (word & mask32) as u32;
-        let msb = ((word >> 32) & mask32) as u32;
-        words32.push(lsb);
-        words32.push(msb);
-    }
-    words32
-}
-
-pub(crate) fn from_big_uint(value: &num_bigint::BigUint, width: WidthInt) -> Vec<Word> {
-    let mut words = value.iter_u64_digits().collect::<Vec<_>>();
-    let num_words = width.div_ceil(Word::BITS);
-    // add any missing (because they are zero) msb words
-    words.resize(num_words as usize, 0);
-    mask_msb(&mut words, width);
-    words
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::sim::value::tests::*;
+    use crate::sim::value::*;
     use num_bigint::{BigInt, BigUint, Sign};
-    use rand::Rng;
-    use rand_xoshiro::rand_core::SeedableRng;
-
-    fn get_sign(value: &[Word], width: WidthInt) -> Sign {
-        let sign_bit = (width - 1) % Word::BITS;
-        let sign_value = (value.last().unwrap() >> sign_bit) & 1;
-        if sign_value == 1 {
-            Sign::Minus
-        } else {
-            Sign::Plus
-        }
-    }
-
-    fn to_big_int(words: &[Word], width: WidthInt) -> BigInt {
-        let sign = get_sign(words, width);
-        // calculate the magnitude
-        let words64 = if sign == Sign::Minus {
-            let mut negated = vec![0; words.len()];
-            negate(&mut negated, words, width);
-            negated
-        } else {
-            Vec::from(words)
-        };
-
-        let words32 = words_to_u32(&words64);
-        BigInt::from_slice(sign, &words32)
-    }
-
-    fn from_big_int(value: &BigInt, width: WidthInt) -> Vec<Word> {
-        let mut words = value.iter_u64_digits().collect::<Vec<_>>();
-        let num_words = width.div_ceil(Word::BITS);
-        // add any missing (because they are zero) msb words
-        words.resize(num_words as usize, 0);
-        mask_msb(&mut words, width);
-        // negate if sign is minus
-        if value.sign() == Sign::Minus {
-            let word_copy = words.clone();
-            negate(&mut words, &word_copy, width);
-        }
-        words
-    }
-
-    fn from_bit_str(bits: &str) -> (Vec<Word>, WidthInt) {
-        let width = bits.len() as WidthInt;
-        let mut out: Vec<Word> = Vec::new();
-        let mut word = 0 as Word;
-
-        for (ii, cc) in bits.chars().enumerate() {
-            let ii_rev = width as usize - ii - 1;
-            if ii > 0 && ((ii_rev + 1) % Word::BITS as usize) == 0 {
-                out.push(word);
-                word = 0;
-            }
-
-            let value = match cc {
-                '1' => 1,
-                '0' => 0,
-                other => panic!("Unexpected character: {other}"),
-            };
-            word = (word << 1) | value;
-        }
-        out.push(word);
-        out.reverse(); // little endian
-
-        (out, width)
-    }
-
-    fn assert_unused_bits_zero(value: &[Word], width: WidthInt) {
-        let offset = width % Word::BITS;
-        if offset > 0 {
-            let msb = *value.last().unwrap();
-            let m = !mask(offset);
-            let unused = msb & m;
-            assert_eq!(unused, 0, "unused msb bits need to be zero!")
-        }
-    }
+    use rand::{Rng, SeedableRng};
+    use smallvec::smallvec;
 
     #[test]
     fn test_split_borrow() {
@@ -519,65 +386,6 @@ mod tests {
         assert_eq!(dst3, &[2, 3]);
         assert_eq!(src_a_3, &[1]);
         assert_eq!(src_b_3, &[0, 1]);
-    }
-
-    #[test]
-    fn test_bit_string_conversion() {
-        let mut rng = rand_xoshiro::Xoshiro256PlusPlus::seed_from_u64(1);
-        let a = "01100";
-        let (a_vec, a_width) = from_bit_str(a);
-        assert_unused_bits_zero(&a_vec, a_width);
-        assert_eq!(a_width, 5);
-        assert_eq!(a_vec, vec![0b1100]);
-
-        let b = "10100001101000100000001010101010101000101010";
-        let (b_vec, b_width) = from_bit_str(b);
-        assert_unused_bits_zero(&b_vec, b_width);
-        assert_eq!(b_width, 44);
-        assert_eq!(b_vec, vec![0b10100001101000100000001010101010101000101010]);
-
-        assert_eq!(to_bit_str(&b_vec, b_width), b);
-
-        let c = "1010000110100010000000101010101010100010101010100001101000100000001010101010101000101010";
-        let (c_vec, c_width) = from_bit_str(c);
-        assert_unused_bits_zero(&c_vec, c_width);
-        assert_eq!(c_width, 88);
-        assert_eq!(
-            c_vec,
-            vec![
-                0b1010101010100010101010100001101000100000001010101010101000101010, // lsb
-                0b101000011010001000000010,                                         // msb
-            ]
-        );
-
-        assert_eq!(to_bit_str(&c_vec, c_width), c);
-
-        // no unnecessary vec entries
-        let d = random_bit_str(Word::BITS * 2, &mut rng);
-        let (d_vec, d_width) = from_bit_str(&d);
-        assert_unused_bits_zero(&d_vec, d_width);
-        assert_eq!(d_width, Word::BITS * 2);
-        assert_eq!(d_vec.len(), 2);
-        assert_eq!(to_bit_str(&d_vec, d_width), d);
-    }
-
-    #[test]
-    fn test_big_uint_conversion() {
-        let mut rng = rand_xoshiro::Xoshiro256PlusPlus::seed_from_u64(1);
-        for _ in 0..10 {
-            let (a_vec, a_width) = from_bit_str(&random_bit_str(1345, &mut rng));
-            assert_eq!(a_vec, from_big_uint(&to_big_uint(&a_vec), a_width));
-            assert_eq!(a_vec, from_big_int(&to_big_int(&a_vec, a_width), a_width));
-        }
-    }
-
-    fn random_bit_str(width: WidthInt, rng: &mut impl Rng) -> String {
-        let mut out = String::with_capacity(width as usize);
-        for _ in 0..width {
-            let cc = if rng.gen_bool(0.5) { '1' } else { '0' };
-            out.push(cc);
-        }
-        out
     }
 
     fn do_test_concat(a: &str, b: &str, c_init: &str) {
@@ -763,7 +571,7 @@ mod tests {
     ) {
         let (a_vec, _) = from_bit_str(&random_bit_str(width, rng));
         let (b_vec, _) = from_bit_str(&random_bit_str(width, rng));
-        let mut res_vec = vec![0 as Word; width.div_ceil(Word::BITS) as usize];
+        let mut res_vec: ValueVec = smallvec![0 as Word; width.div_ceil(Word::BITS) as usize];
         (our)(&mut res_vec, &a_vec, &b_vec, width);
         assert_unused_bits_zero(&res_vec, width);
 

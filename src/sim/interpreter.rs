@@ -7,6 +7,7 @@ use super::value::*;
 use crate::ir::*;
 use rand::{RngCore, SeedableRng};
 
+use crate::sim::value;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 
@@ -851,7 +852,7 @@ fn exec_instr(instr: &Instr, data: &mut [Word]) -> usize {
                     if instr.do_trace {
                         println!(
                             "{} <= {tpe:?} = ",
-                            exec::to_bit_str(dst, instr.result_width)
+                            value::to_bit_str(dst, instr.result_width)
                         );
                     }
                 }
@@ -869,8 +870,8 @@ fn exec_instr(instr: &Instr, data: &mut [Word]) -> usize {
             if instr.do_trace {
                 println!(
                     "{} <= {tpe:?} = {}",
-                    exec::to_bit_str(dst, instr.result_width),
-                    exec::to_bit_str(a, a.len() as WidthInt * Word::BITS)
+                    value::to_bit_str(dst, instr.result_width),
+                    value::to_bit_str(a, a.len() as WidthInt * Word::BITS)
                 );
             }
         }
@@ -878,7 +879,7 @@ fn exec_instr(instr: &Instr, data: &mut [Word]) -> usize {
             let (dst, a, b) =
                 exec::split_borrow_2(data, instr.dst.range(), a_loc.range(), b_loc.range());
             if instr.do_trace {
-                println!("Old dst: {}", exec::to_bit_str(dst, instr.result_width));
+                println!("Old dst: {}", value::to_bit_str(dst, instr.result_width));
             }
             match tpe {
                 BinaryOp::BVEqual => dst[0] = exec::bool_to_word(exec::cmp_equal(a, b)),
@@ -904,9 +905,9 @@ fn exec_instr(instr: &Instr, data: &mut [Word]) -> usize {
             if instr.do_trace {
                 println!(
                     "{} <= {tpe:?} = {}, {}",
-                    exec::to_bit_str(dst, instr.result_width),
-                    exec::to_bit_str(a, a.len() as WidthInt * Word::BITS),
-                    exec::to_bit_str(b, b.len() as WidthInt * Word::BITS)
+                    value::to_bit_str(dst, instr.result_width),
+                    value::to_bit_str(a, a.len() as WidthInt * Word::BITS),
+                    value::to_bit_str(b, b.len() as WidthInt * Word::BITS)
                 );
             }
         }
@@ -923,14 +924,14 @@ fn exec_instr(instr: &Instr, data: &mut [Word]) -> usize {
             }
         },
         InstrType::ArrayRead(array, index_width, index) => {
-            let index_value = data[index.range()][0] & exec::mask(*index_width);
+            let index_value = data[index.range()][0] & mask(*index_width);
             let src_start = array.offset as usize + array.words as usize * index_value as usize;
             let src_range = src_start..(src_start + array.words as usize);
             let (dst, src) = exec::split_borrow_1(data, instr.dst.range(), src_range);
             exec::assign(dst, src);
         }
         InstrType::ArrayStore(index_width, index, data_loc) => {
-            let index_value = data[index.range()][0] & exec::mask(*index_width);
+            let index_value = data[index.range()][0] & mask(*index_width);
             let dst_start =
                 instr.dst.offset as usize + instr.dst.words as usize * index_value as usize;
             let dst_range = dst_start..(dst_start + instr.dst.words as usize);

@@ -5,4 +5,4 @@ pub(crate) mod exec;
 pub mod interpreter;
 mod value;
 
-pub use value::{Value, ValueRef};
+pub use value::{mask, Value, ValueRef, Word};
