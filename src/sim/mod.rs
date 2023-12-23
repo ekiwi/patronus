@@ -3,6 +3,3 @@
 // author: Kevin Laeufer <laeufer@berkeley.edu>
 pub(crate) mod exec;
 pub mod interpreter;
-mod value;
-
-pub use value::{mask, Value, ValueRef, Word};

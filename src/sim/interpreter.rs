@@ -3,11 +3,8 @@
 // author: Kevin Laeufer <laeufer@berkeley.edu>
 
 use super::exec;
-use super::value::*;
 use crate::ir::*;
 use rand::{RngCore, SeedableRng};
-
-use crate::sim::value;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 
@@ -924,14 +921,14 @@ fn exec_instr(instr: &Instr, data: &mut [Word]) -> usize {
             }
         },
         InstrType::ArrayRead(array, index_width, index) => {
-            let index_value = data[index.range()][0] & mask(*index_width);
+            let index_value = data[index.range()][0] & value::mask(*index_width);
             let src_start = array.offset as usize + array.words as usize * index_value as usize;
             let src_range = src_start..(src_start + array.words as usize);
             let (dst, src) = exec::split_borrow_1(data, instr.dst.range(), src_range);
             exec::assign(dst, src);
         }
         InstrType::ArrayStore(index_width, index, data_loc) => {
-            let index_value = data[index.range()][0] & mask(*index_width);
+            let index_value = data[index.range()][0] & value::mask(*index_width);
             let dst_start =
                 instr.dst.offset as usize + instr.dst.words as usize * index_value as usize;
             let dst_range = dst_start..(dst_start + instr.dst.words as usize);

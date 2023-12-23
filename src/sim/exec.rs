@@ -5,9 +5,8 @@
 // contains implementations of our smt operations
 // values are stored in an array of words in little endian form
 
-use super::value::Word;
-use crate::ir::WidthInt;
-use crate::sim::mask;
+use crate::ir::value::mask;
+use crate::ir::{WidthInt, Word};
 use std::cmp::Ordering;
 use std::ops::Range;
 
@@ -366,8 +365,8 @@ pub(crate) fn split_borrow_2(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sim::value::tests::*;
-    use crate::sim::value::*;
+    use crate::ir::value::tests::*;
+    use crate::ir::value::*;
     use num_bigint::{BigInt, BigUint, Sign};
     use rand::{Rng, SeedableRng};
     use smallvec::smallvec;
