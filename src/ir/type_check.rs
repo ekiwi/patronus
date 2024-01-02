@@ -115,7 +115,7 @@ impl TypeCheck for Expr {
     fn type_check(&self, ctx: &impl GetNode<Expr, ExprRef>) -> Result<Type, TypeCheckError> {
         match *self {
             Expr::BVSymbol { name: _, width } => Ok(Type::BV(width)),
-            Expr::BVLiteral { value: _, width } => Ok(Type::BV(width)),
+            Expr::BVLiteral(value) => Ok(Type::BV(value.width())),
             Expr::BVZeroExt { e, by, width } => {
                 e.get_type(ctx).expect_bv_of(width - by, "zero extend")?;
                 Ok(Type::BV(width))
@@ -273,7 +273,7 @@ impl TypeCheck for Expr {
     fn get_type(&self, ctx: &impl GetNode<Expr, ExprRef>) -> Type {
         match *self {
             Expr::BVSymbol { name: _, width } => Type::BV(width),
-            Expr::BVLiteral { value: _, width } => Type::BV(width),
+            Expr::BVLiteral(value) => Type::BV(value.width()),
             Expr::BVZeroExt { e: _, by: _, width } => Type::BV(width),
             Expr::BVSignExt { e: _, by: _, width } => Type::BV(width),
             Expr::BVSlice { e: _, hi, lo } => Type::BV(hi - lo + 1),

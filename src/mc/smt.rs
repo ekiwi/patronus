@@ -710,23 +710,16 @@ fn convert_expr(
             let name_str = ctx.get(name);
             smt_ctx.atom(escape_smt_identifier(name_str))
         }
-        Expr::BVLiteral { value, width } if *width == 1 => {
-            if *value == 1 {
+        Expr::BVLiteral(value) if value.width() == 1 => {
+            if value.is_one(ctx) {
                 smt_ctx.true_()
             } else {
+                debug_assert!(value.is_zero(ctx));
                 smt_ctx.false_()
             }
         }
-        Expr::BVLiteral { value, width } => {
-            if *width == 1 {
-                if *value == 1 {
-                    smt_ctx.true_()
-                } else {
-                    smt_ctx.false_()
-                }
-            } else {
-                smt_ctx.binary(*width as usize, *value)
-            }
+        Expr::BVLiteral(value) => {
+            smt_ctx.atom(format!("#b{}", value.to_bit_str(ctx)))
         }
         Expr::BVZeroExt { e, by, .. } => {
             let e_expr = convert_expr(smt_ctx, ctx, *e, patch_expr);

@@ -50,10 +50,11 @@ fn simplify(ctx: &mut Context, expr: ExprRef, children: &[ExprRef]) -> Option<Ex
             if tru == fals {
                 // condition does not matter
                 Some(*tru)
-            } else if let Expr::BVLiteral { value, .. } = ctx.get(*cond) {
-                if *value == 0 {
+            } else if let Expr::BVLiteral(value) = ctx.get(*cond) {
+                if value.is_zero(ctx) {
                     Some(*fals)
                 } else {
+                    debug_assert!(value.is_one(ctx));
                     Some(*tru)
                 }
             } else {

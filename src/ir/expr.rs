@@ -2,7 +2,8 @@
 // released under BSD 3-Clause License
 // author: Kevin Laeufer <laeufer@berkeley.edu>
 
-use crate::ir::TypeCheck;
+use std::collections::HashMap;
+use crate::ir::{TypeCheck, Word};
 use std::fmt::{Debug, Formatter};
 use std::num::NonZeroU32;
 
@@ -39,9 +40,9 @@ pub trait ExprNodeConstruction:
     fn symbol(&mut self, name: StringRef, tpe: Type) -> ExprRef {
         self.add_node(Expr::symbol(name, tpe))
     }
-    fn bv_lit(&mut self, value: BVLiteralInt, width: WidthInt) -> ExprRef {
+    fn bv_lit_from_word(&mut self, value: Word, width: WidthInt) -> ExprRef {
         assert!(bv_value_fits_width(value, width));
-        self.add_node(Expr::BVLiteral { value, width })
+        self.add_node(Expr::BVLiteral { `value, width })
     }
     fn zero(&mut self, width: WidthInt) -> ExprRef {
         self.bv_lit(0, width)
@@ -201,11 +202,68 @@ type StringInternerU16 = string_interner::StringInterner<
     string_interner::DefaultBackend<string_interner::symbol::SymbolU16>,
 >;
 
+
+type ValueOffset = u32;
+/// Length in words.
+type ValueLen = u16;
+
+#[derive(Debug, Default, Clone)]
+struct ValueStore {
+    /// stores words for all bv literal values
+    values: Vec<Word>,
+    /// for values that fit into a word, we use a hash map for fast lookup
+    small_values: HashMap<Word, ValueOffset>,
+    /// for larger values, we do a linear scan
+    large_values: Vec<(ValueOffset, ValueLen)>
+}
+
+impl ValueStore {
+    fn add(&mut self, words: &[Word]) -> ValueOffset {
+        match words {
+            [] => 0,
+            [value] => {
+                if let Some(offset) = self.small_values.get(value) {
+                    *offset
+                } else {
+                    let offset = self.values.len() as ValueOffset;
+                    self.values.push(*value);
+                    self.small_values.insert(*value, offset);
+                    offset
+                }
+            }
+            values => {
+                let new_len = values.len() as ValueLen;
+                for (offset, len) in self.large_values.iter() {
+                    if *len == new_len {
+                        let old_words = self.get(*offset, *len);
+                        if old_words == values {
+                            return *offset;
+                        }
+                    }
+                }
+                // not found => new entry
+                let offset = self.values.len() as ValueOffset;
+                self.large_values.push((offset, new_len));
+                self.values.extend_from_slice(values);
+                offset
+            }
+        }
+    }
+
+    fn get(&self, offset: ValueOffset, words: ValueLen) -> &[Word] {
+        let start = offset as usize;
+        let range = start .. (start + words as usize);
+        &self.values[range]
+    }
+}
+
 /// The actual context implementation.
 #[derive(Clone)]
 pub struct Context {
     strings: StringInternerU16,
     exprs: indexmap::IndexSet<Expr>,
+    values: ValueStore,
+
 }
 
 impl Default for Context {
@@ -213,6 +271,7 @@ impl Default for Context {
         Context {
             strings: StringInternerU16::new(),
             exprs: indexmap::IndexSet::default(),
+            values: ValueStore::default(),
         }
     }
 }
@@ -304,6 +363,28 @@ impl ExprRef {
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Hash)]
+pub struct BVLiteralValue {
+    value: ValueOffset,
+    width: WidthInt,
+}
+
+impl BVLiteralValue {
+    pub fn width(&self) -> WidthInt { self.width }
+    pub fn to_bit_str(&self, ctx: &Context) -> String {
+        todo!()
+    }
+    pub fn to_hex_str(&self, ctx: &Context) -> String {
+        todo!()
+    }
+    pub fn is_one(&self, ctx: &Context) -> bool {
+        todo!()
+    }
+    pub fn is_zero(&self, ctx: &Context) -> bool {
+        todo!()
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
 /// Represents a SMT bit-vector or array expression.
 pub enum Expr {
     // Bit-Vector Expressions
@@ -312,11 +393,7 @@ pub enum Expr {
         name: StringRef,
         width: WidthInt,
     },
-    // TODO: support literals that do not fit into 64-bit
-    BVLiteral {
-        value: BVLiteralInt,
-        width: WidthInt,
-    },
+    BVLiteral(BVLiteralValue),
     // unary operations
     BVZeroExt {
         e: ExprRef,

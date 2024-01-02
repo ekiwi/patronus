@@ -38,11 +38,12 @@ where
 {
     match expr {
         Expr::BVSymbol { name, .. } => write!(writer, "{}", ctx.get(*name)),
-        Expr::BVLiteral { value, width } => {
-            if *width <= 8 {
-                write!(writer, "{width}'b{value:b}")
+        Expr::BVLiteral (value) => {
+            let width = value.width();
+            if width <= 8 {
+                write!(writer, "{width}'b{}", value.to_bit_str(ctx))
             } else {
-                write!(writer, "{width}'x{value:x}")
+                write!(writer, "{width}'x{}", value.to_hex_str(ctx))
             }
         }
         Expr::BVZeroExt { e, by, .. } => {
