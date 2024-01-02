@@ -625,7 +625,7 @@ fn compile_bv_res_expr_type(
 ) -> InstrType {
     match expr {
         Expr::BVSymbol { .. } => InstrType::Nullary(NullaryOp::BVSymbol),
-        Expr::BVLiteral { value, .. } => InstrType::Nullary(NullaryOp::BVLiteral(*value)),
+        Expr::BVLiteral(_) => todo!("store literal at correct position"),
         Expr::BVZeroExt { e, .. } => InstrType::Unary(UnaryOp::ZeroExt, locs[e].unwrap().0),
         Expr::BVSignExt { .. } => todo!("compile sext"),
         Expr::BVSlice { e, hi, lo } => {

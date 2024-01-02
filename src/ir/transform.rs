@@ -62,7 +62,7 @@ fn simplify(ctx: &mut Context, expr: ExprRef, children: &[ExprRef]) -> Option<Ex
             }
         }
         (Expr::BVAnd(_, _, width), [a, b]) => {
-            if let (Expr::BVLiteral { value: va, .. }, Expr::BVLiteral { value: vb, .. }) =
+            if let (Expr::BVLiteral (va), Expr::BVLiteral(vb)) =
                 (ctx.get(*a), ctx.get(*b))
             {
                 Some(ctx.bv_lit(*va & *vb, width))
@@ -71,7 +71,7 @@ fn simplify(ctx: &mut Context, expr: ExprRef, children: &[ExprRef]) -> Option<Ex
             }
         }
         (Expr::BVOr(_, _, width), [a, b]) => {
-            if let (Expr::BVLiteral { value: va, .. }, Expr::BVLiteral { value: vb, .. }) =
+            if let (Expr::BVLiteral (va), Expr::BVLiteral(vb)) =
                 (ctx.get(*a), ctx.get(*b))
             {
                 Some(ctx.bv_lit(*va | *vb, width))

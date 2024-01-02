@@ -523,7 +523,7 @@ impl<'a> Parser<'a> {
             } else {
                 ((1 as BVLiteralInt) << width) - 1
             };
-            self.ctx.bv_lit(value, width)
+            self.ctx.bv_lit_from_u64(value, width)
         };
         Ok((res, 3))
     }
@@ -556,10 +556,10 @@ impl<'a> Parser<'a> {
         base: u32,
         width: WidthInt,
     ) -> ParseLineResult<ExprRef> {
-        match BVLiteralInt::from_str_radix(token, base) {
+        match u64::from_str_radix(token, base) {
             Ok(val) => {
                 if bv_value_fits_width(val, width) {
-                    Ok(self.ctx.bv_lit(val, width))
+                    Ok(self.ctx.bv_lit_from_u64(val, width))
                 } else {
                     let _ = self.add_error(
                         line,

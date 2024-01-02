@@ -40,25 +40,30 @@ pub trait ExprNodeConstruction:
     fn symbol(&mut self, name: StringRef, tpe: Type) -> ExprRef {
         self.add_node(Expr::symbol(name, tpe))
     }
-    fn bv_lit_from_word(&mut self, value: Word, width: WidthInt) -> ExprRef {
+    fn bv_lit_from_u64(&mut self, value: u64, width: WidthInt) -> ExprRef {
         assert!(bv_value_fits_width(value, width));
-        self.add_node(Expr::BVLiteral { `value, width })
+        todo!("create bv literal")
+        // self.add_node(Expr::BVLiteral { value, width })
     }
     fn zero(&mut self, width: WidthInt) -> ExprRef {
-        self.bv_lit(0, width)
+        self.bv_lit_from_u64(0, width)
     }
 
     fn zero_array(&mut self, tpe: ArrayType) -> ExprRef {
-        let data = self.bv_lit(0, tpe.data_width);
+        let data = self.zero(tpe.data_width);
         self.array_const(data, tpe.index_width)
     }
 
     fn mask(&mut self, width: WidthInt) -> ExprRef {
-        let value = ((1 as BVLiteralInt) << width) - 1;
-        self.bv_lit(value, width)
+        if width <= Word::BITS {
+            let value = ((1 as BVLiteralInt) << width) - 1;
+            self.bv_lit_from_u64(value, width)
+        } else {
+            todo!("mask for large widths!")
+        }
     }
     fn one(&mut self, width: WidthInt) -> ExprRef {
-        self.bv_lit(1, width)
+        self.bv_lit_from_u64(1, width)
     }
     fn bv_equal(&mut self, a: ExprRef, b: ExprRef) -> ExprRef {
         self.add_node(Expr::BVEqual(a, b))
