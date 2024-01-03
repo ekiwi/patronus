@@ -104,6 +104,9 @@ jobs:
       - name: simulate axis fifo (d4)
         run: |
           cargo run --release --example sim -- --init=zero --testbench=inputs/repair/axis-fifo.original.tb.csv inputs/repair/axis-fifo.original.btor
+      - name: simulate axis adapter (s3)
+        run: |
+          cargo run --release --example sim -- --init=zero --testbench=inputs/repair/axis-adapter.original.tb.csv inputs/repair/axis-adapter.original.btor
 
   semver:
     name: Check Semantic Versioning
