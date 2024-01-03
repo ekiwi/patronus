@@ -101,6 +101,9 @@ jobs:
       - name: simulate i2c controller
         run: |
           cargo run --release --example sim -- --init=zero --testbench=inputs/repair/i2c_m.tb.csv inputs/repair/i2c_m.original.replace_literals.btor
+      - name: simulate axis fifo (d4)
+        run: |
+          cargo run --release --example sim -- --init=zero --testbench=inputs/repair/axis-fifo.original.tb.csv inputs/repair/axis-fifo.original.btor
 
   semver:
     name: Check Semantic Versioning
