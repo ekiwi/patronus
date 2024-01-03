@@ -20,6 +20,13 @@ pub(crate) fn clear(dst: &mut [Word]) {
 }
 
 #[inline]
+fn set(dst: &mut [Word]) {
+    for w in dst.iter_mut() {
+        *w = Word::MAX;
+    }
+}
+
+#[inline]
 pub(crate) fn assign(dst: &mut [Word], source: &[Word]) {
     for (d, s) in dst.iter_mut().zip(source.iter()) {
         *d = *s;
@@ -48,6 +55,31 @@ pub(crate) fn zero_extend(dst: &mut [Word], source: &[Word]) {
     assign(dst, source);
     // zero out remaining words
     clear(&mut dst[source.len()..]);
+}
+
+#[inline]
+pub(crate) fn sign_extend(
+    dst: &mut [Word],
+    source: &[Word],
+    src_width: WidthInt,
+    dst_width: WidthInt,
+) {
+    // copy source to dst
+    assign(dst, source);
+    if is_neg(source, src_width) {
+        // set source msbs in destination
+        let lsbs_in_msb = src_width % Word::BITS;
+        if lsbs_in_msb > 0 {
+            let msbs_in_msb = Word::BITS - lsbs_in_msb;
+            dst[source.len() - 1] |= mask(msbs_in_msb) << lsbs_in_msb;
+        }
+        // set other dst bytes to all 1s
+        set(&mut dst[source.len()..]);
+        // clear destination msbs
+        mask_msb(dst, dst_width);
+    } else {
+        clear(&mut dst[source.len()..]);
+    }
 }
 
 #[inline]

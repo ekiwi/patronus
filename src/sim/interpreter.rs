@@ -627,7 +627,9 @@ fn compile_bv_res_expr_type(
         Expr::BVSymbol { .. } => InstrType::Nullary(NullaryOp::BVSymbol),
         Expr::BVLiteral { value, .. } => InstrType::Nullary(NullaryOp::BVLiteral(*value)),
         Expr::BVZeroExt { e, .. } => InstrType::Unary(UnaryOp::ZeroExt, locs[e].unwrap().0),
-        Expr::BVSignExt { .. } => todo!("compile sext"),
+        Expr::BVSignExt { e, width, by } => {
+            InstrType::Unary(UnaryOp::SignExt(*width, *width + *by), locs[e].unwrap().0)
+        }
         Expr::BVSlice { e, hi, lo } => {
             InstrType::Unary(UnaryOp::Slice(*hi, *lo), locs[e].unwrap().0)
         }
@@ -765,6 +767,7 @@ enum NullaryOp {
 enum UnaryOp {
     Slice(WidthInt, WidthInt),
     ZeroExt,
+    SignExt(WidthInt, WidthInt),
     Not(WidthInt),
     Negate(WidthInt),
     Copy,
@@ -862,6 +865,9 @@ fn exec_instr(instr: &Instr, data: &mut [Word]) -> usize {
                 UnaryOp::Not(width) => exec::not(dst, a, *width),
                 UnaryOp::Negate(width) => exec::negate(dst, a, *width),
                 UnaryOp::ZeroExt => exec::zero_extend(dst, a),
+                UnaryOp::SignExt(src_width, dst_width) => {
+                    exec::sign_extend(dst, a, *src_width, *dst_width)
+                }
                 UnaryOp::Copy => exec::assign(dst, a),
             }
             if instr.do_trace {
