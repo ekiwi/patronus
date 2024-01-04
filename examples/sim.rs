@@ -20,8 +20,12 @@ use std::io::BufRead;
 struct Args {
     #[arg(short, long)]
     verbose: bool,
-    #[arg(short, long, help = "print out signal values for each step")]
-    trace: bool,
+    #[arg(long, help = "print out signal values for each step")]
+    trace_values: bool,
+    #[arg(long, help = "prints out simulator instruction execution")]
+    trace_instructions: bool,
+    #[arg(long, help = "prints out interpreter instructions before execution")]
+    show_programs: bool,
     #[arg(
         long,
         value_enum,
@@ -53,7 +57,16 @@ fn main() {
 
     // start execution
     let start_load = std::time::Instant::now();
-    let mut sim = Interpreter::new(&ctx, &sys);
+    let mut sim = if args.trace_instructions {
+        Interpreter::new_with_trace(&ctx, &sys)
+    } else {
+        Interpreter::new(&ctx, &sys)
+    };
+
+    if args.show_programs {
+        sim.print_programs();
+    }
+
     match args.init {
         Init::Zero => {
             sim.init(InitKind::Zero);
@@ -86,7 +99,7 @@ fn main() {
     }
 
     let mut signals_to_print: Vec<(String, ExprRef)> = Vec::new();
-    if args.trace {
+    if args.trace_values {
         for (name, expr) in name_to_ref.iter() {
             // TODO: maybe filter
             if expr.get_type(&ctx).is_bit_vector() {

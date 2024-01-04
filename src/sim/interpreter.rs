@@ -86,6 +86,17 @@ impl<'a> Interpreter<'a> {
             snapshots: Vec::new(),
         }
     }
+
+    pub fn print_programs(&self) {
+        println!("INIT Program");
+        for (pos, instr) in self.init.instructions.iter().enumerate() {
+            println!("{:>3}: {:?}", pos, instr);
+        }
+        println!("\nUPDATE Program");
+        for (pos, instr) in self.update.instructions.iter().enumerate() {
+            println!("{:>3}: {:?}", pos, instr);
+        }
+    }
 }
 
 impl<'a> Simulator for Interpreter<'a> {
@@ -510,14 +521,16 @@ fn compile_array_expr(
             instructions.push(Instr::new(*dst, default_tpe.clone(), 0, do_trace));
             compile_array_expr(ctx, *tru, dst, index_width, locs, instructions, do_trace);
             let num_tru_skip = (instructions.len() - 1 - tru_skip_pos) as u32;
-            instructions[tru_skip_pos].tpe = InstrType::Skip(locs[cond].unwrap().0, false, num_tru_skip);
+            // we need to skip when the condition is False!
+            instructions[tru_skip_pos].tpe = InstrType::Skip(locs[cond].unwrap().0, true, num_tru_skip);
 
             // compile fals branch and then update instruction
             let fals_skip_pos = instructions.len();
             instructions.push(Instr::new(*dst, default_tpe, 0, do_trace));
             compile_array_expr(ctx, *fals, dst, index_width, locs, instructions, do_trace);
             let num_fals_skip = (instructions.len() - 1 - fals_skip_pos) as u32;
-            instructions[fals_skip_pos].tpe = InstrType::Skip(locs[cond].unwrap().0, true, num_fals_skip);
+            // we need to skip when the condition is True!
+            instructions[fals_skip_pos].tpe = InstrType::Skip(locs[cond].unwrap().0, false, num_fals_skip);
         }
         Expr::ArrayStore { array, data, index } => {
             // first we need to compile all previous stores or copies
@@ -838,7 +851,13 @@ fn exec_instr(instr: &Instr, data: &mut [Word]) -> usize {
         InstrType::Skip(cond, invert, num_instr) => {
             let cond_value = exec::read_bool(&data[cond.range()]);
             if (cond_value && !*invert) || (!cond_value && *invert) {
+                if instr.do_trace {
+                    println!("Skiping {} instructions.", num_instr);
+                }
                 return *num_instr as usize + 1;
+            }
+            if instr.do_trace {
+                println!("No Skip");
             }
         }
         InstrType::Nullary(tpe) => {
@@ -871,19 +890,20 @@ fn exec_instr(instr: &Instr, data: &mut [Word]) -> usize {
                 UnaryOp::Copy => exec::assign(dst, a),
             }
             if instr.do_trace {
-                println!(
-                    "{} <= {tpe:?} = {}",
-                    value::to_bit_str(dst, instr.result_width),
-                    value::to_bit_str(a, a.len() as WidthInt * Word::BITS)
-                );
+                if dst.len() <= 2 {
+                    println!(
+                        "{} <= {tpe:?} = {}",
+                        value::to_bit_str(dst, instr.result_width),
+                        value::to_bit_str(a, a.len() as WidthInt * Word::BITS)
+                    );
+                } else {
+                    println!("... <= {tpe:?} = ...");
+                }
             }
         }
         InstrType::Binary(tpe, a_loc, b_loc) => {
             let (dst, a, b) =
                 exec::split_borrow_2(data, instr.dst.range(), a_loc.range(), b_loc.range());
-            if instr.do_trace {
-                println!("Old dst: {}", value::to_bit_str(dst, instr.result_width));
-            }
             match tpe {
                 BinaryOp::BVEqual => dst[0] = exec::bool_to_word(exec::cmp_equal(a, b)),
                 BinaryOp::Greater => dst[0] = exec::bool_to_word(exec::cmp_greater(a, b)),
@@ -932,6 +952,13 @@ fn exec_instr(instr: &Instr, data: &mut [Word]) -> usize {
             let src_range = src_start..(src_start + array.words as usize);
             let (dst, src) = exec::split_borrow_1(data, instr.dst.range(), src_range);
             exec::assign(dst, src);
+            if instr.do_trace {
+                println!(
+                    "{} <= array[{}]",
+                    value::to_bit_str(dst, instr.result_width),
+                    index_value
+                );
+            }
         }
         InstrType::ArrayStore(index_width, index, data_loc) => {
             let index_value = data[index.range()][0] & value::mask(*index_width);
@@ -940,6 +967,13 @@ fn exec_instr(instr: &Instr, data: &mut [Word]) -> usize {
             let dst_range = dst_start..(dst_start + instr.dst.words as usize);
             let (dst, src) = exec::split_borrow_1(data, dst_range, data_loc.range());
             exec::assign(dst, src);
+            if instr.do_trace {
+                println!(
+                    "array[{}] <= {}",
+                    index_value,
+                    value::to_bit_str(dst, instr.result_width)
+                );
+            }
         }
         InstrType::ArrayConst(index_width, data_loc) => {
             let dst_range = instr.dst.array_range(*index_width);

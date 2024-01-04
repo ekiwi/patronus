@@ -173,6 +173,9 @@ pub fn mask(bits: WidthInt) -> Word {
 }
 
 pub(crate) fn to_bit_str(values: &[Word], width: WidthInt) -> String {
+    if width == 0 {
+        return "".to_string();
+    }
     let start_bit = (width - 1) % Word::BITS;
     let mut out = String::with_capacity(width as usize);
     let msb = values.last().unwrap();
