@@ -107,6 +107,9 @@ jobs:
       - name: simulate axis adapter (s3)
         run: |
           cargo run --release --example sim -- --init=zero --testbench=inputs/repair/axis-adapter.original.tb.csv inputs/repair/axis-adapter.original.btor
+      - name: simulate axis frame len (d13)
+        run: |
+          cargo run --release --example sim -- --init=zero --testbench=inputs/repair/axis_frame_len.original.tb.csv inputs/repair/axis_frame_len.original.btor
 
   semver:
     name: Check Semantic Versioning
