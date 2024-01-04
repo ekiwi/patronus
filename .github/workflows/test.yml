@@ -113,6 +113,9 @@ jobs:
       - name: simulate axis fifo (d12)
         run: |
           cargo run --release --example sim -- --init=zero --testbench=inputs/repair/axis-fifo.original.tb.csv inputs/repair/axis-fifo.original.btor
+      - name: simulate sd spi (c1, c3, d9)
+        run: |
+          cargo run --release --example sim -- --init=zero --testbench=inputs/repair/zipcpu_sdspi.original.tb.csv inputs/repair/zipcpu_sdspi.original.btor
 
   semver:
     name: Check Semantic Versioning
