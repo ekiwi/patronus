@@ -103,13 +103,16 @@ jobs:
           cargo run --release --example sim -- --init=zero --testbench=inputs/repair/i2c_m.tb.csv inputs/repair/i2c_m.original.replace_literals.btor
       - name: simulate axis fifo (d4)
         run: |
-          cargo run --release --example sim -- --init=zero --testbench=inputs/repair/axis-fifo.original.tb.csv inputs/repair/axis-fifo.original.btor
+          cargo run --release --example sim -- --init=zero --testbench=inputs/repair/axis-fifo-wrapper.original.tb.csv inputs/repair/axis-fifo-wrapper.original.btor
       - name: simulate axis adapter (s3)
         run: |
           cargo run --release --example sim -- --init=zero --testbench=inputs/repair/axis-adapter.original.tb.csv inputs/repair/axis-adapter.original.btor
       - name: simulate axis frame len (d13)
         run: |
           cargo run --release --example sim -- --init=zero --testbench=inputs/repair/axis_frame_len.original.tb.csv inputs/repair/axis_frame_len.original.btor
+      - name: simulate axis fifo (d12)
+        run: |
+          cargo run --release --example sim -- --init=zero --testbench=inputs/repair/axis-fifo.original.tb.csv inputs/repair/axis-fifo.original.btor
 
   semver:
     name: Check Semantic Versioning

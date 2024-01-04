@@ -971,7 +971,7 @@ fn exec_instr(instr: &Instr, data: &mut [Word]) -> usize {
                 println!(
                     "array[{}] <= {}",
                     index_value,
-                    value::to_bit_str(dst, instr.result_width)
+                    value::to_bit_str(dst, (dst.len() as WidthInt * Word::BITS) as WidthInt)
                 );
             }
         }
