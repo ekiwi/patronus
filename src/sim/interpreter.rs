@@ -32,6 +32,9 @@ pub trait Simulator {
 
     fn get(&self, expr: ExprRef) -> Option<ValueRef<'_>>;
 
+    /// Retrieve the value of an array element
+    fn get_element(&self, expr: ExprRef, index: Word) -> Option<ValueRef<'_>>;
+
     fn step_count(&self) -> u64;
 
     /// Takes a snapshot of the state (excluding inputs) and saves it internally.
@@ -170,6 +173,22 @@ impl<'a> Simulator for Interpreter<'a> {
             let words = &self.data[m.loc.range()];
             let bits = m.width;
             Some(ValueRef::new(words, bits))
+        } else {
+            None
+        }
+    }
+
+    fn get_element(&self, expr: ExprRef, index: Word) -> Option<ValueRef<'_>> {
+        if let Some(m) = &self.update.symbols.get(&expr) {
+            if index < m.elements {
+                let src_start = m.loc.offset as usize + m.loc.words as usize * index as usize;
+                let src_range = src_start..(src_start + m.loc.words as usize);
+                let words = &self.data[src_range];
+                let bits = m.width;
+                Some(ValueRef::new(words, bits))
+            } else {
+                None
+            }
         } else {
             None
         }
