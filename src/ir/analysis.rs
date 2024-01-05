@@ -3,8 +3,6 @@
 // author: Kevin Laeufer <laeufer@berkeley.edu>
 
 use crate::ir::{Context, Expr, ExprRef, GetNode, SignalInfo, SignalKind, State, TransitionSystem};
-use std::collections::HashSet;
-use std::hash::Hash;
 use std::ops::Index;
 
 pub type UseCountInt = u16;
@@ -210,9 +208,6 @@ pub fn analyze_for_serialization(
     // visit roots in the order in which they were declared
     todo.reverse();
 
-    // make sure todo list is unique
-    make_unique(&mut todo);
-
     // visit expressions
     while let Some(expr_ref) = todo.pop() {
         if *visited.get(expr_ref) {
@@ -259,18 +254,6 @@ pub fn analyze_for_serialization(
     }
 
     SerializeMeta { signal_order }
-}
-
-fn make_unique<T: Hash + Clone + Eq + PartialEq>(vec: &mut Vec<T>) {
-    let mut seen: HashSet<T> = HashSet::new();
-    vec.retain(|e| {
-        if !seen.contains(e) {
-            seen.insert(e.clone());
-            true
-        } else {
-            false
-        }
-    })
 }
 
 fn analyze_use(

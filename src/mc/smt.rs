@@ -8,6 +8,7 @@ use easy_smt as smt;
 use num_bigint::BigUint;
 use num_traits::{One, Zero};
 use std::borrow::Cow;
+use std::collections::HashSet;
 
 #[derive(Debug, Clone, Copy)]
 pub struct SmtSolverCmd {
@@ -442,7 +443,15 @@ impl UnrollSmtEncoding {
         let mut signals = vec![None; signals_map_len];
         let mut signal_order = Vec::with_capacity(ser_info.signal_order.len());
 
-        for (id, root) in ser_info.signal_order.into_iter().enumerate() {
+        let is_state: HashSet<ExprRef> = HashSet::from_iter(sys.states().map(|(_, s)| s.symbol));
+
+        // we skip states in our signal order since they are not calculated directly in the update function
+        for (id, root) in ser_info
+            .signal_order
+            .into_iter()
+            .filter(|r| !is_state.contains(&r.expr))
+            .enumerate()
+        {
             signal_order.push(root.expr);
             let name = sys.get_signal(root.expr).and_then(|i| i.name).unwrap_or({
                 let default_name = format!("__n{}", root.expr.index());
