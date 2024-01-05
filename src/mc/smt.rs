@@ -767,7 +767,22 @@ fn convert_expr(
                 }
             }
         }
-        Expr::BVSignExt { .. } => todo!(),
+        Expr::BVSignExt { e, by, .. } => {
+            let e_expr = convert_expr(smt_ctx, ctx, *e, patch_expr);
+            match e.get_type(ctx) {
+                Type::BV(width) => {
+                    if width == 1 {
+                        let inner = smt_ctx.ite(e_expr, smt_ctx.binary(1, 1), smt_ctx.binary(0, 0));
+                        smt_ctx.sext(inner, *by as usize)
+                    } else {
+                        smt_ctx.sext(e_expr, *by as usize)
+                    }
+                }
+                Type::Array(_) => {
+                    panic!("Mall-formed expression: sext should never be applied to an array!")
+                }
+            }
+        }
         Expr::BVSlice { e, hi, lo } => {
             let e_expr = convert_expr(smt_ctx, ctx, *e, patch_expr);
             // skip no-op bit extracts (this helps us avoid slices on boolean values)
@@ -1050,6 +1065,9 @@ trait PatronSmtHelpers {
     /// Zero extend a bit-vector.
     fn zext(&self, e: smt::SExpr, by: usize) -> smt::SExpr;
 
+    /// Sign extend a bit-vector.
+    fn sext(&self, e: smt::SExpr, by: usize) -> smt::SExpr;
+
     /// Declare a constant array (non-standard but supported by many solvers)
     fn const_array(&self, tpe: smt::SExpr, default: smt::SExpr) -> smt::SExpr;
 }
@@ -1060,6 +1078,17 @@ impl PatronSmtHelpers for smt::Context {
             self.list(vec![
                 self.atoms().und,
                 self.atom("zero_extend"),
+                self.numeral(by),
+            ]),
+            e,
+        ])
+    }
+
+    fn sext(&self, e: smt::SExpr, by: usize) -> smt::SExpr {
+        self.list(vec![
+            self.list(vec![
+                self.atoms().und,
+                self.atom("sign_extend"),
                 self.numeral(by),
             ]),
             e,
