@@ -30,6 +30,7 @@ pub trait ExprNodeConstruction:
 {
     // helper functions to construct expressions
     fn bv_symbol(&mut self, name: &str, width: WidthInt) -> ExprRef {
+        assert!(width > 0, "0-bit bitvectors are not allowed");
         let name_ref = self.add_node(name.to_string());
         self.add_node(Expr::BVSymbol {
             name: name_ref,
@@ -37,10 +38,12 @@ pub trait ExprNodeConstruction:
         })
     }
     fn symbol(&mut self, name: StringRef, tpe: Type) -> ExprRef {
+        assert_ne!(tpe, Type::BV(0), "0-bit bitvectors are not allowed");
         self.add_node(Expr::symbol(name, tpe))
     }
     fn bv_lit(&mut self, value: BVLiteralInt, width: WidthInt) -> ExprRef {
         assert!(bv_value_fits_width(value, width));
+        assert!(width > 0, "0-bit bitvectors are not allowed");
         self.add_node(Expr::BVLiteral { value, width })
     }
     fn zero(&mut self, width: WidthInt) -> ExprRef {
@@ -149,6 +152,7 @@ pub trait ExprNodeConstruction:
         if lo == 0 && hi + 1 == e.get_bv_type(self).unwrap() {
             e
         } else {
+            assert!(hi >= lo, "{hi} < {lo} ... not allowed!");
             self.add_node(Expr::BVSlice { e, hi, lo })
         }
     }
