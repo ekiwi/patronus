@@ -206,6 +206,19 @@ pub(crate) fn sub(dst: &mut [Word], a: &[Word], b: &[Word], width: WidthInt) {
     mask_msb(dst, width);
 }
 
+/// Mul function inspired by the num-bigint implementation: https://docs.rs/num-bigint/0.4.4/src/num_bigint/biguint/multiplication.rs.html
+#[inline]
+pub(crate) fn mul(dst: &mut [Word], a: &[Word], b: &[Word], width: WidthInt) {
+    if width <= Word::BITS {
+        dst[0] = (a[0] * b[0]) & mask(width);
+    } else {
+        todo!(
+            "implement multiplication for bit vectors larger {}",
+            Word::BITS
+        );
+    }
+}
+
 #[inline]
 pub(crate) fn shift_right(dst: &mut [Word], a: &[Word], b: &[Word], width: WidthInt) {
     // clear the destination
