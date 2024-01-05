@@ -122,6 +122,9 @@ jobs:
       - name: simulate axis switch (d8)
         run: |
           cargo run --release --example sim -- --init=zero --testbench=inputs/repair/axis-switch.original.tb.csv inputs/repair/axis-switch.original.btor
+      - name: simulate axis async fifo (c4)
+        run: |
+          cargo run --release --example sim -- --init=zero --testbench=inputs/repair/axis-async-fifo-wrapper.original.tb.csv inputs/repair/axis-async-fifo-wrapper.original.btor
 
   semver:
     name: Check Semantic Versioning
