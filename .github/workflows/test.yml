@@ -119,6 +119,9 @@ jobs:
       - name: simulate axis frame fifo (d11)
         run: |
           cargo run --release --example sim -- --init=zero --testbench=inputs/repair/axis-frame-fifo.original.tb.csv inputs/repair/axis-frame-fifo.original.btor
+      - name: simulate axis switch (d8)
+        run: |
+          cargo run --release --example sim -- --init=zero --testbench=inputs/repair/axis-switch.original.tb.csv inputs/repair/axis-switch.original.btor
 
   semver:
     name: Check Semantic Versioning
