@@ -125,6 +125,10 @@ jobs:
       - name: simulate axis async fifo (c4)
         run: |
           cargo run --release --example sim -- --init=zero --testbench=inputs/repair/axis-async-fifo-wrapper.original.tb.csv inputs/repair/axis-async-fifo-wrapper.original.btor
+      - name: simulate axi lite (s1)
+        run: |
+          cargo run --release --example sim -- --init=zero -testbench=inputs/repair/axi-lite-xlnx.original.tb0.csv inputs/repair/axi-lite-xlnx.original.btor
+          cargo run --release --example sim -- --init=zero -testbench=inputs/repair/axi-lite-xlnx.original.tb1.csv inputs/repair/axi-lite-xlnx.original.btor
 
   semver:
     name: Check Semantic Versioning
