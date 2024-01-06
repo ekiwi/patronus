@@ -390,8 +390,8 @@ mod tests {
         // simple bit flags
         assert_eq!(std::mem::size_of::<SignalLabels>(), 1);
         // Optional name (saved as a string ref) + SignalKind
-        assert_eq!(std::mem::size_of::<SignalInfo>(), 4);
+        assert_eq!(std::mem::size_of::<SignalInfo>(), 8);
         // the option type can use unused values and thus takes no extra space
-        assert_eq!(std::mem::size_of::<Option<SignalInfo>>(), 4);
+        assert_eq!(std::mem::size_of::<Option<SignalInfo>>(), 8);
     }
 }

@@ -201,21 +201,23 @@ pub fn bv_value_fits_width(value: BVLiteralInt, width: WidthInt) -> bool {
     width >= bits_required
 }
 
-type StringInternerU16 = string_interner::StringInterner<
-    string_interner::DefaultBackend<string_interner::symbol::SymbolU16>,
->;
+// TODO: go back to 16-bit if we can change the interner to give us monotonically increasing IDs
+type StringSymbolType = string_interner::symbol::SymbolU32;
+
+type PatronStringInterner =
+    string_interner::StringInterner<string_interner::DefaultBackend<StringSymbolType>>;
 
 /// The actual context implementation.
 #[derive(Clone)]
 pub struct Context {
-    strings: StringInternerU16,
+    strings: PatronStringInterner,
     exprs: indexmap::IndexSet<Expr>,
 }
 
 impl Default for Context {
     fn default() -> Self {
         Context {
-            strings: StringInternerU16::new(),
+            strings: PatronStringInterner::new(),
             exprs: indexmap::IndexSet::default(),
         }
     }
@@ -285,7 +287,7 @@ impl GetNode<Expr, ExprRef> for Context {
 impl ExprNodeConstruction for Context {}
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
-pub struct StringRef(string_interner::symbol::SymbolU16);
+pub struct StringRef(StringSymbolType);
 #[derive(PartialEq, Eq, Clone, Copy, Hash)]
 pub struct ExprRef(NonZeroU32);
 
@@ -548,7 +550,7 @@ mod tests {
 
     #[test]
     fn ir_type_size() {
-        assert_eq!(std::mem::size_of::<StringRef>(), 2);
+        assert_eq!(std::mem::size_of::<StringRef>(), 4);
         assert_eq!(std::mem::size_of::<ExprRef>(), 4);
 
         // 8 bytes for the tag, 4 * 4 bytes for the largest field
