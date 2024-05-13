@@ -109,5 +109,6 @@ fn skip_first_line(value: &str) -> &str {
 fn parse_lakeroad_dsp48_e2() {
     let (mut ctx, mut sys) = btor2::parse_file("inputs/lakeroad/DSP48E2.btor").unwrap();
     replace_anonymous_inputs_with_zero(&mut ctx, &mut sys);
+    simplify_expressions(&mut ctx, &mut sys);
     insta::assert_snapshot!(sys.serialize_to_str(&ctx));
 }

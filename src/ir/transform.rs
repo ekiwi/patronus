@@ -91,6 +91,15 @@ fn simplify(ctx: &mut Context, expr: ExprRef, children: &[ExprRef]) -> Option<Ex
             Expr::BVLiteral { value, .. } => Some(ctx.bv_lit(*value, width)),
             _ => None,
         },
+        // combine slices
+        (Expr::BVSlice { lo, hi, .. }, [e]) => match ctx.get(*e) {
+            Expr::BVSlice {
+                lo: inner_lo,
+                e: inner_e,
+                ..
+            } => Some(ctx.slice(*inner_e, hi + inner_lo, lo + inner_lo)),
+            _ => None,
+        },
         _ => None, // no matching simplification
     }
 }
