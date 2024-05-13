@@ -104,3 +104,9 @@ fn skip_first_line(value: &str) -> &str {
         Some((char_ii, _)) => &value[(char_ii + 1)..],
     }
 }
+
+#[test]
+fn parse_lakeroad_dsp48_e2() {
+    let (ctx, sys) = btor2::parse_file("inputs/lakeroad/DSP48E2.btor").unwrap();
+    insta::assert_snapshot!(sys.serialize_to_str(&ctx));
+}

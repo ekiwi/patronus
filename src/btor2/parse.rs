@@ -225,7 +225,7 @@ impl<'a> Parser<'a> {
         line: &str,
         expected_type: Type,
     ) -> ParseLineResult<ExprRef> {
-        // first we check for internal consitency
+        // first we check for internal consistency
         if let Err(e) = expr.type_check(self.ctx) {
             let _ = self.add_error(line, line, format!("Failed to type check: {}", e.get_msg()));
             return Err(());
@@ -308,6 +308,19 @@ impl<'a> Parser<'a> {
                     // redand is true iff all bits are one
                     let mask = self.ctx.mask(width);
                     (self.ctx.bv_equal(e, mask), 4)
+                }
+            }
+            "redxor" => {
+                let width = e.get_type(self.ctx).get_bit_vector_width().unwrap();
+                if width == 1 {
+                    (e, 4)
+                } else {
+                    let bits: Vec<_> = (0..width).map(|ii| self.ctx.slice(e, ii, ii)).collect();
+                    let res = bits
+                        .into_iter()
+                        .reduce(|acc, e| self.ctx.xor(acc, e))
+                        .unwrap();
+                    (res, 4)
                 }
             }
             other => panic!("unexpected unary op: {other}"),
