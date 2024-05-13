@@ -18,14 +18,22 @@ pub fn parse_str(ctx: &mut Context, input: &str, name: Option<&str>) -> Option<T
     }
 }
 
-pub fn parse_file(filename: &str) -> Option<(Context, TransitionSystem)> {
-    let path = std::path::Path::new(filename);
+pub fn parse_file<P: AsRef<std::path::Path>>(filename: P) -> Option<(Context, TransitionSystem)> {
     let mut ctx = Context::default();
+    let sys = parse_file_with_ctx(filename, &mut ctx)?;
+    Some((ctx, sys))
+}
+
+pub fn parse_file_with_ctx<P: AsRef<std::path::Path>>(
+    filename: P,
+    ctx: &mut Context,
+) -> Option<TransitionSystem> {
+    let path = filename.as_ref();
     let f = std::fs::File::open(path).expect("Failed to open btor file!");
     let reader = std::io::BufReader::new(f);
     let backup_name = path.file_stem().and_then(|n| n.to_str());
-    match Parser::new(&mut ctx).parse(reader, backup_name) {
-        Ok(sys) => Some((ctx, sys)),
+    match Parser::new(ctx).parse(reader, backup_name) {
+        Ok(sys) => Some(sys),
         Err(errors) => {
             report_errors(
                 errors,
