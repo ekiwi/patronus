@@ -7,7 +7,6 @@ mod serialize;
 mod transform;
 mod transition_system;
 mod type_check;
-pub mod value;
 
 pub use analysis::{
     analyze_for_serialization, cone_of_influence, count_expr_uses, is_usage_root_signal,
@@ -23,4 +22,3 @@ pub use transition_system::{
     merge_signal_info, SignalInfo, SignalKind, SignalLabels, State, StateRef, TransitionSystem,
 };
 pub use type_check::{TypeCheck, TypeCheckError};
-pub use value::{width_to_words, Value, ValueRef, Word};

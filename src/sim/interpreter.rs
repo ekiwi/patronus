@@ -2,8 +2,8 @@
 // released under BSD 3-Clause License
 // author: Kevin Laeufer <laeufer@berkeley.edu>
 
-use super::exec;
 use crate::ir::*;
+use baa::{BitVecValueRef, Word};
 use rand::{RngCore, SeedableRng};
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
@@ -28,12 +28,12 @@ pub trait Simulator {
     fn step(&mut self);
 
     /// Change the value or an expression in the simulator. Be careful!
-    fn set(&mut self, expr: ExprRef, value: ValueRef<'_>);
+    fn set(&mut self, expr: ExprRef, value: BitVecValueRef<'_>);
 
-    fn get(&self, expr: ExprRef) -> Option<ValueRef<'_>>;
+    fn get(&self, expr: ExprRef) -> Option<BitVecValueRef<'_>>;
 
     /// Retrieve the value of an array element
-    fn get_element(&self, expr: ExprRef, index: Word) -> Option<ValueRef<'_>>;
+    fn get_element(&self, expr: ExprRef, index: Word) -> Option<BitVecValueRef<'_>>;
 
     fn step_count(&self) -> u64;
 
@@ -154,7 +154,7 @@ impl<'a> Simulator for Interpreter<'a> {
         self.step_count += 1;
     }
 
-    fn set(&mut self, expr: ExprRef, value: ValueRef<'_>) {
+    fn set(&mut self, expr: ExprRef, value: BitVecValueRef<'_>) {
         if let Some(m) = &self.update.symbols.get(&expr) {
             assert_eq!(m.elements, 1, "cannot set array values with this function");
             let dst = &mut self.data[m.loc.range()];
@@ -166,7 +166,7 @@ impl<'a> Simulator for Interpreter<'a> {
         }
     }
 
-    fn get(&self, expr: ExprRef) -> Option<ValueRef<'_>> {
+    fn get(&self, expr: ExprRef) -> Option<BitVecValueRef<'_>> {
         // println!("{:?}", expr.get_symbol_name(self.ctx));
         if let Some(m) = &self.update.symbols.get(&expr) {
             assert_eq!(m.elements, 1, "cannot get array values with this function");
@@ -178,7 +178,7 @@ impl<'a> Simulator for Interpreter<'a> {
         }
     }
 
-    fn get_element(&self, expr: ExprRef, index: Word) -> Option<ValueRef<'_>> {
+    fn get_element(&self, expr: ExprRef, index: Word) -> Option<BitVecValueRef<'_>> {
         if let Some(m) = &self.update.symbols.get(&expr) {
             if index < m.elements {
                 let src_start = m.loc.offset as usize + m.loc.words as usize * index as usize;

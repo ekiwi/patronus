@@ -4,6 +4,7 @@
 
 use crate::btor2::{DEFAULT_INPUT_PREFIX, DEFAULT_STATE_PREFIX};
 use crate::ir::*;
+use baa::Word;
 use std::collections::HashMap;
 
 /** Remove any inputs named `_input_[...]` and replace their use with a literal zero.
@@ -81,9 +82,7 @@ fn simplify(ctx: &mut Context, expr: ExprRef, children: &[ExprRef]) -> Option<Ex
         (Expr::BVNot(_, width), [e]) => {
             match ctx.get(*e) {
                 Expr::BVNot(inner, _) => Some(*inner), // double negation
-                Expr::BVLiteral { value, .. } => {
-                    Some(ctx.bv_lit((!*value) & value::mask(width), width))
-                }
+                Expr::BVLiteral { value, .. } => Some(ctx.bv_lit((!*value) & mask(width), width)),
                 _ => None,
             }
         }
@@ -101,6 +100,16 @@ fn simplify(ctx: &mut Context, expr: ExprRef, children: &[ExprRef]) -> Option<Ex
             _ => None,
         },
         _ => None, // no matching simplification
+    }
+}
+
+// TODO: remove once we can use a `baa` built-in function instead
+fn mask(bits: WidthInt) -> Word {
+    if bits == Word::BITS || bits == 0 {
+        Word::MAX
+    } else {
+        assert!(bits < Word::BITS);
+        ((1 as Word) << bits) - 1
     }
 }
 
