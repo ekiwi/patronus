@@ -3,12 +3,12 @@
 // author: Kevin Laeufer <laeufer@berkeley.edu>
 
 use clap::{arg, Parser, ValueEnum};
+use num_bigint::BigUint;
+use num_traits::Num;
 use patronus::ir::*;
 use patronus::mc::Simulator;
 use patronus::sim::interpreter::{InitKind, Interpreter};
 use patronus::*;
-use num_bigint::BigUint;
-use num_traits::Num;
 use std::collections::HashMap;
 use std::io::BufRead;
 
