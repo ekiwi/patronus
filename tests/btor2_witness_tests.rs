@@ -2,7 +2,7 @@
 // released under BSD 3-Clause License
 // author: Kevin Laeufer <laeufer@berkeley.edu>
 
-use libpatron::btor2;
+use patronus::btor2;
 
 #[test]
 fn test_no_state_witness() {

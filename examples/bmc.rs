@@ -3,8 +3,8 @@
 // author: Kevin Laeufer <laeufer@berkeley.edu>
 
 use clap::{Parser, ValueEnum};
-use libpatron::ir::*;
-use libpatron::*;
+use patronus::ir::*;
+use patronus::*;
 
 #[derive(Parser, Debug)]
 #[command(name = "bmc")]

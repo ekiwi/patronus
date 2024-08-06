@@ -2,9 +2,9 @@
 // released under BSD 3-Clause License
 // author: Kevin Laeufer <laeufer@berkeley.edu>
 
-use libpatron::btor2;
-use libpatron::ir::{replace_anonymous_inputs_with_zero, Context};
-use libpatron::ir::{simplify_expressions, SerializableIrNode};
+use patronus::btor2;
+use patronus::ir::{replace_anonymous_inputs_with_zero, Context};
+use patronus::ir::{simplify_expressions, SerializableIrNode};
 
 const COUNT_2: &str = r#"
 1 sort bitvec 3

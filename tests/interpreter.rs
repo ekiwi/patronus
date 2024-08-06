@@ -2,10 +2,10 @@
 // released under BSD 3-Clause License
 // author: Kevin Laeufer <laeufer@berkeley.edu>
 
-use libpatron::btor2;
-use libpatron::ir::Context;
-use libpatron::mc::Simulator;
-use libpatron::sim::interpreter::{InitKind, Interpreter};
+use patronus::btor2;
+use patronus::ir::Context;
+use patronus::mc::Simulator;
+use patronus::sim::interpreter::{InitKind, Interpreter};
 
 const COUNT_2: &str = r#"
 1 sort bitvec 3
