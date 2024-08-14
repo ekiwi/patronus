@@ -57,6 +57,36 @@ fn internal_count_expr_uses(
 
 /// Generates a list of all inputs and states that can influence the `root` expression.
 pub fn cone_of_influence(ctx: &Context, sys: &TransitionSystem, root: ExprRef) -> Vec<ExprRef> {
+    // we need to follow next and init expressions for all states
+    cone_of_influence_impl(ctx, sys, root, true, true)
+}
+
+/// Generates a list of all inputs and states that can influence the `root` expression, while the system is being initialized.
+pub fn cone_of_influence_init(
+    ctx: &Context,
+    sys: &TransitionSystem,
+    root: ExprRef,
+) -> Vec<ExprRef> {
+    cone_of_influence_impl(ctx, sys, root, false, true)
+}
+
+/// Generates a list of all inputs and states that can influence the `root` expression, combinationally.
+pub fn cone_of_influence_comb(
+    ctx: &Context,
+    sys: &TransitionSystem,
+    root: ExprRef,
+) -> Vec<ExprRef> {
+    cone_of_influence_impl(ctx, sys, root, false, false)
+}
+
+/// Internal implementation which allows us to define how we follow states.
+fn cone_of_influence_impl(
+    ctx: &Context,
+    sys: &TransitionSystem,
+    root: ExprRef,
+    follow_next: bool,
+    follow_init: bool,
+) -> Vec<ExprRef> {
     let mut out = vec![];
     let mut todo = vec![root];
     let mut visited = ExprMetaData::default();
@@ -75,13 +105,22 @@ pub fn cone_of_influence(ctx: &Context, sys: &TransitionSystem, root: ExprRef) -
             }
         });
 
-        // for states we want to follow the next and init expressions
+        // for states, we might want to follow the next and init expressions
         if let Some(state) = states.get(&expr_ref) {
-            state.for_each_child(|c| {
-                if !*visited.get(*c) {
-                    todo.push(*c);
+            if follow_init {
+                if let Some(c) = state.init {
+                    if !*visited.get(c) {
+                        todo.push(c);
+                    }
                 }
-            });
+            }
+            if follow_next {
+                if let Some(c) = state.next {
+                    if !*visited.get(c) {
+                        todo.push(c);
+                    }
+                }
+            }
         }
 
         // check to see if this is a state or input
@@ -552,5 +591,9 @@ mod tests {
         let cone1 = cone_of_influence(&ctx, &sys, reg1);
         insta::assert_snapshot!(format_symbol_list(&ctx, &cone0));
         insta::assert_snapshot!(format_symbol_list(&ctx, &cone1));
+        let cone2 = cone_of_influence_init(&ctx, &sys, reg0);
+        assert_eq!(cone2, [reg0], "reg0 is initialized to zero. {:?}", cone2);
+        let cone3 = cone_of_influence_init(&ctx, &sys, reg1);
+        assert_eq!(cone3, [reg1], "reg1 is initialized to zero. {:?}", cone3);
     }
 }

@@ -10,8 +10,9 @@ mod type_check;
 pub mod value;
 
 pub use analysis::{
-    analyze_for_serialization, cone_of_influence, count_expr_uses, is_usage_root_signal,
-    ExprMetaData, ForEachChild, SerializeMeta, UseCountInt, Uses,
+    analyze_for_serialization, cone_of_influence, cone_of_influence_comb, cone_of_influence_init,
+    count_expr_uses, is_usage_root_signal, ExprMetaData, ForEachChild, SerializeMeta, UseCountInt,
+    Uses,
 };
 pub use expr::{
     bv_value_fits_width, AddNode, ArrayType, BVLiteralInt, Context, Expr, ExprNodeConstruction,
