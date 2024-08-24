@@ -288,7 +288,7 @@ impl ExprNodeConstruction for Context {}
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
 pub struct StringRef(StringSymbolType);
-#[derive(PartialEq, Eq, Clone, Copy, Hash)]
+#[derive(PartialEq, Eq, Clone, Copy, Hash, Ord, PartialOrd)]
 pub struct ExprRef(NonZeroU32);
 
 impl Debug for ExprRef {
