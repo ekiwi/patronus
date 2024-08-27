@@ -162,7 +162,7 @@ impl StateRef {
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
 pub struct InputRef(usize);
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct TransitionSystem {
     pub name: String,
     pub(crate) states: Vec<State>,
