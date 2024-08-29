@@ -50,7 +50,7 @@ state data_out : bv<16>
 state rd_data : bv<16>
   [next] ite(rst_n, ite(_eq_sdram_controller.no_tri_state.v:209_10, data_in, rd_data), 16'x0)
 state rd_ready : bv<1>
-  [next] ite(rst_n, ite(_eq_sdram_controller.no_tri_state.v:209_10, 1'b1, 1'b0), rd_ready)
+  [next] ite(rst_n, _eq_sdram_controller.no_tri_state.v:209_10, rd_ready)
 state _state_5 : bv<5> -> bv<17>
   [init] ([17'x0] x 2^5)[5'b0 := 17'x17000][5'b1 := 17'x17020][5'b10 := 17'x11030][5'b11 := 17'x17047][5'b100 := 17'x17000][5'b101 := 17'x110a0][5'b110 := 17'x17000][5'b111 := 17'x17000][5'b1000 := 17'x12290][5'b1001 := 17'x17050][5'b1010 := 17'x170b7][5'b1011 := 17'x110c0][5'b1100 := 17'x170d7][5'b1101 := 17'x100e0][5'b1110 := 17'x170f1][5'b1111 := 17'x17000][5'b10000 := 17'x17111][5'b10001 := 17'x15320][5'b10010 := 17'x17131][5'b10011 := 17'x17140][5'b10100 := 17'x17000][5'b10101 := 17'x17000][5'b10110 := 17'x17000][5'b10111 := 17'x17000][5'b11000 := 17'x17191][5'b11001 := 17'x143a0][5'b11010 := 17'x171b1][5'b11011 := 17'x17000][5'b11100 := 17'x17000][5'b11101 := 17'x17000][5'b11110 := 17'x17000][5'b11111 := 17'x17000]
   [next] _state_5
@@ -58,4 +58,3 @@ state state_cnt : bv<4>
   [next] ite(rst_n, ite(_logic_not_sdram_controller.no_tri_state.v:315_26, ite(_eq_sdram_controller.no_tri_state.v:292_24, 4'b0, %150[3:0]), sub(state_cnt, 4'b1)), 4'b1111)
 state refresh_cnt : bv<10>
   [next] ite(not(eq(concat(not(rst_n), eq(state, 5'b100)), 2'b0)), 10'x0, add(refresh_cnt, 10'x1))
-

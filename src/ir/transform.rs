@@ -44,6 +44,13 @@ pub fn simplify_expressions(ctx: &mut Context, sys: &mut TransitionSystem) {
     do_transform(ctx, sys, simplify);
 }
 
+/// Applies simplifications to a single expression.
+pub fn simplify_single_expression(ctx: &mut Context, expr: ExprRef) -> ExprRef {
+    let todo = vec![expr];
+    let res = do_transform_expr(ctx, todo, simplify);
+    res[expr].unwrap_or(expr)
+}
+
 fn simplify(ctx: &mut Context, expr: ExprRef, children: &[ExprRef]) -> Option<ExprRef> {
     match (ctx.get(expr).clone(), children) {
         (Expr::BVIte { .. }, [cond, tru, fals]) => {
@@ -57,6 +64,40 @@ fn simplify(ctx: &mut Context, expr: ExprRef, children: &[ExprRef]) -> Option<Ex
                     Some(*tru)
                 }
             } else {
+                // this unwrap should always be OK since it is a **BV**Ite
+                let value_width = ctx.get(*tru).get_bv_type(ctx).unwrap();
+                if value_width == 1 {
+                    if let (Expr::BVLiteral { value: vt, .. }, Expr::BVLiteral { value: vf, .. }) =
+                        (ctx.get(*tru), ctx.get(*fals))
+                    {
+                        match (*vt, *vf) {
+                            (1, 0) => Some(*cond),
+                            (0, 1) => Some(ctx.not(*cond)),
+                            _ => Some(*tru),
+                        }
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            }
+        }
+        (Expr::BVAnd(_, _, 1), [a, b]) => {
+            // boolean and simplifications
+            if let Expr::BVLiteral { value: va, .. } = ctx.get(*a) {
+                if *va == 0 {
+                    Some(*a) /* false */
+                } else {
+                    Some(*b)
+                }
+            } else if let Expr::BVLiteral { value: vb, .. } = ctx.get(*b) {
+                if *vb == 0 {
+                    Some(*b) /* true */
+                } else {
+                    Some(*a)
+                }
+            } else {
                 None
             }
         }
@@ -65,6 +106,24 @@ fn simplify(ctx: &mut Context, expr: ExprRef, children: &[ExprRef]) -> Option<Ex
                 (ctx.get(*a), ctx.get(*b))
             {
                 Some(ctx.bv_lit(*va & *vb, width))
+            } else {
+                None
+            }
+        }
+        (Expr::BVOr(_, _, 1), [a, b]) => {
+            // boolean or simplifications
+            if let Expr::BVLiteral { value: va, .. } = ctx.get(*a) {
+                if *va == 0 {
+                    Some(*b)
+                } else {
+                    Some(*a) /* true */
+                }
+            } else if let Expr::BVLiteral { value: vb, .. } = ctx.get(*b) {
+                if *vb == 0 {
+                    Some(*a)
+                } else {
+                    Some(*b) /* true */
+                }
             } else {
                 None
             }
