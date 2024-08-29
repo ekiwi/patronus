@@ -969,6 +969,15 @@ fn exec_instr(instr: &Instr, data: &mut [Word]) -> usize {
                     let (dst, src) = exec::split_borrow_1(data, instr.dst.range(), c_loc.range());
                     exec::assign(dst, src);
                 }
+                if instr.do_trace {
+                    println!(
+                        "{} <= {}? {} : {}",
+                        value::to_bit_str(&data[instr.dst.range()], instr.result_width),
+                        cond_value,
+                        value::to_bit_str(&data[b_loc.range()], instr.result_width),
+                        value::to_bit_str(&data[c_loc.range()], instr.result_width),
+                    );
+                }
             }
         },
         InstrType::ArrayRead(array, index_width, index) => {

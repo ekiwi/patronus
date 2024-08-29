@@ -1,6 +1,6 @@
 [package]
 name = "patronus"
-version = "0.18.3"
+version = "0.18.4"
 edition = "2021"
 authors = ["Kevin Laeufer <laeufer@berkeley.edu>"]
 description = "Hardware bug-finding toolkit."
