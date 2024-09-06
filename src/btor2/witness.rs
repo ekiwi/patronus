@@ -8,6 +8,7 @@ use crate::mc::{parse_big_uint_from_bit_string, Witness, WitnessArray, WitnessVa
 use num_bigint::BigUint;
 use std::borrow::Cow;
 use std::io::{BufRead, Write};
+use baa::WidthInt;
 
 enum ParserState {
     Start,
@@ -279,7 +280,7 @@ pub fn print_witness(out: &mut impl Write, witness: &Witness) -> std::io::Result
 }
 
 /// Returns the value as a fixed with bit string.
-fn to_bit_string(value: &BigUint, width: ir::WidthInt) -> Option<String> {
+fn to_bit_string(value: &BigUint, width: WidthInt) -> Option<String> {
     let base_str = value.to_str_radix(2);
     let base_len = base_str.len();
     if base_len == width as usize {

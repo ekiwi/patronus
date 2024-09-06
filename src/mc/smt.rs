@@ -9,6 +9,7 @@ use num_bigint::BigUint;
 use num_traits::{One, Zero};
 use std::borrow::Cow;
 use std::collections::HashSet;
+use baa::WidthInt;
 
 #[derive(Debug, Clone, Copy)]
 pub struct SmtSolverCmd {

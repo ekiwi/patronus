@@ -7,7 +7,6 @@ mod serialize;
 mod transform;
 mod transition_system;
 mod type_check;
-pub mod value;
 
 pub use analysis::{
     analyze_for_serialization, cone_of_influence, cone_of_influence_comb, cone_of_influence_init,
@@ -16,7 +15,7 @@ pub use analysis::{
 };
 pub use expr::{
     bv_value_fits_width, AddNode, ArrayType, BVLiteralInt, Context, Expr, ExprNodeConstruction,
-    ExprRef, GetNode, StringRef, Type, WidthInt,
+    ExprRef, GetNode, StringRef, Type,
 };
 pub use serialize::SerializableIrNode;
 pub use transform::{
@@ -27,4 +26,3 @@ pub use transition_system::{
     merge_signal_info, SignalInfo, SignalKind, SignalLabels, State, StateRef, TransitionSystem,
 };
 pub use type_check::{TypeCheck, TypeCheckError};
-pub use value::{width_to_words, Value, ValueRef, Word};

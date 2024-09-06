@@ -7,7 +7,7 @@ use std::fmt::{Debug, Formatter};
 use std::num::NonZeroU32;
 
 /// This type restricts the maximum width that a bit-vector type is allowed to have in our IR.
-pub type WidthInt = u32;
+pub type WidthInt = baa::WidthInt;
 
 /// This restricts the maximum value that a bit-vector literal can carry.
 pub type BVLiteralInt = u64;

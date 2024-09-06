@@ -2,11 +2,11 @@
 // released under BSD 3-Clause License
 // author: Kevin Laeufer <laeufer@berkeley.edu>
 
-use super::exec;
 use crate::ir::*;
 use rand::{RngCore, SeedableRng};
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
+use baa::*;
 
 /// Specifies how to initialize states that do not have
 #[derive(Debug, PartialEq, Copy, Clone)]
@@ -28,12 +28,12 @@ pub trait Simulator {
     fn step(&mut self);
 
     /// Change the value or an expression in the simulator. Be careful!
-    fn set(&mut self, expr: ExprRef, value: ValueRef<'_>);
+    fn set(&mut self, expr: ExprRef, value: &impl BitVecOps);
 
-    fn get(&self, expr: ExprRef) -> Option<ValueRef<'_>>;
+    fn get(&self, expr: ExprRef) -> Option<BitVecValueRef<'_>>;
 
     /// Retrieve the value of an array element
-    fn get_element(&self, expr: ExprRef, index: Word) -> Option<ValueRef<'_>>;
+    fn get_element(&self, expr: ExprRef, index: Word) -> Option<BitVecValueRef<'_>>;
 
     fn step_count(&self) -> u64;
 
@@ -114,22 +114,23 @@ impl<'a> Simulator for Interpreter<'a> {
         // Copy input values from regular data structure.
         // This allows users to employ the `set` function to influence the input values.
         for sym in self.inputs.iter() {
-            let dst = self.init.get_range(sym).unwrap();
-            if let Some(src) = self.update.get_range(sym) {
-                exec::assign(&mut init_data[dst], &self.data[src]);
+            let info = self.init.get_info(sym).unwrap();
+            
+            if let Some(src_info) = self.update.get_info(sym) {
+                let (dst, src) = self.data.get_mut_ref((info.index, src_info.index));
+                dst.assign(src);
             } else {
                 // if the input does not exist in the update function, we use zero or a random value
-                let info = &self.init.symbols[&sym];
-                let dst = &mut init_data[info.get_range()];
-                init_gen.assign(dst, info.width, info.elements);
+                let mut dst = init_data.get_mut_ref(info.index);
+                init_gen.assign(&mut dst, info.elements);
             }
         }
 
         // assign default value to states that do not have an init expression
         for state in self.states.iter().filter(|s| s.init.is_none()) {
             let info = &self.init.symbols[&state.symbol];
-            let dst = &mut init_data[info.get_range()];
-            init_gen.assign(dst, info.width, info.elements);
+            let mut dst = init_data.get_mut_ref(info.index);
+            init_gen.assign(&mut dst, info.elements);
         }
 
         // execute the init program
@@ -138,9 +139,9 @@ impl<'a> Simulator for Interpreter<'a> {
         // copy init values from init to update program
         for state in self.states.iter() {
             // println!("{}", state.symbol.get_symbol_name(self.ctx).unwrap());
-            let src = self.init.get_range(&state.symbol).unwrap();
-            let dst = self.update.get_range(&state.symbol).unwrap();
-            exec::assign(&mut self.data[dst], &init_data[src]);
+            let src = init_data.get_ref(self.init.get_info(state.symbol).unwrap());
+            let mut dst = self.data.get_mut_ref(self.update.get_info(state.symbol).unwrap());
+            dst.assign(src);
         }
     }
 
@@ -154,11 +155,11 @@ impl<'a> Simulator for Interpreter<'a> {
         self.step_count += 1;
     }
 
-    fn set(&mut self, expr: ExprRef, value: ValueRef<'_>) {
+    fn set(&mut self, expr: ExprRef, value: &impl BitVecOps) {
         if let Some(m) = &self.update.symbols.get(&expr) {
             assert_eq!(m.elements, 1, "cannot set array values with this function");
             let dst = &mut self.data[m.loc.range()];
-            assert!(value.word_len() <= dst.len(), "Value does not fit!");
+            assert!(value.words().len() <= dst.len(), "Value does not fit!");
             exec::zero_extend(dst, value.words());
             // deal with values that are too large
             exec::mask_msb(dst, m.width);
@@ -166,19 +167,17 @@ impl<'a> Simulator for Interpreter<'a> {
         }
     }
 
-    fn get(&self, expr: ExprRef) -> Option<ValueRef<'_>> {
+    fn get(&self, expr: ExprRef) -> Option<BitVecValueRef<'_>> {
         // println!("{:?}", expr.get_symbol_name(self.ctx));
         if let Some(m) = &self.update.symbols.get(&expr) {
             assert_eq!(m.elements, 1, "cannot get array values with this function");
-            let words = &self.data[m.loc.range()];
-            let bits = m.width;
-            Some(ValueRef::new(words, bits))
+            Some(self.data.get_ref(m.index))
         } else {
             None
         }
     }
 
-    fn get_element(&self, expr: ExprRef, index: Word) -> Option<ValueRef<'_>> {
+    fn get_element(&self, expr: ExprRef, index: Word) -> Option<BitVecValueRef<'_>> {
         if let Some(m) = &self.update.symbols.get(&expr) {
             if index < m.elements {
                 let src_start = m.loc.offset as usize + m.loc.words as usize * index as usize;
@@ -235,20 +234,20 @@ impl InitValueGenerator {
         Self { rng }
     }
 
-    pub fn assign(&mut self, dst: &mut [Word], width: WidthInt, elements: u64) {
+    pub fn assign(&mut self, dst: &mut impl BitVecMutOps, elements: u64) {
         match &mut self.rng {
             Some(rng) => {
-                let words = width_to_words(width) as usize;
+                let words = dst.words().len();
                 for ii in 0..(elements as usize) {
-                    let element_dst = &mut dst[(ii * words)..((ii + 1) * words)];
+                    let element_dst = &mut dst.words_mut()[(ii * words)..((ii + 1) * words)];
                     for word in element_dst.iter_mut() {
                         *word = rng.next_u64();
                     }
-                    exec::mask_msb(element_dst, width);
+                    dst.mask_msb();
                 }
             }
             None => {
-                exec::clear(dst);
+                dst.assign_zero();
             }
         }
     }
@@ -262,17 +261,8 @@ struct Program {
 }
 
 struct SymbolInfo {
-    loc: Loc,
-    width: WidthInt,
+    index: BitVecValueIndex,
     elements: u64,
-}
-
-impl SymbolInfo {
-    fn get_range(&self) -> std::ops::Range<usize> {
-        let start = self.loc.offset as usize;
-        let len = self.elements as usize * self.loc.words as usize;
-        start..(start + len)
-    }
 }
 
 impl Program {
@@ -284,8 +274,9 @@ impl Program {
         }
     }
 
-    fn get_range(&self, e: &ExprRef) -> Option<std::ops::Range<usize>> {
-        self.symbols.get(e).map(|i| i.get_range())
+    /// looks up the symbol info
+    fn get_info(&self, e: &ExprRef) -> Option<&SymbolInfo> {
+        self.symbols.get(e)
     }
 }
 

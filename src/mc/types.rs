@@ -2,7 +2,8 @@
 // released under BSD 3-Clause License
 // author: Kevin Laeufer <laeufer@berkeley.edu>
 
-use crate::ir::{ArrayType, WidthInt};
+use baa::WidthInt;
+use crate::ir::{ArrayType};
 use num_bigint::BigUint;
 use num_traits::{Num, Zero};
 

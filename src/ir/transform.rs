@@ -141,7 +141,7 @@ fn simplify(ctx: &mut Context, expr: ExprRef, children: &[ExprRef]) -> Option<Ex
             match ctx.get(*e) {
                 Expr::BVNot(inner, _) => Some(*inner), // double negation
                 Expr::BVLiteral { value, .. } => {
-                    Some(ctx.bv_lit((!*value) & value::mask(width), width))
+                    Some(ctx.bv_lit((!*value) & baa::mask(width), width))
                 }
                 _ => None,
             }
