@@ -5,10 +5,10 @@
 use crate::btor2::parse::tokenize_line;
 use crate::ir;
 use crate::mc::{parse_big_uint_from_bit_string, Witness, WitnessArray, WitnessValue};
+use baa::WidthInt;
 use num_bigint::BigUint;
 use std::borrow::Cow;
 use std::io::{BufRead, Write};
-use baa::WidthInt;
 
 enum ParserState {
     Start,

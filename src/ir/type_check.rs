@@ -2,8 +2,8 @@
 // released under BSD 3-Clause License
 // author: Kevin Laeufer <laeufer@berkeley.edu>
 
-use crate::ir::expr::WidthInt;
 use super::{ArrayType, Expr, ExprRef, GetNode, Type};
+use crate::ir::expr::WidthInt;
 
 #[derive(Debug, Clone)]
 pub struct TypeCheckError {

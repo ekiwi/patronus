@@ -4,12 +4,12 @@
 
 use crate::ir::*;
 use crate::mc::{parse_big_uint_from_bit_string, Witness, WitnessArray, WitnessValue};
+use baa::WidthInt;
 use easy_smt as smt;
 use num_bigint::BigUint;
 use num_traits::{One, Zero};
 use std::borrow::Cow;
 use std::collections::HashSet;
-use baa::WidthInt;
 
 #[derive(Debug, Clone, Copy)]
 pub struct SmtSolverCmd {

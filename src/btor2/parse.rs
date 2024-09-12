@@ -3,11 +3,11 @@
 // author: Kevin Laeufer <laeufer@berkeley.edu>
 
 use crate::ir::*;
+use baa::WidthInt;
 use fuzzy_matcher::FuzzyMatcher;
 use smallvec::SmallVec;
 use std::collections::HashMap;
 use std::str::FromStr;
-use baa::WidthInt;
 
 pub fn parse_str(ctx: &mut Context, input: &str, name: Option<&str>) -> Option<TransitionSystem> {
     match Parser::new(ctx).parse(input.as_bytes(), name) {

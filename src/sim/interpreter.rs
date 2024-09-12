@@ -3,10 +3,11 @@
 // author: Kevin Laeufer <laeufer@berkeley.edu>
 
 use crate::ir::*;
+use baa::*;
 use rand::{RngCore, SeedableRng};
+use std::borrow::Borrow;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
-use baa::*;
 
 /// Specifies how to initialize states that do not have
 #[derive(Debug, PartialEq, Copy, Clone)]
@@ -28,12 +29,16 @@ pub trait Simulator {
     fn step(&mut self);
 
     /// Change the value or an expression in the simulator. Be careful!
-    fn set(&mut self, expr: ExprRef, value: &impl BitVecOps);
+    fn set<'a>(&mut self, expr: ExprRef, value: impl Into<BitVecValueRef<'a>>);
 
     fn get(&self, expr: ExprRef) -> Option<BitVecValueRef<'_>>;
 
     /// Retrieve the value of an array element
-    fn get_element(&self, expr: ExprRef, index: Word) -> Option<BitVecValueRef<'_>>;
+    fn get_element<'a>(
+        &self,
+        expr: ExprRef,
+        index: impl Into<BitVecValueRef<'a>>,
+    ) -> Option<BitVecValueRef<'_>>;
 
     fn step_count(&self) -> u64;
 
@@ -115,22 +120,24 @@ impl<'a> Simulator for Interpreter<'a> {
         // This allows users to employ the `set` function to influence the input values.
         for sym in self.inputs.iter() {
             let info = self.init.get_info(sym).unwrap();
-            
+
             if let Some(src_info) = self.update.get_info(sym) {
-                let (dst, src) = self.data.get_mut_ref((info.index, src_info.index));
+                let (dst, src) = self
+                    .data
+                    .get_mut_ref((info.array_index(), src_info.array_index()));
                 dst.assign(src);
             } else {
                 // if the input does not exist in the update function, we use zero or a random value
-                let mut dst = init_data.get_mut_ref(info.index);
-                init_gen.assign(&mut dst, info.elements);
+                let dst = init_data.get_mut_ref(info.array_index());
+                init_gen.assign(dst);
             }
         }
 
         // assign default value to states that do not have an init expression
         for state in self.states.iter().filter(|s| s.init.is_none()) {
             let info = &self.init.symbols[&state.symbol];
-            let mut dst = init_data.get_mut_ref(info.index);
-            init_gen.assign(&mut dst, info.elements);
+            let dst = init_data.get_mut_ref(info.array_index());
+            init_gen.assign(dst);
         }
 
         // execute the init program
@@ -139,8 +146,10 @@ impl<'a> Simulator for Interpreter<'a> {
         // copy init values from init to update program
         for state in self.states.iter() {
             // println!("{}", state.symbol.get_symbol_name(self.ctx).unwrap());
-            let src = init_data.get_ref(self.init.get_info(state.symbol).unwrap());
-            let mut dst = self.data.get_mut_ref(self.update.get_info(state.symbol).unwrap());
+            let src = init_data.get_ref(self.init.get_info(state.symbol).unwrap().index);
+            let mut dst = self
+                .data
+                .get_mut_ref(self.update.get_info(state.symbol).unwrap().index);
             dst.assign(src);
         }
     }
@@ -155,36 +164,45 @@ impl<'a> Simulator for Interpreter<'a> {
         self.step_count += 1;
     }
 
-    fn set(&mut self, expr: ExprRef, value: &impl BitVecOps) {
+    fn set<'b>(&mut self, expr: ExprRef, value: impl Into<BitVecValueRef<'b>>) {
         if let Some(m) = &self.update.symbols.get(&expr) {
-            assert_eq!(m.elements, 1, "cannot set array values with this function");
-            let dst = &mut self.data[m.loc.range()];
-            assert!(value.words().len() <= dst.len(), "Value does not fit!");
-            exec::zero_extend(dst, value.words());
-            // deal with values that are too large
-            exec::mask_msb(dst, m.width);
-            // println!("Set [{}] = {}", expr.index(), data[0]);
+            assert_eq!(
+                m.index_width, 0,
+                "cannot set array values with this function"
+            );
+            let mut dst = self.data.get_mut_ref(m.index);
+            dst.assign(value);
         }
     }
 
     fn get(&self, expr: ExprRef) -> Option<BitVecValueRef<'_>> {
         // println!("{:?}", expr.get_symbol_name(self.ctx));
         if let Some(m) = &self.update.symbols.get(&expr) {
-            assert_eq!(m.elements, 1, "cannot get array values with this function");
+            assert_eq!(
+                m.index_width, 0,
+                "cannot get array values with this function use get element instead"
+            );
             Some(self.data.get_ref(m.index))
         } else {
             None
         }
     }
 
-    fn get_element(&self, expr: ExprRef, index: Word) -> Option<BitVecValueRef<'_>> {
+    fn get_element<'b>(
+        &self,
+        expr: ExprRef,
+        index: impl Into<BitVecValueRef<'b>>,
+    ) -> Option<BitVecValueRef<'_>> {
         if let Some(m) = &self.update.symbols.get(&expr) {
-            if index < m.elements {
-                let src_start = m.loc.offset as usize + m.loc.words as usize * index as usize;
-                let src_range = src_start..(src_start + m.loc.words as usize);
-                let words = &self.data[src_range];
-                let bits = m.width;
-                Some(ValueRef::new(words, bits))
+            let src = self.data.get_ref(m.array_index());
+            let index = index.into();
+            let index_value = index
+                .to_u64()
+                .unwrap_or_else(|| todo!("deal with array indices that do not fit into 64 bits"))
+                as usize;
+
+            if index_value < src.num_elements() {
+                Some(src.select(index))
             } else {
                 None
             }
@@ -200,8 +218,8 @@ impl<'a> Simulator for Interpreter<'a> {
     fn take_snapshot(&mut self) -> Self::SnapshotId {
         let mut snapshot = Vec::with_capacity(self.states.len());
         for state in self.states.iter() {
-            let src = self.update.get_range(&state.symbol).unwrap();
-            snapshot.extend_from_slice(&self.data[src]);
+            let src_index = self.update.get_info(&state.symbol).unwrap().array_index();
+            snapshot.extend_from_slice(self.data.get_ref(src_index).words());
         }
         let id = self.snapshots.len() as Self::SnapshotId;
         self.snapshots.push(snapshot);
@@ -212,10 +230,14 @@ impl<'a> Simulator for Interpreter<'a> {
         let snapshot = &self.snapshots[id as usize];
         let mut offset = 0;
         for state in self.states.iter() {
-            let dst = self.update.get_range(&state.symbol).unwrap();
-            let len = dst.len();
-            let src = offset..(offset + len);
-            exec::assign(&mut self.data[dst], &snapshot[src]);
+            let dst_index = self.update.get_info(&state.symbol).unwrap().array_index();
+            let mut dst = self.data.get_mut_ref(dst_index);
+            let len = dst.words().len();
+            let mut src_index = dst_index.clone();
+            // TODO!
+            src_index.first.index = offset;
+
+            dst.assign(snapshot.get_ref(src_index));
             offset += len;
         }
     }
@@ -234,20 +256,23 @@ impl InitValueGenerator {
         Self { rng }
     }
 
-    pub fn assign(&mut self, dst: &mut impl BitVecMutOps, elements: u64) {
+    pub fn assign<'a>(&mut self, dst: impl Into<ArrayValueMutRef<'a>>) {
         match &mut self.rng {
             Some(rng) => {
-                let words = dst.words().len();
-                for ii in 0..(elements as usize) {
-                    let element_dst = &mut dst.words_mut()[(ii * words)..((ii + 1) * words)];
-                    for word in element_dst.iter_mut() {
+                let mut dst = dst.into();
+                let num_elements = dst.num_elements();
+                let index_width = dst.index_width();
+                for ii in 0..num_elements {
+                    let index = BitVecValue::from_u64(ii as Word, index_width);
+                    let mut element_dst = dst.select_mut(index);
+                    for word in element_dst.words().iter_mut() {
                         *word = rng.next_u64();
                     }
-                    dst.mask_msb();
+                    element_dst.mask_msb();
                 }
             }
             None => {
-                dst.assign_zero();
+                dst.into().clear();
             }
         }
     }
@@ -262,7 +287,14 @@ struct Program {
 
 struct SymbolInfo {
     index: BitVecValueIndex,
-    elements: u64,
+    /// Will be 0 unless the symbol is an array.
+    index_width: WidthInt,
+}
+
+impl SymbolInfo {
+    fn array_index(&self) -> ArrayValueIndex {
+        self.index.to_array_index(self.index_width)
+    }
 }
 
 impl Program {
@@ -275,8 +307,8 @@ impl Program {
     }
 
     /// looks up the symbol info
-    fn get_info(&self, e: &ExprRef) -> Option<&SymbolInfo> {
-        self.symbols.get(e)
+    fn get_info<E: Borrow<ExprRef>>(&self, e: E) -> Option<&SymbolInfo> {
+        self.symbols.get(e.borrow())
     }
 }
 
@@ -431,9 +463,8 @@ fn compile(ctx: &Context, sys: &TransitionSystem, init_mode: bool, do_trace: boo
             symbols.insert(
                 expr_ref,
                 SymbolInfo {
-                    loc,
-                    width,
-                    elements: 1u64 << index_width,
+                    index: BitVecValueIndex::new(loc.offset, width),
+                    index_width,
                 },
             );
         }
@@ -618,27 +649,16 @@ fn get_state_next(st: &State) -> Option<ExprRef> {
     }
 }
 
-fn allocate_result_space(tpe: Type, word_count: &mut u32) -> (Loc, WidthInt, WidthInt) {
-    match tpe {
-        Type::BV(width) => {
-            let words = width_to_words(width);
-            let offset = *word_count;
-            *word_count += words as u32;
-            let loc = Loc { offset, words };
-            (loc, width, 0)
-        }
+fn allocate_result_space(tpe: Type, word_count: &mut u32) -> ArrayValueIndex {
+    let index = match tpe {
+        Type::BV(width) => ArrayValueIndex::new(BitVecValueIndex::new(*word_count, width), 0),
         Type::Array(ArrayType {
             index_width,
             data_width,
-        }) => {
-            let words = width_to_words(data_width);
-            let offset = *word_count;
-            let entries = 1u32 << index_width;
-            *word_count += words as u32 * entries;
-            let loc = Loc { offset, words };
-            (loc, data_width, index_width)
-        }
-    }
+        }) => ArrayValueIndex::new(BitVecValueIndex::new(*word_count, data_width), index_width),
+    };
+    *word_count += index.words() as u32;
+    index
 }
 
 fn compile_bv_res_expr_type(
