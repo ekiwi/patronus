@@ -2,6 +2,7 @@
 // released under BSD 3-Clause License
 // author: Kevin Laeufer <laeufer@berkeley.edu>
 
+use baa::BitVecOps;
 use patronus::btor2;
 use patronus::ir::Context;
 use patronus::mc::Simulator;

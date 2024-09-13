@@ -2,6 +2,7 @@
 // released under BSD 3-Clause License
 // author: Kevin Laeufer <laeufer@berkeley.edu>
 
+use baa::{BitVecOps, BitVecValue, WidthInt};
 use clap::{arg, Parser, ValueEnum};
 use num_bigint::BigUint;
 use num_traits::Num;
@@ -173,7 +174,7 @@ fn do_step(
                 if trimmed.to_ascii_lowercase() != "x" {
                     let value = u64::from_str_radix(trimmed, 10).unwrap();
                     let width = input.3;
-                    sim.set(input.1, (&Value::from_u64(value, width)).into());
+                    sim.set(input.1, &BitVecValue::from_u64(value, width));
                 }
 
                 // get next input
@@ -194,7 +195,7 @@ fn do_step(
         println!();
         for (name, expr) in signal_to_print.iter() {
             if let Some(value_ref) = sim.get(*expr) {
-                let value = value_ref.to_bit_string();
+                let value = value_ref.to_bit_str();
                 println!("{name}@{step_id} = {value}")
             }
         }
@@ -210,7 +211,7 @@ fn do_step(
                 if trimmed.to_ascii_lowercase() != "x" {
                     let expected_big = BigUint::from_str_radix(trimmed, 10).unwrap();
                     let width = output.3;
-                    let expected = Value::from_big_uint(&expected_big, width);
+                    let expected = BitVecValue::from_big_uint(&expected_big, width);
                     let actual = sim.get(output.1).unwrap();
                     assert_eq!(expected, actual, "{}@{step_id}", output.2);
                 }
