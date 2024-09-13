@@ -232,13 +232,12 @@ impl<'a> Simulator for Interpreter<'a> {
         for state in self.states.iter() {
             let dst_index = self.update.get_info(&state.symbol).unwrap().array_index();
             let mut dst = self.data.get_mut_ref(dst_index);
-            let len = dst.words().len();
-            let mut src_index = dst_index.clone();
-            // TODO!
-            src_index.first.index = offset;
-
+            let src_index = ArrayValueIndex::new(
+                BitVecValueIndex::new(offset, dst.data_width()),
+                dst.index_width(),
+            );
             dst.assign(snapshot.get_ref(src_index));
-            offset += len;
+            offset += dst_index.words() as u32;
         }
     }
 }
@@ -774,10 +773,9 @@ fn compile_bv_res_expr_type(
 
 #[derive(Debug, Clone)]
 struct Instr {
-    dst: Loc,
+    dst: BitVecValueIndex,
     tpe: InstrType,
-    result_width: WidthInt, // TODO: move to symbol meta-data
-    do_trace: bool,         // for debugging
+    do_trace: bool, // for debugging
 }
 
 impl Instr {
@@ -901,7 +899,7 @@ fn exec_instr(instr: &Instr, data: &mut [Word]) -> usize {
                 NullaryOp::ArraySymbol(_) => {}
                 NullaryOp::BVLiteral(value) => {
                     // TODO: optimize by only calculating once!
-                    let dst = &mut data[instr.dst.range()];
+                    let mut dst = data.get_mut_ref(instr.dst);
                     exec::assign_word(dst, *value);
                     if instr.do_trace {
                         println!(
