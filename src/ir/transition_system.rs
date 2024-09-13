@@ -2,7 +2,7 @@
 // released under BSD 3-Clause License
 // author: Kevin Laeufer <laeufer@berkeley.edu>
 
-use super::{Context, Expr, ExprRef, GetNode, StringRef};
+use super::{Context, ExprRef, StringRef};
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use std::iter::Enumerate;
@@ -198,6 +198,10 @@ impl TransitionSystem {
         entry.as_ref()
     }
 
+    pub fn get_state(&self, reference: StateRef) -> &State {
+        &self.states[reference.0]
+    }
+
     pub fn remove_signal(&mut self, expr: ExprRef) {
         *self
             .signals
@@ -224,13 +228,13 @@ impl TransitionSystem {
         }
     }
 
-    pub fn add_input(&mut self, ctx: &impl GetNode<Expr, ExprRef>, symbol: ExprRef) {
+    pub fn add_input(&mut self, ctx: &Context, symbol: ExprRef) {
         assert!(symbol.is_symbol(ctx));
         let name = symbol.get_symbol_name_ref(ctx);
         self.add_signal(symbol, SignalKind::Input, SignalLabels::default(), name);
     }
 
-    pub fn add_state(&mut self, ctx: &impl GetNode<Expr, ExprRef>, symbol: ExprRef) -> StateRef {
+    pub fn add_state(&mut self, ctx: &Context, symbol: ExprRef) -> StateRef {
         assert!(symbol.is_symbol(ctx));
         // also add as a signal
         let name = symbol.get_symbol_name_ref(ctx);
@@ -304,7 +308,7 @@ impl TransitionSystem {
                 if !skip {
                     let expr_ref = ExprRef::from_index(idx);
                     if let Some(name) = signal.name {
-                        let name_str = ctx.get(name).to_string();
+                        let name_str = ctx.get_str(name).to_string();
                         out.insert(name_str, expr_ref);
                     }
                     // sometimes symbols might have a different name than the signal, because of aliasing
@@ -367,17 +371,17 @@ pub fn merge_signal_info(original: &SignalInfo, alias: &SignalInfo) -> SignalInf
     SignalInfo { name, kind, labels }
 }
 
-impl GetNode<SignalInfo, ExprRef> for TransitionSystem {
-    fn get(&self, reference: ExprRef) -> &SignalInfo {
-        self.signals[reference.index()].as_ref().unwrap()
-    }
-}
-
-impl GetNode<State, StateRef> for TransitionSystem {
-    fn get(&self, reference: StateRef) -> &State {
-        &self.states[reference.0]
-    }
-}
+// impl GetNode<SignalInfo, ExprRef> for TransitionSystem {
+//     fn get(&self, reference: ExprRef) -> &SignalInfo {
+//         self.signals[reference.index()].as_ref().unwrap()
+//     }
+// }
+//
+// impl GetNode<State, StateRef> for TransitionSystem {
+//     fn get(&self, reference: StateRef) -> &State {
+//         &self.states[reference.0]
+//     }
+// }
 
 #[cfg(test)]
 mod tests {

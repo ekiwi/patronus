@@ -2,7 +2,7 @@
 // released under BSD 3-Clause License
 // author: Kevin Laeufer <laeufer@berkeley.edu>
 
-use super::{Context, Expr, ExprRef, GetNode};
+use super::{Context, Expr, ExprRef};
 use crate::ir::{
     analyze_for_serialization, SignalInfo, SignalLabels, TransitionSystem, Type, TypeCheck,
 };
@@ -37,7 +37,7 @@ where
     W: Write,
 {
     match expr {
-        Expr::BVSymbol { name, .. } => write!(writer, "{}", ctx.get(*name)),
+        Expr::BVSymbol { name, .. } => write!(writer, "{}", ctx.get_str(*name)),
         Expr::BVLiteral { value, width } => {
             if *width <= 8 {
                 write!(writer, "{width}'b{value:b}")
@@ -341,7 +341,7 @@ where
             }
             write!(writer, ")")
         }
-        Expr::ArraySymbol { name, .. } => write!(writer, "{}", ctx.get(*name)),
+        Expr::ArraySymbol { name, .. } => write!(writer, "{}", ctx.get_str(*name)),
         Expr::ArrayConstant { e, index_width, .. } => {
             write!(writer, "([")?;
             if (serialize_child)(e, writer)? {
@@ -447,7 +447,7 @@ fn serialize_transition_system<W: Write>(
             .unwrap_or_else(|| {
                 sys.get_signal(root.expr)
                     .and_then(|i| i.name)
-                    .map(|n| ctx.get(n).to_string())
+                    .map(|n| ctx.get_str(n).to_string())
                     .unwrap_or(format!("%{}", root.expr.index()))
             });
         names[root.expr.index()] = Some(name);
@@ -490,7 +490,11 @@ fn serialize_transition_system<W: Write>(
         for alias in aliases.iter() {
             // for aliases, we prefer the signal name
             // this allows us to e.g. print the name of an output which is also an input correctly
-            let alias_name = maybe_info.unwrap().name.map(|n| ctx.get(n)).unwrap_or(name);
+            let alias_name = maybe_info
+                .unwrap()
+                .name
+                .map(|n| ctx.get_str(n))
+                .unwrap_or(name);
             writeln!(writer, "{alias} {alias_name} : {tpe} = {name}")?;
         }
     }
@@ -570,7 +574,6 @@ impl SerializableIrNode for TransitionSystem {
 
 #[cfg(test)]
 mod tests {
-    use super::super::ExprNodeConstruction;
     use super::*;
 
     #[test]

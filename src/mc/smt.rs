@@ -456,7 +456,7 @@ impl UnrollSmtEncoding {
             signal_order.push(root.expr);
             let name = sys.get_signal(root.expr).and_then(|i| i.name).unwrap_or({
                 let default_name = format!("__n{}", root.expr.index());
-                ctx.add_node(default_name)
+                ctx.string(default_name.into())
             });
             let is_input = sys
                 .get_signal(root.expr)
@@ -513,7 +513,7 @@ impl UnrollSmtEncoding {
             let skip = !(filter)(info);
             if !skip {
                 let tpe = convert_tpe(smt_ctx, expr.get_type(ctx));
-                let name = name_at(ctx.get(info.name), step);
+                let name = name_at(ctx.get_str(info.name), step);
                 if expr.is_symbol(ctx) {
                     smt_ctx.declare_const(escape_smt_identifier(&name), tpe)?;
                 } else {
@@ -539,8 +539,8 @@ impl UnrollSmtEncoding {
             let name_ref = if info.is_const {
                 info.name
             } else {
-                let name = name_at(ctx.get(info.name), step);
-                ctx.add_node(name)
+                let name = name_at(ctx.get_str(info.name), step);
+                ctx.string(name.into())
             };
             let tpe = signal.get_type(ctx);
             debug_assert_eq!(info.id as usize, syms.len());
@@ -717,7 +717,7 @@ fn convert_expr(
 
     match ctx.get(expr_ref) {
         Expr::BVSymbol { name, .. } => {
-            let name_str = ctx.get(name);
+            let name_str = ctx.get_str(*name);
             smt_ctx.atom(escape_smt_identifier(name_str))
         }
         Expr::BVLiteral { value, width } if *width == 1 => {
@@ -914,7 +914,7 @@ fn convert_expr(
             let f = convert_expr(smt_ctx, ctx, *fals, patch_expr);
             smt_ctx.ite(c, t, f)
         }
-        Expr::ArraySymbol { name, .. } => smt_ctx.atom(escape_smt_identifier(ctx.get(name))),
+        Expr::ArraySymbol { name, .. } => smt_ctx.atom(escape_smt_identifier(ctx.get_str(*name))),
         Expr::ArrayConstant {
             e,
             index_width,

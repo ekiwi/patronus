@@ -2,7 +2,7 @@
 // released under BSD 3-Clause License
 // author: Kevin Laeufer <laeufer@berkeley.edu>
 
-use super::{ArrayType, Expr, ExprRef, GetNode, Type};
+use super::{ArrayType, Context, Expr, ExprRef, Type};
 use crate::ir::expr::WidthInt;
 
 #[derive(Debug, Clone)]
@@ -46,7 +46,7 @@ impl Type {
 }
 
 fn expect_same_width_bvs(
-    ctx: &impl GetNode<Expr, ExprRef>,
+    ctx: &Context,
     op: &str,
     a: ExprRef,
     b: ExprRef,
@@ -65,7 +65,7 @@ fn expect_same_width_bvs(
 }
 
 fn expect_same_width_bvs_of(
-    ctx: &impl GetNode<Expr, ExprRef>,
+    ctx: &Context,
     expected_width: WidthInt,
     op: &str,
     a: ExprRef,
@@ -75,7 +75,7 @@ fn expect_same_width_bvs_of(
 }
 
 fn expect_same_size_arrays(
-    ctx: &impl GetNode<Expr, ExprRef>,
+    ctx: &Context,
     op: &str,
     a: ExprRef,
     b: ExprRef,
@@ -93,17 +93,17 @@ fn expect_same_size_arrays(
 
 pub trait TypeCheck {
     /// Type check expression node. Does not recurse to lower nodes.
-    fn type_check(&self, ctx: &impl GetNode<Expr, ExprRef>) -> Result<Type, TypeCheckError>;
+    fn type_check(&self, ctx: &Context) -> Result<Type, TypeCheckError>;
     /// gets type as fast as possible without performing any checks
-    fn get_type(&self, ctx: &impl GetNode<Expr, ExprRef>) -> Type;
-    fn get_bv_type(&self, ctx: &impl GetNode<Expr, ExprRef>) -> Option<WidthInt> {
+    fn get_type(&self, ctx: &Context) -> Type;
+    fn get_bv_type(&self, ctx: &Context) -> Option<WidthInt> {
         if let Type::BV(width) = self.get_type(ctx) {
             Some(width)
         } else {
             None
         }
     }
-    fn get_array_type(&self, ctx: &impl GetNode<Expr, ExprRef>) -> Option<ArrayType> {
+    fn get_array_type(&self, ctx: &Context) -> Option<ArrayType> {
         if let Type::Array(tpe) = self.get_type(ctx) {
             Some(tpe)
         } else {
@@ -113,7 +113,7 @@ pub trait TypeCheck {
 }
 
 impl TypeCheck for Expr {
-    fn type_check(&self, ctx: &impl GetNode<Expr, ExprRef>) -> Result<Type, TypeCheckError> {
+    fn type_check(&self, ctx: &Context) -> Result<Type, TypeCheckError> {
         match *self {
             Expr::BVSymbol { name: _, width } => Ok(Type::BV(width)),
             Expr::BVLiteral { value: _, width } => Ok(Type::BV(width)),
@@ -271,7 +271,7 @@ impl TypeCheck for Expr {
         }
     }
 
-    fn get_type(&self, ctx: &impl GetNode<Expr, ExprRef>) -> Type {
+    fn get_type(&self, ctx: &Context) -> Type {
         match *self {
             Expr::BVSymbol { name: _, width } => Type::BV(width),
             Expr::BVLiteral { value: _, width } => Type::BV(width),
@@ -348,14 +348,11 @@ impl TypeCheck for Expr {
     }
 }
 impl TypeCheck for ExprRef {
-    fn type_check(
-        &self,
-        ctx: &impl GetNode<Expr, ExprRef>,
-    ) -> std::result::Result<Type, TypeCheckError> {
+    fn type_check(&self, ctx: &Context) -> std::result::Result<Type, TypeCheckError> {
         ctx.get(*self).type_check(ctx)
     }
 
-    fn get_type(&self, ctx: &impl GetNode<Expr, ExprRef>) -> Type {
+    fn get_type(&self, ctx: &Context) -> Type {
         ctx.get(*self).get_type(ctx)
     }
 }

@@ -365,7 +365,7 @@ fn update_expr_children(ctx: &mut Context, expr_ref: ExprRef, children: &[ExprRe
             todo!("implement code to re-create expression `{other:?}` with updated children")
         }
     };
-    ctx.add_node(new_expr)
+    ctx.add_expr(new_expr)
 }
 
 /// Slightly different definition from use counts, as we want to retain all inputs in transformation passes.

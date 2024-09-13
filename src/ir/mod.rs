@@ -2,6 +2,7 @@
 // released under BSD 3-Clause License
 // author: Kevin Laeufer <laeufer@berkeley.edu>
 mod analysis;
+mod context;
 mod expr;
 mod serialize;
 mod transform;
@@ -13,10 +14,8 @@ pub use analysis::{
     count_expr_uses, is_usage_root_signal, ExprMetaData, ForEachChild, SerializeMeta, UseCountInt,
     Uses,
 };
-pub use expr::{
-    bv_value_fits_width, AddNode, ArrayType, BVLiteralInt, Context, Expr, ExprNodeConstruction,
-    ExprRef, GetNode, StringRef, Type,
-};
+pub use context::{bv_value_fits_width, Context, ExprRef, StringRef};
+pub use expr::{ArrayType, BVLiteralInt, Expr, Type};
 pub use serialize::SerializableIrNode;
 pub use transform::{
     do_transform, replace_anonymous_inputs_with_zero, simplify_expressions,

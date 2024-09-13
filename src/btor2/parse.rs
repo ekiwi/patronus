@@ -84,8 +84,8 @@ impl<'a> Parser<'a> {
         backup_name: Option<&str>,
     ) -> Result<TransitionSystem, Errors> {
         // ensure that default input and state names are reserved in order to get nicer names
-        self.ctx.add_node(DEFAULT_INPUT_PREFIX);
-        self.ctx.add_node(DEFAULT_STATE_PREFIX);
+        self.ctx.string(DEFAULT_INPUT_PREFIX.into());
+        self.ctx.string(DEFAULT_STATE_PREFIX.into());
 
         for line_res in input.lines() {
             let line = line_res.expect("failed to read line");
@@ -480,7 +480,7 @@ impl<'a> Parser<'a> {
         self.require_at_least_n_tokens(line, &cont.tokens, 5)?;
         let tpe = self.get_tpe_from_id(line, cont.tokens[2])?;
         let state_ref = self.get_state_from_id(line, cont.tokens[3])?;
-        let state_sym = self.sys.get(state_ref).symbol;
+        let state_sym = self.sys.get_state(state_ref).symbol;
         let state_tpe = state_sym.type_check(self.ctx).unwrap();
         let state_name = state_sym.get_symbol_name(self.ctx).unwrap().to_string();
         self.check_type(
