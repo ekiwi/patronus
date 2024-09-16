@@ -6,16 +6,27 @@
 use crate::ir::expr::*;
 use crate::ir::TypeCheck;
 use std::fmt::{Debug, Formatter};
-use std::num::NonZeroU32;
+use std::num::{NonZeroU16, NonZeroU32};
 
-// TODO: go back to 16-bit if we can change the interner to give us monotonically increasing IDs
-type StringSymbolType = string_interner::symbol::SymbolU32;
+#[derive(PartialEq, Eq, Clone, Copy, Hash)]
+pub struct StringRef(NonZeroU16);
 
-type PatronStringInterner =
-    string_interner::StringInterner<string_interner::DefaultBackend<StringSymbolType>>;
+impl Debug for StringRef {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "StringRef({})", self.index())
+    }
+}
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
-pub struct StringRef(StringSymbolType);
+impl StringRef {
+    fn from_index(index: usize) -> Self {
+        Self(NonZeroU16::new((index + 1) as u16).unwrap())
+    }
+
+    fn index(&self) -> usize {
+        (self.0.get() - 1) as usize
+    }
+}
+
 #[derive(PartialEq, Eq, Clone, Copy, Hash, Ord, PartialOrd)]
 pub struct ExprRef(NonZeroU32);
 
@@ -41,14 +52,14 @@ impl ExprRef {
 /// reference equivalence implies structural equivalence.
 #[derive(Clone)]
 pub struct Context {
-    strings: PatronStringInterner,
+    strings: indexmap::IndexSet<String>,
     exprs: indexmap::IndexSet<Expr>,
 }
 
 impl Default for Context {
     fn default() -> Self {
         Context {
-            strings: PatronStringInterner::new(),
+            strings: indexmap::IndexSet::default(),
             exprs: indexmap::IndexSet::default(),
         }
     }
@@ -89,12 +100,17 @@ impl Context {
 
     pub(crate) fn get_str(&self, reference: StringRef) -> &str {
         self.strings
-            .resolve(reference.0)
+            .get_index((reference.0.get() as usize) - 1)
             .expect("Invalid StringRef!")
     }
 
     pub(crate) fn string(&mut self, value: std::borrow::Cow<str>) -> StringRef {
-        StringRef(self.strings.get_or_intern(value))
+        if let Some(index) = self.strings.get_index_of(value.as_ref()) {
+            StringRef::from_index(index)
+        } else {
+            let (index, _) = self.strings.insert_full(value.into_owned());
+            StringRef::from_index(index)
+        }
     }
 }
 
@@ -279,7 +295,7 @@ mod tests {
 
     #[test]
     fn ir_type_size() {
-        assert_eq!(std::mem::size_of::<StringRef>(), 4);
+        assert_eq!(std::mem::size_of::<StringRef>(), 2);
         assert_eq!(std::mem::size_of::<ExprRef>(), 4);
     }
 
@@ -302,5 +318,21 @@ mod tests {
             width: 2,
         });
         assert_eq!(id0.0.get() + 1, id1.0.get(), "ids should increment!");
+    }
+
+    /// make sure that we can intern a lot of strings before running out of IDs
+    #[test]
+    fn intern_lots_of_strings() {
+        let mut ctx = Context::default();
+        // we loose 1 ID since 0 is not a valid ID value
+        let max_strings = (1u64 << 16) - 1;
+        for ii in 0..max_strings {
+            let value = format!("{ii}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+            let _id = ctx.string(value.into());
+        }
+        // now that we have used up all the IDs, we should still be able to "add" strings that
+        // are already part of the context
+        let first = "0AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+        assert_eq!(ctx.string(first.into()).index(), 0);
     }
 }

@@ -371,18 +371,6 @@ pub fn merge_signal_info(original: &SignalInfo, alias: &SignalInfo) -> SignalInf
     SignalInfo { name, kind, labels }
 }
 
-// impl GetNode<SignalInfo, ExprRef> for TransitionSystem {
-//     fn get(&self, reference: ExprRef) -> &SignalInfo {
-//         self.signals[reference.index()].as_ref().unwrap()
-//     }
-// }
-//
-// impl GetNode<State, StateRef> for TransitionSystem {
-//     fn get(&self, reference: StateRef) -> &State {
-//         &self.states[reference.0]
-//     }
-// }
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -394,8 +382,8 @@ mod tests {
         // simple bit flags
         assert_eq!(std::mem::size_of::<SignalLabels>(), 1);
         // Optional name (saved as a string ref) + SignalKind
-        assert_eq!(std::mem::size_of::<SignalInfo>(), 8);
+        assert_eq!(std::mem::size_of::<SignalInfo>(), 4);
         // the option type can use unused values and thus takes no extra space
-        assert_eq!(std::mem::size_of::<Option<SignalInfo>>(), 8);
+        assert_eq!(std::mem::size_of::<Option<SignalInfo>>(), 4);
     }
 }
