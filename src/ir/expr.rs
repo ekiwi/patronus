@@ -13,8 +13,8 @@ pub type WidthInt = baa::WidthInt;
 /// This restricts the maximum value that a bit-vector literal can carry.
 pub type BVLiteralInt = u64;
 
-#[derive(Debug, PartialEq, Eq, Clone, Hash)]
 /// Represents a SMT bit-vector or array expression.
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub enum Expr {
     // Bit-Vector Expressions
     // nullary
@@ -253,7 +253,7 @@ mod tests {
 
     #[test]
     fn ir_type_size() {
-        // 8 bytes for the tag, 4 * 4 bytes for the largest field
+        // 4 bytes for the tag, 3  * 4 bytes for the largest field
         assert_eq!(std::mem::size_of::<Expr>(), 16);
         // we only represents widths up to (2^32 - 1)
         assert_eq!(std::mem::size_of::<WidthInt>(), 4);
