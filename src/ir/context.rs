@@ -50,19 +50,10 @@ impl ExprRef {
 
 /// Context which is used to create all SMT expressions. Expressions are interned such that
 /// reference equivalence implies structural equivalence.
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct Context {
     strings: indexmap::IndexSet<String>,
     exprs: indexmap::IndexSet<Expr>,
-}
-
-impl Default for Context {
-    fn default() -> Self {
-        Context {
-            strings: indexmap::IndexSet::default(),
-            exprs: indexmap::IndexSet::default(),
-        }
-    }
 }
 
 impl Context {
