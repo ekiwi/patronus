@@ -6,6 +6,7 @@ use super::{Context, Expr, ExprRef};
 use crate::ir::{
     analyze_for_serialization, SignalInfo, SignalLabels, TransitionSystem, Type, TypeCheck,
 };
+use baa::BitVecOps;
 use std::io::Write;
 
 pub trait SerializableIrNode {
@@ -38,11 +39,11 @@ where
 {
     match expr {
         Expr::BVSymbol { name, .. } => write!(writer, "{}", ctx.get_str(*name)),
-        Expr::BVLiteral { value, width } => {
-            if *width <= 8 {
-                write!(writer, "{width}'b{value:b}")
+        Expr::BVLiteral(value) => {
+            if value.width() <= 8 {
+                write!(writer, "{}'b{}", value.width(), value.get(ctx).to_bit_str())
             } else {
-                write!(writer, "{width}'x{value:x}")
+                write!(writer, "{}'x{}", value.width(), value.get(ctx).to_hex_str())
             }
         }
         Expr::BVZeroExt { e, by, .. } => {

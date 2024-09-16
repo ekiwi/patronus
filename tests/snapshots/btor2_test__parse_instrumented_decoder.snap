@@ -8,7 +8,7 @@ input C : bv<1>
 input B : bv<1>
 input A : bv<1>
 node %14 : bv<4> = concat(en, concat(A, concat(B, C)))
-node %165 : bv<8> = ite(eq(%14, ite(__synth_change_literal_0, __synth_literal_0, 4'b1000)), ite(__synth_change_literal_16, __synth_literal_16, 8'b11111110), ite(eq(%14, ite(__synth_change_literal_1, __synth_literal_1, 4'b1001)), ite(__synth_change_literal_15, __synth_literal_15, 8'b11111101), ite(eq(%14, ite(__synth_change_literal_2, __synth_literal_2, 4'b1010)), ite(__synth_change_literal_14, __synth_literal_14, 8'b11111011), ite(eq(%14, ite(__synth_change_literal_3, __synth_literal_3, 4'b1011)), ite(__synth_change_literal_13, __synth_literal_13, 8'b11110111), ite(eq(%14, ite(__synth_change_literal_4, __synth_literal_4, 4'b1100)), ite(__synth_change_literal_12, __synth_literal_12, 8'b11101111), ite(eq(%14, ite(__synth_change_literal_5, __synth_literal_5, 4'b1101)), ite(__synth_change_literal_11, __synth_literal_11, 8'b11011111), ite(eq(%14, ite(__synth_change_literal_6, __synth_literal_6, 4'b1110)), ite(__synth_change_literal_10, __synth_literal_10, 8'b10111111), ite(eq(%14, ite(__synth_change_literal_7, __synth_literal_7, 4'b1111)), ite(__synth_change_literal_9, __synth_literal_9, 8'b1111111), ite(__synth_change_literal_8, __synth_literal_8, 8'b11111111)))))))))
+node %165 : bv<8> = ite(eq(%14, ite(__synth_change_literal_0, __synth_literal_0, 4'b1000)), ite(__synth_change_literal_16, __synth_literal_16, 8'b11111110), ite(eq(%14, ite(__synth_change_literal_1, __synth_literal_1, 4'b1001)), ite(__synth_change_literal_15, __synth_literal_15, 8'b11111101), ite(eq(%14, ite(__synth_change_literal_2, __synth_literal_2, 4'b1010)), ite(__synth_change_literal_14, __synth_literal_14, 8'b11111011), ite(eq(%14, ite(__synth_change_literal_3, __synth_literal_3, 4'b1011)), ite(__synth_change_literal_13, __synth_literal_13, 8'b11110111), ite(eq(%14, ite(__synth_change_literal_4, __synth_literal_4, 4'b1100)), ite(__synth_change_literal_12, __synth_literal_12, 8'b11101111), ite(eq(%14, ite(__synth_change_literal_5, __synth_literal_5, 4'b1101)), ite(__synth_change_literal_11, __synth_literal_11, 8'b11011111), ite(eq(%14, ite(__synth_change_literal_6, __synth_literal_6, 4'b1110)), ite(__synth_change_literal_10, __synth_literal_10, 8'b10111111), ite(eq(%14, ite(__synth_change_literal_7, __synth_literal_7, 4'b1111)), ite(__synth_change_literal_9, __synth_literal_9, 8'b01111111), ite(__synth_change_literal_8, __synth_literal_8, 8'b11111111)))))))))
 output Y7 : bv<1> = %165[7]
 output Y6 : bv<1> = %165[6]
 output Y5 : bv<1> = %165[5]
@@ -85,4 +85,3 @@ state __synth_literal_0 : bv<4>
   [next] __synth_literal_0
 state __synth_change_literal_0 : bv<1>
   [next] __synth_change_literal_0
-

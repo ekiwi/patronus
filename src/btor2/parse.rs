@@ -3,7 +3,7 @@
 // author: Kevin Laeufer <laeufer@berkeley.edu>
 
 use crate::ir::*;
-use baa::WidthInt;
+use baa::{BitVecValue, WidthInt};
 use fuzzy_matcher::FuzzyMatcher;
 use smallvec::SmallVec;
 use std::collections::HashMap;
@@ -537,17 +537,8 @@ impl<'a> Parser<'a> {
         self.require_at_least_n_tokens(line, tokens, 3)?;
         // derive width from type
         let width = self.get_bv_width(line, tokens[2])?;
-        let res = if width > BVLiteralInt::BITS {
-            todo!("Add support for literals of size: {width}")
-        } else {
-            let value = if width == BVLiteralInt::BITS {
-                BVLiteralInt::MAX
-            } else {
-                ((1 as BVLiteralInt) << width) - 1
-            };
-            self.ctx.bv_lit(value, width)
-        };
-        Ok((res, 3))
+        let value = baa::BitVecValue::ones(width);
+        Ok((self.ctx.bv_lit(&value), 3))
     }
 
     fn parse_format(
@@ -578,19 +569,8 @@ impl<'a> Parser<'a> {
         base: u32,
         width: WidthInt,
     ) -> ParseLineResult<ExprRef> {
-        match BVLiteralInt::from_str_radix(token, base) {
-            Ok(val) => {
-                if bv_value_fits_width(val, width) {
-                    Ok(self.ctx.bv_lit(val, width))
-                } else {
-                    let _ = self.add_error(
-                        line,
-                        token,
-                        format!("Value {val} does not fit into a bit-vector of width {width}"),
-                    );
-                    Err(())
-                }
-            }
+        match BitVecValue::from_str_radix(token, base, width) {
+            Ok(val) => Ok(self.ctx.bv_lit(&val)),
             Err(_) => {
                 let _ = self.add_error(
                     line,

@@ -5,6 +5,7 @@
 
 use crate::ir::context::{ExprRef, StringRef};
 use crate::ir::Context;
+use baa::{BitVecValueIndex, BitVecValueRef};
 use std::fmt::Debug;
 
 /// This type restricts the maximum width that a bit-vector type is allowed to have in our IR.
@@ -12,6 +13,23 @@ pub type WidthInt = baa::WidthInt;
 
 /// This restricts the maximum value that a bit-vector literal can carry.
 pub type BVLiteralInt = u64;
+
+/// Type wrapping an index to a bit vector value.
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
+pub struct BVLitValue(BitVecValueIndex);
+
+impl BVLitValue {
+    pub(crate) fn new(index: BitVecValueIndex) -> Self {
+        Self(index)
+    }
+
+    pub fn get<'c>(&self, ctx: &'c Context) -> BitVecValueRef<'c> {
+        ctx.get_bv_value(self.0)
+    }
+    pub fn width(&self) -> WidthInt {
+        self.0.width()
+    }
+}
 
 /// Represents a SMT bit-vector or array expression.
 #[derive(Debug, PartialEq, Eq, Clone, Hash)]
@@ -22,11 +40,7 @@ pub enum Expr {
         name: StringRef,
         width: WidthInt,
     },
-    // TODO: support literals that do not fit into 64-bit
-    BVLiteral {
-        value: BVLiteralInt,
-        width: WidthInt,
-    },
+    BVLiteral(BVLitValue),
     // unary operations
     BVZeroExt {
         e: ExprRef,

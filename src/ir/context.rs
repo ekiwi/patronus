@@ -5,6 +5,8 @@
 
 use crate::ir::expr::*;
 use crate::ir::TypeCheck;
+use baa::{BitVecValue, BitVecValueIndex, BitVecValueRef, IndexToRef};
+use std::borrow::Borrow;
 use std::fmt::{Debug, Formatter};
 use std::num::{NonZeroU16, NonZeroU32};
 
@@ -54,6 +56,7 @@ impl ExprRef {
 pub struct Context {
     strings: indexmap::IndexSet<String>,
     exprs: indexmap::IndexSet<Expr>,
+    values: baa::ValueInterner,
 }
 
 impl Context {
@@ -103,6 +106,10 @@ impl Context {
             StringRef::from_index(index)
         }
     }
+
+    pub(crate) fn get_bv_value(&self, index: impl Borrow<BitVecValueIndex>) -> BitVecValueRef<'_> {
+        self.values.words().get_ref(index)
+    }
 }
 
 /// Convenience methods to construct IR nodes.
@@ -120,26 +127,25 @@ impl Context {
         assert_ne!(tpe, Type::BV(0), "0-bit bitvectors are not allowed");
         self.add_expr(Expr::symbol(name, tpe))
     }
-    pub fn bv_lit(&mut self, value: BVLiteralInt, width: WidthInt) -> ExprRef {
-        assert!(bv_value_fits_width(value, width));
-        assert!(width > 0, "0-bit bitvectors are not allowed");
-        self.add_expr(Expr::BVLiteral { value, width })
+    pub fn bv_lit<'a>(&mut self, value: impl Into<BitVecValueRef<'a>>) -> ExprRef {
+        let index = self.values.get_index(value);
+        self.add_expr(Expr::BVLiteral(BVLitValue::new(index)))
     }
     pub fn zero(&mut self, width: WidthInt) -> ExprRef {
-        self.bv_lit(0, width)
+        self.bv_lit(&BitVecValue::zero(width))
     }
 
     pub fn zero_array(&mut self, tpe: ArrayType) -> ExprRef {
-        let data = self.bv_lit(0, tpe.data_width);
+        let data = self.zero(tpe.data_width);
         self.array_const(data, tpe.index_width)
     }
 
     pub fn mask(&mut self, width: WidthInt) -> ExprRef {
         let value = ((1 as BVLiteralInt) << width) - 1;
-        self.bv_lit(value, width)
+        self.bv_lit(&BitVecValue::from_u64(value, width))
     }
     pub fn one(&mut self, width: WidthInt) -> ExprRef {
-        self.bv_lit(1, width)
+        self.bv_lit(&BitVecValue::from_u64(1, width))
     }
     pub fn bv_equal(&mut self, a: ExprRef, b: ExprRef) -> ExprRef {
         self.add_expr(Expr::BVEqual(a, b))

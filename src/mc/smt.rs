@@ -4,7 +4,7 @@
 
 use crate::ir::*;
 use crate::mc::{parse_big_uint_from_bit_string, Witness, WitnessArray, WitnessValue};
-use baa::WidthInt;
+use baa::{BitVecOps, WidthInt};
 use easy_smt as smt;
 use num_bigint::BigUint;
 use num_traits::{One, Zero};
@@ -710,32 +710,21 @@ fn convert_expr(
     patch_expr: &impl Fn(&ExprRef) -> Option<ExprRef>,
 ) -> smt::SExpr {
     // replace expressions on the flow (generally in order to inject a symbol or change a symbol name)
-    let expr_ref = match (patch_expr)(&expr_ref_in) {
-        Some(patched) => patched,
-        None => expr_ref_in,
-    };
+    let expr_ref = (patch_expr)(&expr_ref_in).unwrap_or_else(|| expr_ref_in);
 
     match ctx.get(expr_ref) {
         Expr::BVSymbol { name, .. } => {
             let name_str = ctx.get_str(*name);
             smt_ctx.atom(escape_smt_identifier(name_str))
         }
-        Expr::BVLiteral { value, width } if *width == 1 => {
-            if *value == 1 {
+        Expr::BVLiteral(value) => {
+            let value = value.get(ctx);
+            if value.is_tru() {
                 smt_ctx.true_()
-            } else {
+            } else if value.is_fals() {
                 smt_ctx.false_()
-            }
-        }
-        Expr::BVLiteral { value, width } => {
-            if *width == 1 {
-                if *value == 1 {
-                    smt_ctx.true_()
-                } else {
-                    smt_ctx.false_()
-                }
             } else {
-                smt_ctx.binary(*width as usize, *value)
+                smt_ctx.atom(format!("#b{}", value.to_bit_str()))
             }
         }
         Expr::BVZeroExt { e, by, .. } => {
