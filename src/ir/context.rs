@@ -154,8 +154,7 @@ impl Context {
     }
 
     pub fn mask(&mut self, width: WidthInt) -> ExprRef {
-        let value = ((1 as BVLiteralInt) << width) - 1;
-        self.bv_lit(&BitVecValue::from_u64(value, width))
+        self.bv_lit(&BitVecValue::ones(width))
     }
     pub fn one(&mut self, width: WidthInt) -> ExprRef {
         self.bv_lit(&BitVecValue::from_u64(1, width))
@@ -292,11 +291,6 @@ impl Context {
             width,
         })
     }
-}
-
-pub fn bv_value_fits_width(value: BVLiteralInt, width: WidthInt) -> bool {
-    let bits_required = BVLiteralInt::BITS - value.leading_zeros();
-    width >= bits_required
 }
 
 #[cfg(test)]

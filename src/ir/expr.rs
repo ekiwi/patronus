@@ -11,9 +11,6 @@ use std::fmt::Debug;
 /// This type restricts the maximum width that a bit-vector type is allowed to have in our IR.
 pub type WidthInt = baa::WidthInt;
 
-/// This restricts the maximum value that a bit-vector literal can carry.
-pub type BVLiteralInt = u64;
-
 /// Type wrapping an index to a bit vector value.
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
 pub struct BVLitValue(BitVecValueIndex);
