@@ -3,6 +3,17 @@
 // released under BSD 3-Clause License
 // author: Kevin Laeufer <laeufer@cornell.edu>
 
+//! # IR Context
+//!
+//! The [`Context`] is used to create and access bit-vector and array expressions.
+//! It ensures that the same expression always maps to the same expression reference.
+//! Thus, if two references are equal, we can be certain that the expressions they point to are
+//! equivalent.
+//!
+//! Users are expected to generally use a single Context for all their expressions. There
+//! are no checks to ensure that a [`ExprRef`] or [`StringRef`] from different contexts are
+//! not matched. Thus working with more than one [`Context`] object can be dangerous.
+
 use crate::ir::expr::*;
 use crate::ir::TypeCheck;
 use baa::{BitVecValue, BitVecValueIndex, BitVecValueRef, IndexToRef};
@@ -10,6 +21,7 @@ use std::borrow::Borrow;
 use std::fmt::{Debug, Formatter};
 use std::num::{NonZeroU16, NonZeroU32};
 
+/// Uniquely identifies a [`String`] stored in a [`Context`].
 #[derive(PartialEq, Eq, Clone, Copy, Hash)]
 pub struct StringRef(NonZeroU16);
 
@@ -29,6 +41,7 @@ impl StringRef {
     }
 }
 
+/// Uniquely identifies an [`Expr`] stored in a [`Context`].
 #[derive(PartialEq, Eq, Clone, Copy, Hash, Ord, PartialOrd)]
 pub struct ExprRef(NonZeroU32);
 
