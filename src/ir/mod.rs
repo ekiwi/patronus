@@ -3,6 +3,7 @@
 // author: Kevin Laeufer <laeufer@berkeley.edu>
 mod analysis;
 mod context;
+mod eval;
 mod expr;
 mod serialize;
 mod transform;
