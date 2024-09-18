@@ -22,7 +22,19 @@ impl SymbolValues for HashMap<ExprRef, BitVecValue> {
     }
 }
 
-pub fn eval_bv_expr(ctx: &Context, symbols: &impl SymbolValues, expr: ExprRef) -> BitVecValue {
+impl SymbolValues for [(ExprRef, BitVecValue)] {
+    fn get(&self, symbol: &ExprRef) -> Option<BitVecValueRef<'_>> {
+        self.iter()
+            .find(|(e, v)| e == symbol)
+            .map(|(e, v)| v.into())
+    }
+}
+
+pub fn eval_bv_expr(
+    ctx: &Context,
+    symbols: &(impl SymbolValues + ?Sized),
+    expr: ExprRef,
+) -> BitVecValue {
     let mut stack: SmallVec<[BitVecValue; 4]> = SmallVec::with_capacity(4);
     let mut todo: SmallVec<[(ExprRef, bool); 4]> = SmallVec::with_capacity(4);
 
@@ -54,4 +66,20 @@ pub fn eval_bv_expr(ctx: &Context, symbols: &impl SymbolValues, expr: ExprRef) -
 
     debug_assert_eq!(stack.len(), 1);
     stack.pop().unwrap()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::eval_bv_expr;
+    use crate::ir::*;
+    use baa::*;
+
+    #[test]
+    fn test_eval_bv_expr() {
+        let mut c = Context::default();
+        let a = c.bv_symbol("a", 1);
+        let a_and_1 = c.build(|c| c.and(a, c.one(1)));
+        assert!(eval_bv_expr(&c, [(a, BitVecValue::tru())].as_slice(), a_and_1).is_tru());
+        assert!(eval_bv_expr(&c, [(a, BitVecValue::fals())].as_slice(), a_and_1).is_fals());
+    }
 }
