@@ -7,6 +7,7 @@ use crate::ir::context::{ExprRef, StringRef};
 use crate::ir::Context;
 use baa::{BitVecValueIndex, BitVecValueRef};
 use std::fmt::Debug;
+use std::ops::Deref;
 
 /// This type restricts the maximum width that a bit-vector type is allowed to have in our IR.
 pub type WidthInt = baa::WidthInt;
@@ -155,7 +156,10 @@ impl Expr {
         }
     }
 
-    pub fn get_symbol_name<'a>(&self, ctx: &'a Context) -> Option<&'a str> {
+    pub fn get_symbol_name<'a>(
+        &self,
+        ctx: &'a Context,
+    ) -> Option<impl Deref<Target = String> + 'a> {
         self.get_symbol_name_ref().map(|r| ctx.get_str(r))
     }
 }
@@ -173,7 +177,10 @@ impl ExprRef {
         ctx.get(*self).get_symbol_name_ref()
     }
 
-    pub fn get_symbol_name<'a>(&self, ctx: &'a Context) -> Option<&'a str> {
+    pub fn get_symbol_name<'a>(
+        &self,
+        ctx: &'a Context,
+    ) -> Option<impl Deref<Target = String> + 'a> {
         ctx.get(*self).get_symbol_name(ctx)
     }
 }

@@ -577,7 +577,7 @@ mod tests {
     fn format_symbol_list(ctx: &Context, symbols: &[ExprRef]) -> String {
         let v: Vec<_> = symbols
             .iter()
-            .map(|s| s.get_symbol_name(ctx).unwrap())
+            .map(|s| s.get_symbol_name(ctx).unwrap().to_string())
             .collect();
         v.join(", ")
     }

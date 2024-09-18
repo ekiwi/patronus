@@ -44,7 +44,7 @@ pub fn eval_bv_expr(ctx: &Context, symbols: &impl SymbolValues, expr: ExprRef) -
         }
 
         // Otherwise, all arguments are available on the stack for us to use.
-        match ctx.get(e) {
+        match *ctx.get(e) {
             // leaves
             Expr::BVLiteral(value) => stack.push(value.get(ctx).into()),
             Expr::BVSymbol { .. } => stack.push(symbols.get(&e).unwrap().into()),

@@ -18,8 +18,10 @@ use crate::ir::expr::*;
 use crate::ir::TypeCheck;
 use baa::{BitVecValue, BitVecValueIndex, BitVecValueRef, IndexToRef};
 use std::borrow::Borrow;
+use std::cell::{Ref, RefCell};
 use std::fmt::{Debug, Formatter};
 use std::num::{NonZeroU16, NonZeroU32};
+use std::ops::Deref;
 
 /// Uniquely identifies a [`String`] stored in a [`Context`].
 #[derive(PartialEq, Eq, Clone, Copy, Hash)]
@@ -67,6 +69,13 @@ impl ExprRef {
 /// reference equivalence implies structural equivalence.
 #[derive(Clone, Default)]
 pub struct Context {
+    inner: RefCell<ContextInner>,
+}
+
+/// Contains the actual data of a context, such that the context itself can use a RefCell for
+/// internal mutability.
+#[derive(Clone, Default)]
+struct ContextInner {
     strings: indexmap::IndexSet<String>,
     exprs: indexmap::IndexSet<Expr>,
     values: baa::ValueInterner,
@@ -88,40 +97,52 @@ impl Context {
     }
 
     fn is_interned(&self, value: &str) -> bool {
-        self.strings.get(value).is_some()
+        self.inner.borrow().strings.get(value).is_some()
     }
 }
 
 /// Adding and removing nodes.
 impl Context {
-    pub fn get(&self, reference: ExprRef) -> &Expr {
-        self.exprs
-            .get_index((reference.0.get() as usize) - 1)
-            .expect("Invalid ExprRef!")
+    pub fn get(&self, reference: ExprRef) -> impl Deref<Target = Expr> + '_ {
+        let inner = self.inner.borrow();
+        Ref::map(inner, |inner| {
+            inner
+                .exprs
+                .get_index((reference.0.get() as usize) - 1)
+                .expect("Invalid ExprRef!")
+        })
     }
 
-    pub(crate) fn add_expr(&mut self, value: Expr) -> ExprRef {
-        let (index, _) = self.exprs.insert_full(value);
+    pub(crate) fn add_expr(&self, value: Expr) -> ExprRef {
+        let (index, _) = self.inner.borrow_mut().exprs.insert_full(value);
         ExprRef::from_index(index)
     }
 
-    pub(crate) fn get_str(&self, reference: StringRef) -> &str {
-        self.strings
-            .get_index((reference.0.get() as usize) - 1)
-            .expect("Invalid StringRef!")
+    pub(crate) fn get_str(&self, reference: StringRef) -> Ref<'_, String> {
+        let inner = self.inner.borrow();
+        Ref::map(inner, |inner| {
+            inner
+                .strings
+                .get_index((reference.0.get() as usize) - 1)
+                .expect("Invalid StringRef!")
+        })
     }
 
     pub(crate) fn string(&mut self, value: std::borrow::Cow<str>) -> StringRef {
-        if let Some(index) = self.strings.get_index_of(value.as_ref()) {
+        if let Some(index) = self.inner.borrow().strings.get_index_of(value.as_ref()) {
             StringRef::from_index(index)
         } else {
-            let (index, _) = self.strings.insert_full(value.into_owned());
+            let (index, _) = self
+                .inner
+                .borrow_mut()
+                .strings
+                .insert_full(value.into_owned());
             StringRef::from_index(index)
         }
     }
 
     pub(crate) fn get_bv_value(&self, index: impl Borrow<BitVecValueIndex>) -> BitVecValueRef<'_> {
-        self.values.words().get_ref(index)
+        self.inner.borrow().values.words().get_ref(index)
     }
 }
 
@@ -140,8 +161,8 @@ impl Context {
         assert_ne!(tpe, Type::BV(0), "0-bit bitvectors are not allowed");
         self.add_expr(Expr::symbol(name, tpe))
     }
-    pub fn bv_lit<'a>(&mut self, value: impl Into<BitVecValueRef<'a>>) -> ExprRef {
-        let index = self.values.get_index(value);
+    pub fn bv_lit<'a>(&self, value: impl Into<BitVecValueRef<'a>>) -> ExprRef {
+        let index = self.inner.borrow_mut().values.get_index(value);
         self.add_expr(Expr::BVLiteral(BVLitValue::new(index)))
     }
     pub fn zero(&mut self, width: WidthInt) -> ExprRef {
