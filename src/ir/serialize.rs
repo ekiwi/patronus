@@ -21,7 +21,7 @@ pub trait SerializableIrNode {
 
 impl SerializableIrNode for Expr {
     fn serialize<W: Write>(&self, ctx: &Context, writer: &mut W) -> std::io::Result<()> {
-        serialize_expr(self, ctx, writer, &|_, _| Ok(false))
+        serialize_expr(self, ctx, writer, &|_, _| Ok(true))
     }
 }
 

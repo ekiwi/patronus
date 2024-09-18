@@ -18,6 +18,7 @@ use crate::ir::expr::*;
 use crate::ir::TypeCheck;
 use baa::{BitVecValue, BitVecValueIndex, BitVecValueRef, IndexToRef};
 use std::borrow::Borrow;
+use std::cell::RefCell;
 use std::fmt::{Debug, Formatter};
 use std::num::{NonZeroU16, NonZeroU32};
 
@@ -291,11 +292,156 @@ impl Context {
             width,
         })
     }
+
+    pub fn build(&mut self, foo: impl FnOnce(Builder) -> ExprRef) -> ExprRef {
+        let builder = Builder::new(self);
+        foo(builder)
+    }
+}
+
+/// Makes it possible to build up expressions while using dynamically checked borrowing rules
+/// to work around a shortcoming of the Rust borrow checker.
+/// Thus, with a builder you will be able to build up nested expressions easily!
+pub struct Builder<'a> {
+    ctx: RefCell<&'a mut Context>,
+}
+
+impl<'a> Builder<'a> {
+    fn new(ctx: &'a mut Context) -> Self {
+        Self {
+            ctx: RefCell::new(ctx),
+        }
+    }
+}
+
+impl<'a> Builder<'a> {
+    pub fn bv_symbol(&self, name: &str, width: WidthInt) -> ExprRef {
+        self.ctx.borrow_mut().bv_symbol(name, width)
+    }
+    pub fn symbol(&self, name: StringRef, tpe: Type) -> ExprRef {
+        self.ctx.borrow_mut().symbol(name, tpe)
+    }
+    pub fn bv_lit<'b>(&self, value: impl Into<BitVecValueRef<'b>>) -> ExprRef {
+        self.ctx.borrow_mut().bv_lit(value)
+    }
+    pub fn zero(&mut self, width: WidthInt) -> ExprRef {
+        self.ctx.borrow_mut().zero(width)
+    }
+
+    pub fn zero_array(&mut self, tpe: ArrayType) -> ExprRef {
+        self.ctx.borrow_mut().zero_array(tpe)
+    }
+
+    pub fn mask(&self, width: WidthInt) -> ExprRef {
+        self.ctx.borrow_mut().mask(width)
+    }
+    pub fn one(&self, width: WidthInt) -> ExprRef {
+        self.ctx.borrow_mut().one(width)
+    }
+    pub fn bv_equal(&self, a: ExprRef, b: ExprRef) -> ExprRef {
+        self.ctx.borrow_mut().bv_equal(a, b)
+    }
+    pub fn bv_ite(&self, cond: ExprRef, tru: ExprRef, fals: ExprRef) -> ExprRef {
+        self.ctx.borrow_mut().bv_ite(cond, tru, fals)
+    }
+    pub fn array_ite(&self, cond: ExprRef, tru: ExprRef, fals: ExprRef) -> ExprRef {
+        self.ctx.borrow_mut().array_ite(cond, tru, fals)
+    }
+    pub fn implies(&self, a: ExprRef, b: ExprRef) -> ExprRef {
+        self.ctx.borrow_mut().implies(a, b)
+    }
+    pub fn greater_signed(&self, a: ExprRef, b: ExprRef) -> ExprRef {
+        self.ctx.borrow_mut().greater_signed(a, b)
+    }
+
+    pub fn greater(&self, a: ExprRef, b: ExprRef) -> ExprRef {
+        self.ctx.borrow_mut().greater(a, b)
+    }
+    pub fn greater_or_equal_signed(&self, a: ExprRef, b: ExprRef) -> ExprRef {
+        self.ctx.borrow_mut().greater_or_equal_signed(a, b)
+    }
+
+    pub fn greater_or_equal(&self, a: ExprRef, b: ExprRef) -> ExprRef {
+        self.ctx.borrow_mut().greater_or_equal(a, b)
+    }
+    pub fn not(&self, e: ExprRef) -> ExprRef {
+        self.ctx.borrow_mut().not(e)
+    }
+    pub fn negate(&self, e: ExprRef) -> ExprRef {
+        self.ctx.borrow_mut().negate(e)
+    }
+    pub fn and(&self, a: ExprRef, b: ExprRef) -> ExprRef {
+        self.ctx.borrow_mut().and(a, b)
+    }
+    pub fn or(&self, a: ExprRef, b: ExprRef) -> ExprRef {
+        self.ctx.borrow_mut().or(a, b)
+    }
+    pub fn xor(&self, a: ExprRef, b: ExprRef) -> ExprRef {
+        self.ctx.borrow_mut().xor(a, b)
+    }
+    pub fn shift_left(&self, a: ExprRef, b: ExprRef) -> ExprRef {
+        self.ctx.borrow_mut().shift_left(a, b)
+    }
+    pub fn arithmetic_shift_right(&self, a: ExprRef, b: ExprRef) -> ExprRef {
+        self.ctx.borrow_mut().arithmetic_shift_right(a, b)
+    }
+    pub fn shift_right(&self, a: ExprRef, b: ExprRef) -> ExprRef {
+        self.ctx.borrow_mut().shift_right(a, b)
+    }
+    pub fn add(&self, a: ExprRef, b: ExprRef) -> ExprRef {
+        self.ctx.borrow_mut().add(a, b)
+    }
+    pub fn sub(&self, a: ExprRef, b: ExprRef) -> ExprRef {
+        self.ctx.borrow_mut().sub(a, b)
+    }
+    pub fn mul(&self, a: ExprRef, b: ExprRef) -> ExprRef {
+        self.ctx.borrow_mut().mul(a, b)
+    }
+    pub fn div(&self, a: ExprRef, b: ExprRef) -> ExprRef {
+        self.ctx.borrow_mut().div(a, b)
+    }
+    pub fn signed_div(&self, a: ExprRef, b: ExprRef) -> ExprRef {
+        self.ctx.borrow_mut().signed_div(a, b)
+    }
+    pub fn signed_mod(&self, a: ExprRef, b: ExprRef) -> ExprRef {
+        self.ctx.borrow_mut().signed_mod(a, b)
+    }
+    pub fn signed_remainder(&self, a: ExprRef, b: ExprRef) -> ExprRef {
+        self.ctx.borrow_mut().signed_remainder(a, b)
+    }
+    pub fn remainder(&self, a: ExprRef, b: ExprRef) -> ExprRef {
+        self.ctx.borrow_mut().remainder(a, b)
+    }
+    pub fn concat(&self, a: ExprRef, b: ExprRef) -> ExprRef {
+        self.ctx.borrow_mut().concat(a, b)
+    }
+    pub fn slice(&self, e: ExprRef, hi: WidthInt, lo: WidthInt) -> ExprRef {
+        self.ctx.borrow_mut().slice(e, hi, lo)
+    }
+    pub fn zero_extend(&self, e: ExprRef, by: WidthInt) -> ExprRef {
+        self.ctx.borrow_mut().zero_extend(e, by)
+    }
+    pub fn sign_extend(&self, e: ExprRef, by: WidthInt) -> ExprRef {
+        self.ctx.borrow_mut().sign_extend(e, by)
+    }
+
+    pub fn array_store(&self, array: ExprRef, index: ExprRef, data: ExprRef) -> ExprRef {
+        self.ctx.borrow_mut().array_store(array, index, data)
+    }
+
+    pub fn array_const(&self, e: ExprRef, index_width: WidthInt) -> ExprRef {
+        self.ctx.borrow_mut().array_const(e, index_width)
+    }
+
+    pub fn array_read(&self, array: ExprRef, index: ExprRef) -> ExprRef {
+        self.ctx.borrow_mut().array_read(array, index)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ir::SerializableIrNode;
 
     #[test]
     fn ir_type_size() {
@@ -338,5 +484,12 @@ mod tests {
         // are already part of the context
         let first = "0AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
         assert_eq!(ctx.string(first.into()).index(), 0);
+    }
+
+    #[test]
+    fn test_builder() {
+        let mut ctx = Context::default();
+        let expr = ctx.build(|b| b.and(b.bv_symbol("a", 1), b.bv_symbol("b", 1)));
+        assert_eq!(expr.serialize_to_str(&ctx), "and(a, b)");
     }
 }
