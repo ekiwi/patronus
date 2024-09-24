@@ -132,7 +132,7 @@ impl InitValueGenerator {
         Self { rng }
     }
 
-    pub fn assign<'a>(&mut self, dst: impl Into<ArrayValueMutRef<'a>>) {
+    pub fn assign<'a>(&mut self, dst: u64) {
         todo!()
     }
 }

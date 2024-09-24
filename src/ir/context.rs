@@ -137,6 +137,22 @@ impl Context {
             width,
         })
     }
+
+    pub fn array_symbol(
+        &mut self,
+        name: &str,
+        index_width: WidthInt,
+        data_width: WidthInt,
+    ) -> ExprRef {
+        assert!(index_width > 0, "0-bit bitvectors are not allowed");
+        assert!(data_width > 0, "0-bit bitvectors are not allowed");
+        let name_ref = self.string(name.into());
+        self.add_expr(Expr::ArraySymbol {
+            name: name_ref,
+            index_width,
+            data_width,
+        })
+    }
     pub fn symbol(&mut self, name: StringRef, tpe: Type) -> ExprRef {
         assert_ne!(tpe, Type::BV(0), "0-bit bitvectors are not allowed");
         self.add_expr(Expr::symbol(name, tpe))

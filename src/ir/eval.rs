@@ -7,40 +7,133 @@
 // https://medium.com/javarevisited/evaluation-of-binary-expression-tree-6768db3be82f (recursive, Java)
 //
 
-use crate::ir::{Context, Expr, ExprRef, ForEachChild};
-use baa::{BitVecOps, BitVecValue, BitVecValueRef};
+use crate::ir::{Context, Expr, ExprRef, ForEachChild, TypeCheck};
+use baa::{
+    ArrayMutOps, ArrayOps, ArrayValue, BitVecOps, BitVecValue, BitVecValueIndex, BitVecValueRef,
+    IndexToRef, Word,
+};
 use smallvec::SmallVec;
 use std::collections::HashMap;
 
-pub trait SymbolValues {
-    fn get(&self, symbol: &ExprRef) -> Option<BitVecValueRef<'_>>;
+pub trait GetSymbolValue {
+    fn get_bv(&self, ctx: &Context, symbol: &ExprRef) -> Option<BitVecValue>;
+    fn get_array(&self, ctx: &Context, symbol: &ExprRef) -> Option<ArrayValue>;
 }
 
-impl SymbolValues for HashMap<ExprRef, BitVecValue> {
-    fn get(&self, symbol: &ExprRef) -> Option<BitVecValueRef<'_>> {
-        self.get(symbol).map(|v| v.into())
+type SymbolValueStoreIndex = u32;
+
+#[derive(Default, Clone)]
+pub struct SymbolValueStore {
+    arrays: Vec<ArrayValue>,
+    bit_vec_words: Vec<Word>,
+    lookup: HashMap<ExprRef, SymbolValueStoreIndex>,
+}
+
+impl SymbolValueStore {
+    fn define_bv<'a>(&mut self, symbol: &ExprRef, value: impl Into<BitVecValueRef<'a>>) {
+        let value = value.into();
+        let index = self.bit_vec_words.len() as SymbolValueStoreIndex;
+        debug_assert!(!self.lookup.contains_key(symbol));
+        self.lookup.insert(*symbol, index);
+        self.bit_vec_words.extend_from_slice(value.words());
+    }
+
+    fn define_array(&mut self, symbol: &ExprRef, value: ArrayValue) {
+        let index = self.arrays.len() as SymbolValueStoreIndex;
+        debug_assert!(!self.lookup.contains_key(symbol));
+        self.lookup.insert(*symbol, index);
+        self.arrays.push(value);
     }
 }
 
-impl SymbolValues for [(ExprRef, BitVecValue)] {
-    fn get(&self, symbol: &ExprRef) -> Option<BitVecValueRef<'_>> {
+impl GetSymbolValue for SymbolValueStore {
+    fn get_bv(&self, ctx: &Context, symbol: &ExprRef) -> Option<BitVecValue> {
+        let width = symbol.get_bv_type(ctx)?;
+        let index = BitVecValueIndex::new(*self.lookup.get(symbol)?, width);
+        Some(self.bit_vec_words.get_ref(index).into())
+    }
+
+    #[cfg(debug_assertions)]
+    fn get_array(&self, ctx: &Context, symbol: &ExprRef) -> Option<ArrayValue> {
+        let tpe = symbol.get_array_type(ctx).unwrap();
+        let value = self.arrays[*self.lookup.get(symbol)? as usize].clone();
+        debug_assert_eq!(value.data_width(), tpe.data_width);
+        debug_assert_eq!(value.index_width(), tpe.index_width);
+        Some(value)
+    }
+
+    #[cfg(not(debug_assertions))]
+    fn get_array(&self, _ctx: &Context, symbol: &ExprRef) -> Option<ArrayValue> {
+        Some(self.arrays[*self.lookup.get(symbol)? as usize].clone())
+    }
+}
+
+impl From<&[(ExprRef, BitVecValue)]> for SymbolValueStore {
+    fn from(value: &[(ExprRef, BitVecValue)]) -> Self {
+        let mut out = SymbolValueStore::default();
+        for (expr, value) in value.iter() {
+            out.define_bv(expr, value);
+        }
+        out
+    }
+}
+
+impl From<&[(ExprRef, ArrayValue)]> for SymbolValueStore {
+    fn from(value: &[(ExprRef, ArrayValue)]) -> Self {
+        let mut out = SymbolValueStore::default();
+        for (expr, value) in value.iter() {
+            out.define_array(expr, value.clone());
+        }
+        out
+    }
+}
+
+impl GetSymbolValue for HashMap<ExprRef, BitVecValue> {
+    fn get_bv(&self, _ctx: &Context, symbol: &ExprRef) -> Option<BitVecValue> {
+        self.get(symbol).cloned()
+    }
+
+    fn get_array(&self, _ctx: &Context, _symbol: &ExprRef) -> Option<ArrayValue> {
+        None
+    }
+}
+
+impl GetSymbolValue for [(ExprRef, BitVecValue)] {
+    fn get_bv(&self, _ctx: &Context, symbol: &ExprRef) -> Option<BitVecValue> {
         self.iter()
-            .find(|(e, v)| e == symbol)
-            .map(|(e, v)| v.into())
+            .find(|(e, _v)| e == symbol)
+            .map(|(_e, v)| v.clone())
+    }
+
+    fn get_array(&self, _ctx: &Context, _symbol: &ExprRef) -> Option<ArrayValue> {
+        None
     }
 }
 
-type Stack = SmallVec<[BitVecValue; 4]>;
+impl GetSymbolValue for [(ExprRef, ArrayValue)] {
+    fn get_bv(&self, _ctx: &Context, _symbol: &ExprRef) -> Option<BitVecValue> {
+        None
+    }
+
+    fn get_array(&self, _ctx: &Context, symbol: &ExprRef) -> Option<ArrayValue> {
+        self.iter()
+            .find(|(e, _v)| e == symbol)
+            .map(|(_e, v)| v.clone())
+    }
+}
+
+type BitVecStack = SmallVec<[BitVecValue; 4]>;
+type ArrayStack = SmallVec<[ArrayValue; 2]>;
 
 #[inline]
-fn un_op(stack: &mut Stack, op: impl Fn(BitVecValue) -> BitVecValue) {
+fn un_op(stack: &mut BitVecStack, op: impl Fn(BitVecValue) -> BitVecValue) {
     let e = stack.pop().unwrap_or_else(|| panic!("Stack is empty!"));
     let res = op(e);
     stack.push(res);
 }
 
 #[inline]
-fn bin_op(stack: &mut Stack, op: impl Fn(BitVecValue, BitVecValue) -> BitVecValue) {
+fn bin_op(stack: &mut BitVecStack, op: impl Fn(BitVecValue, BitVecValue) -> BitVecValue) {
     let a = stack.pop().unwrap_or_else(|| panic!("Stack is empty!"));
     let b = stack.pop().unwrap_or_else(|| panic!("Stack is empty!"));
     let res = op(a, b);
@@ -49,10 +142,43 @@ fn bin_op(stack: &mut Stack, op: impl Fn(BitVecValue, BitVecValue) -> BitVecValu
 
 pub fn eval_bv_expr(
     ctx: &Context,
-    symbols: &(impl SymbolValues + ?Sized),
+    symbols: &(impl GetSymbolValue + ?Sized),
     expr: ExprRef,
 ) -> BitVecValue {
-    let mut stack: Stack = SmallVec::with_capacity(4);
+    debug_assert!(
+        ctx.get(expr).get_bv_type(ctx).is_some(),
+        "Not a bit-vector expression: {:?}",
+        ctx.get(expr)
+    );
+    let (mut bv_stack, array_stack) = eval_expr(ctx, symbols, expr);
+    debug_assert!(array_stack.is_empty());
+    debug_assert_eq!(bv_stack.len(), 1);
+    bv_stack.pop().unwrap()
+}
+
+pub fn eval_array_expr(
+    ctx: &Context,
+    symbols: &(impl GetSymbolValue + ?Sized),
+    expr: ExprRef,
+) -> ArrayValue {
+    debug_assert!(
+        ctx.get(expr).get_array_type(ctx).is_some(),
+        "Not an array expression: {:?}",
+        ctx.get(expr)
+    );
+    let (bv_stack, mut array_stack) = eval_expr(ctx, symbols, expr);
+    debug_assert!(bv_stack.is_empty());
+    debug_assert_eq!(array_stack.len(), 1);
+    array_stack.pop().unwrap()
+}
+
+fn eval_expr(
+    ctx: &Context,
+    symbols: &(impl GetSymbolValue + ?Sized),
+    expr: ExprRef,
+) -> (BitVecStack, ArrayStack) {
+    let mut bv_stack: BitVecStack = SmallVec::with_capacity(4);
+    let mut array_stack: ArrayStack = SmallVec::with_capacity(2);
     let mut todo: SmallVec<[(ExprRef, bool); 4]> = SmallVec::with_capacity(4);
 
     todo.push((expr, false));
@@ -78,62 +204,120 @@ pub fn eval_bv_expr(
         // Otherwise, all arguments are available on the stack for us to use.
         match ctx.get(e) {
             // nullary
-            Expr::BVSymbol { .. } => stack.push(symbols.get(&e).unwrap().into()),
-            Expr::BVLiteral(value) => stack.push(value.get(ctx).into()),
+            Expr::BVSymbol { .. } => bv_stack.push(symbols.get_bv(ctx, &e).unwrap()),
+            Expr::BVLiteral(value) => bv_stack.push(value.get(ctx).into()),
             // unary
-            Expr::BVZeroExt { by, .. } => un_op(&mut stack, |e| e.zero_extend(*by)),
-            Expr::BVSignExt { by, .. } => un_op(&mut stack, |e| e.sign_extend(*by)),
-            Expr::BVSlice { hi, lo, .. } => un_op(&mut stack, |e| e.slice(*hi, *lo)),
-            Expr::BVNot(_, _) => un_op(&mut stack, |e| e.not()),
-            Expr::BVNegate(_, _) => un_op(&mut stack, |e| e.negate()),
+            Expr::BVZeroExt { by, .. } => un_op(&mut bv_stack, |e| e.zero_extend(*by)),
+            Expr::BVSignExt { by, .. } => un_op(&mut bv_stack, |e| e.sign_extend(*by)),
+            Expr::BVSlice { hi, lo, .. } => un_op(&mut bv_stack, |e| e.slice(*hi, *lo)),
+            Expr::BVNot(_, _) => un_op(&mut bv_stack, |e| e.not()),
+            Expr::BVNegate(_, _) => un_op(&mut bv_stack, |e| e.negate()),
             // binary
-            Expr::BVEqual(_, _) => bin_op(&mut stack, |a, b| a.is_equal(&b).into()),
-            Expr::BVImplies(_, _) => bin_op(&mut stack, |a, b| a.not().or(&b)),
-            Expr::BVGreater(_, _) => bin_op(&mut stack, |a, b| a.is_greater(&b).into()),
+            Expr::BVEqual(_, _) => bin_op(&mut bv_stack, |a, b| a.is_equal(&b).into()),
+            Expr::BVImplies(_, _) => bin_op(&mut bv_stack, |a, b| a.not().or(&b)),
+            Expr::BVGreater(_, _) => bin_op(&mut bv_stack, |a, b| a.is_greater(&b).into()),
             Expr::BVGreaterSigned(_, _, _) => {
-                bin_op(&mut stack, |a, b| a.is_greater_signed(&b).into())
+                bin_op(&mut bv_stack, |a, b| a.is_greater_signed(&b).into())
             }
             Expr::BVGreaterEqual(_, _) => {
-                bin_op(&mut stack, |a, b| a.is_greater_or_equal(&b).into())
+                bin_op(&mut bv_stack, |a, b| a.is_greater_or_equal(&b).into())
             }
-            Expr::BVGreaterEqualSigned(_, _, _) => {
-                bin_op(&mut stack, |a, b| a.is_greater_or_equal_signed(&b).into())
-            }
-            Expr::BVConcat(_, _, _) => bin_op(&mut stack, |a, b| a.concat(&b)),
+            Expr::BVGreaterEqualSigned(_, _, _) => bin_op(&mut bv_stack, |a, b| {
+                a.is_greater_or_equal_signed(&b).into()
+            }),
+            Expr::BVConcat(_, _, _) => bin_op(&mut bv_stack, |a, b| a.concat(&b)),
             // binary arithmetic
-            Expr::BVAnd(_, _, _) => bin_op(&mut stack, |a, b| a.and(&b)),
-            Expr::BVOr(_, _, _) => bin_op(&mut stack, |a, b| a.or(&b)),
-            Expr::BVXor(_, _, _) => bin_op(&mut stack, |a, b| a.xor(&b)),
-            Expr::BVShiftLeft(_, _, _) => bin_op(&mut stack, |a, b| a.shift_left(&b)),
+            Expr::BVAnd(_, _, _) => bin_op(&mut bv_stack, |a, b| a.and(&b)),
+            Expr::BVOr(_, _, _) => bin_op(&mut bv_stack, |a, b| a.or(&b)),
+            Expr::BVXor(_, _, _) => bin_op(&mut bv_stack, |a, b| a.xor(&b)),
+            Expr::BVShiftLeft(_, _, _) => bin_op(&mut bv_stack, |a, b| a.shift_left(&b)),
             Expr::BVArithmeticShiftRight(_, _, _) => {
-                bin_op(&mut stack, |a, b| a.arithmetic_shift_right(&b))
+                bin_op(&mut bv_stack, |a, b| a.arithmetic_shift_right(&b))
             }
-            Expr::BVShiftRight(_, _, _) => bin_op(&mut stack, |a, b| a.shift_right(&b)),
-            Expr::BVAdd(_, _, _) => bin_op(&mut stack, |a, b| a.add(&b)),
-            Expr::BVMul(_, _, _) => bin_op(&mut stack, |a, b| a.mul(&b)),
+            Expr::BVShiftRight(_, _, _) => bin_op(&mut bv_stack, |a, b| a.shift_right(&b)),
+            Expr::BVAdd(_, _, _) => bin_op(&mut bv_stack, |a, b| a.add(&b)),
+            Expr::BVMul(_, _, _) => bin_op(&mut bv_stack, |a, b| a.mul(&b)),
             // div, rem and mod are still TODO
-            Expr::BVSub(_, _, _) => bin_op(&mut stack, |a, b| a.sub(&b)),
+            Expr::BVSignedDiv(_, _, _)
+            | Expr::BVUnsignedDiv(_, _, _)
+            | Expr::BVSignedMod(_, _, _)
+            | Expr::BVSignedRem(_, _, _)
+            | Expr::BVUnsignedRem(_, _, _) => {
+                todo!("implement eval support for {:?}", ctx.get(e))
+            }
+            Expr::BVSub(_, _, _) => bin_op(&mut bv_stack, |a, b| a.sub(&b)),
             // BVArrayRead needs array support!
             Expr::BVIte { .. } => {
-                let cond = stack.pop().unwrap().to_bool().unwrap();
-                let tru = stack.pop().unwrap();
-                let fals = stack.pop().unwrap();
-                stack.push(if cond { tru } else { fals });
+                let cond = bv_stack.pop().unwrap().to_bool().unwrap();
+                if cond {
+                    let tru = bv_stack.pop().unwrap();
+                    bv_stack.pop().unwrap();
+                    bv_stack.push(tru);
+                } else {
+                    bv_stack.pop().unwrap(); // just discard tru
+                }
             }
-            // array ops are not supported yet
-            other => todo!("deal with {other:?}"),
+            // array ops
+            Expr::BVArrayRead { .. } => {
+                let array = array_stack
+                    .pop()
+                    .unwrap_or_else(|| panic!("array argument is missing"));
+                let index = bv_stack
+                    .pop()
+                    .unwrap_or_else(|| panic!("index argument is missing"));
+                bv_stack.push(array.select(&index));
+            }
+            Expr::ArraySymbol { .. } => array_stack.push(symbols.get_array(ctx, &e).unwrap()),
+            Expr::ArrayConstant { index_width, .. } => {
+                let default = bv_stack
+                    .pop()
+                    .unwrap_or_else(|| panic!("default (e) argument is missing"));
+                array_stack.push(ArrayValue::new_sparse(*index_width, &default));
+            }
+            Expr::ArrayEqual(_, _) => {
+                let a = array_stack
+                    .pop()
+                    .unwrap_or_else(|| panic!("array a argument is missing"));
+                let b = array_stack
+                    .pop()
+                    .unwrap_or_else(|| panic!("array b argument is missing"));
+                bv_stack.push(a.is_equal(&b).unwrap_or_default().into())
+            }
+            Expr::ArrayStore { .. } => {
+                let array = array_stack
+                    .last_mut()
+                    .unwrap_or_else(|| panic!("array argument is missing"));
+                let index = bv_stack
+                    .pop()
+                    .unwrap_or_else(|| panic!("index argument is missing"));
+                let data = bv_stack
+                    .pop()
+                    .unwrap_or_else(|| panic!("data argument is missing"));
+                array.store(&index, &data); // we avoid pop + push by modifying in place
+            }
+            Expr::ArrayIte { .. } => {
+                let cond = bv_stack.pop().unwrap().to_bool().unwrap();
+                if cond {
+                    let tru = array_stack.pop().unwrap();
+                    array_stack.pop().unwrap();
+                    array_stack.push(tru);
+                } else {
+                    array_stack.pop().unwrap(); // just discard tru
+                }
+            }
         }
     }
 
-    debug_assert_eq!(stack.len(), 1);
-    stack.pop().unwrap()
+    debug_assert_eq!(bv_stack.len() + array_stack.len(), 1);
+    (bv_stack, array_stack)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::eval_bv_expr;
+    use super::{eval_array_expr, eval_bv_expr, SymbolValueStore};
     use crate::ir::*;
     use baa::*;
+    use std::ops::Index;
 
     #[test]
     fn test_eval_bv_expr() {
@@ -177,6 +361,48 @@ mod tests {
             assert_eq!(eval(-1, -2), -3);
             assert_eq!(eval(-1, 2000), 2000 - 1);
             assert_eq!(eval(1000, 2000), 2000 - 1000);
+        }
+    }
+
+    #[test]
+    fn test_eval_bv_expr_with_array_expr() {
+        let mut c = Context::default();
+        let a = c.array_symbol("a", 4, 32);
+        let mut a_values = ArrayValue::new_sparse(4, &BitVecValue::zero(64));
+        for ii in 0..(1 << 4) {
+            let ii_squared = BitVecValue::from_u64(ii * ii, 64);
+            a_values.store(&BitVecValue::from_u64(ii, 4), &ii_squared);
+        }
+
+        // read from constant address
+        for ii in 0..(1 << 4) {
+            let read_ii = c.build(|c| c.array_read(a, c.bv_lit(&BitVecValue::from_u64(ii, 4))));
+            let value_at_ii = eval_bv_expr(&c, [(a, a_values.clone())].as_slice(), read_ii)
+                .to_u64()
+                .unwrap();
+            assert_eq!(value_at_ii, ii * ii);
+        }
+    }
+
+    #[test]
+    fn test_eval_array_expr() {
+        let mut c = Context::default();
+        let const_123_array = c.build(|c| c.array_const(c.bv_lit(&BitVecValue::zero(64)), 4));
+        for ii in 0..(1 << 4) {
+            let addr = BitVecValue::from_u64(ii, 4);
+            let value = BitVecValue::from_u64(ii * ii * ii, 64);
+            let expr =
+                c.build(|c| c.array_store(const_123_array, c.bv_lit(&addr), c.bv_lit(&value)));
+            let res = eval_array_expr(&c, &SymbolValueStore::default(), expr);
+            // check result
+            for jj in 0..(1 << 4) {
+                let value = res.select(&BitVecValue::from_u64(jj, 4)).to_u64().unwrap();
+                if jj == ii {
+                    assert_eq!(value, jj * jj * jj);
+                } else {
+                    assert_eq!(value, 0);
+                }
+            }
         }
     }
 }
