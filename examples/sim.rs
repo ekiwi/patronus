@@ -65,7 +65,8 @@ fn main() {
     };
 
     if args.show_programs {
-        sim.print_programs();
+        println!("The interpreter no longer compiles to an internal program representation");
+        //sim.print_programs();
     }
 
     match args.init {

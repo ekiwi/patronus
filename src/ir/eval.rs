@@ -30,7 +30,7 @@ pub struct SymbolValueStore {
 }
 
 impl SymbolValueStore {
-    fn define_bv<'a>(&mut self, symbol: &ExprRef, value: impl Into<BitVecValueRef<'a>>) {
+    pub fn define_bv<'a>(&mut self, symbol: &ExprRef, value: impl Into<BitVecValueRef<'a>>) {
         let value = value.into();
         let index = self.bit_vec_words.len() as SymbolValueStoreIndex;
         debug_assert!(!self.lookup.contains_key(symbol));
@@ -38,11 +38,17 @@ impl SymbolValueStore {
         self.bit_vec_words.extend_from_slice(value.words());
     }
 
-    fn define_array(&mut self, symbol: &ExprRef, value: ArrayValue) {
+    pub fn define_array(&mut self, symbol: &ExprRef, value: ArrayValue) {
         let index = self.arrays.len() as SymbolValueStoreIndex;
         debug_assert!(!self.lookup.contains_key(symbol));
         self.lookup.insert(*symbol, index);
         self.arrays.push(value);
+    }
+
+    pub fn clear(&mut self) {
+        self.arrays.clear();
+        self.bit_vec_words.clear();
+        self.lookup.clear();
     }
 }
 

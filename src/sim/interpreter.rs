@@ -48,30 +48,32 @@ pub trait Simulator {
 
 /// Interpreter based simulator for a transition system.
 pub struct Interpreter<'a> {
-    #[allow(dead_code)] // ctx is very useful for debugging
     ctx: &'a Context,
-    states: Vec<State>,
-    inputs: Vec<ExprRef>,
-    data: Vec<Word>,
+    sys: &'a TransitionSystem,
     step_count: u64,
+    state: SymbolValueStore,
     snapshots: Vec<Vec<Word>>,
+    do_trace: bool,
 }
 
 impl<'a> Interpreter<'a> {
-    pub fn new(ctx: &'a Context, sys: &TransitionSystem) -> Self {
+    pub fn new(ctx: &'a Context, sys: &'a TransitionSystem) -> Self {
         Self::internal_new(ctx, sys, false)
     }
 
-    pub fn new_with_trace(ctx: &'a Context, sys: &TransitionSystem) -> Self {
+    pub fn new_with_trace(ctx: &'a Context, sys: &'a TransitionSystem) -> Self {
         Self::internal_new(ctx, sys, true)
     }
 
-    fn internal_new(ctx: &'a Context, sys: &TransitionSystem, do_trace: bool) -> Self {
-        todo!()
-    }
-
-    pub fn print_programs(&self) {
-        todo!()
+    fn internal_new(ctx: &'a Context, sys: &'a TransitionSystem, do_trace: bool) -> Self {
+        Self {
+            ctx,
+            sys,
+            step_count: 0,
+            state: Default::default(),
+            snapshots: vec![],
+            do_trace,
+        }
     }
 }
 
@@ -79,7 +81,10 @@ impl<'a> Simulator for Interpreter<'a> {
     type SnapshotId = u32;
 
     fn init(&mut self, kind: InitKind) {
-        todo!()
+        assert!(matches!(kind, InitKind::Zero));
+        self.state.clear();
+
+        // allocate input state
     }
 
     fn update(&mut self) {
@@ -115,24 +120,6 @@ impl<'a> Simulator for Interpreter<'a> {
     }
 
     fn restore_snapshot(&mut self, id: Self::SnapshotId) {
-        todo!()
-    }
-}
-
-pub struct InitValueGenerator {
-    rng: Option<rand_xoshiro::Xoshiro256PlusPlus>,
-}
-
-impl InitValueGenerator {
-    pub fn from_kind(kind: InitKind) -> Self {
-        let rng = match kind {
-            InitKind::Zero => None,
-            InitKind::Random(seed) => Some(rand_xoshiro::Xoshiro256PlusPlus::seed_from_u64(seed)),
-        };
-        Self { rng }
-    }
-
-    pub fn assign<'a>(&mut self, dst: u64) {
         todo!()
     }
 }

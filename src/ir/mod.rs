@@ -16,6 +16,7 @@ pub use analysis::{
     Uses,
 };
 pub use context::{Context, ExprRef, StringRef};
+pub use eval::{eval_array_expr, eval_bv_expr, SymbolValueStore};
 pub use expr::{ArrayType, Expr, Type};
 pub use serialize::SerializableIrNode;
 pub use transform::{
