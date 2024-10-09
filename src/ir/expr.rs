@@ -286,7 +286,7 @@ impl GetNode<Expr, ExprRef> for Context {
 
 impl ExprNodeConstruction for Context {}
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash, Ord, PartialOrd)]
 pub struct StringRef(StringSymbolType);
 #[derive(PartialEq, Eq, Clone, Copy, Hash, Ord, PartialOrd)]
 pub struct ExprRef(NonZeroU32);
