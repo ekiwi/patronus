@@ -91,6 +91,25 @@ fn expect_same_size_arrays(
     }
 }
 
+impl Expr {
+    #[inline]
+    pub(crate) fn is_array_type(&self) -> bool {
+        matches!(
+            self,
+            Expr::ArraySymbol { .. }
+                | Expr::ArrayConstant { .. }
+                | Expr::ArrayIte { .. }
+                | Expr::ArrayStore { .. }
+        )
+    }
+
+    #[inline]
+    pub(crate) fn is_bv_type(&self) -> bool {
+        !self.is_array_type()
+    }
+}
+
+// TODO: get rid of this trait and let users just manually resolve ExprRef
 pub trait TypeCheck {
     /// Type check expression node. Does not recurse to lower nodes.
     fn type_check(&self, ctx: &Context) -> Result<Type, TypeCheckError>;

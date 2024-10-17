@@ -4,21 +4,12 @@
 
 use crate::ir::*;
 use baa::*;
-use rand::SeedableRng;
-use std::fmt::Debug;
-
-/// Specifies how to initialize states that do not have
-#[derive(Debug, PartialEq, Copy, Clone)]
-pub enum InitKind {
-    Zero,
-    Random(u64), // with seed
-}
 
 pub trait Simulator {
     type SnapshotId;
 
-    /// Load the initial state values.
-    fn init(&mut self, kind: InitKind);
+    /// Initializes all states and inputs to zero.
+    fn init(&mut self);
 
     /// Recalculate signals.
     fn update(&mut self);
@@ -77,36 +68,61 @@ impl<'a> Interpreter<'a> {
     }
 }
 
+fn set_signal_to_zero(ctx: &Context, state: &mut SymbolValueStore, symbol: ExprRef) {
+    let tpe = ctx.get(symbol).get_type(ctx);
+    match tpe {
+        Type::BV(bits) => {
+            state.define_bv(symbol, &BitVecValue::zero(bits));
+        }
+        Type::Array(ArrayType {
+            index_width,
+            data_width,
+        }) => {
+            let value = ArrayValue::new_sparse(index_width, &BitVecValue::zero(data_width));
+            state.define_array(symbol, value);
+        }
+    }
+}
+
 impl<'a> Simulator for Interpreter<'a> {
     type SnapshotId = u32;
 
-    fn init(&mut self, kind: InitKind) {
-        assert!(matches!(kind, InitKind::Zero));
+    fn init(&mut self) {
         self.state.clear();
 
-        // allocate input state
+        // allocate space for inputs, and states
+        for (_, state) in self.sys.states() {
+            set_signal_to_zero(self.ctx, &mut self.state, state.symbol);
+            if state.init.is_some() {
+                todo!("deal with init expressions!");
+            }
+        }
+        for (symbol, _) in self.sys.get_signals(|s| s.is_input()) {
+            set_signal_to_zero(self.ctx, &mut self.state, symbol);
+        }
     }
 
     fn update(&mut self) {
-        todo!()
+        // in this implementation, we calculate expressions on the fly, so there is nothing to update
     }
 
     fn step(&mut self) {
+        // calculate all next states and then
+
+        // assign next state to current state
         todo!()
     }
 
-    fn set<'b>(&mut self, expr: ExprRef, value: impl Into<BitVecValueRef<'b>>) {
-        todo!()
-    }
+    fn set<'b>(&mut self, expr: ExprRef, value: impl Into<BitVecValueRef<'b>>) {}
 
-    fn get(&self, expr: ExprRef) -> Option<BitVecValueRef<'_>> {
+    fn get(&self, _expr: ExprRef) -> Option<BitVecValueRef<'_>> {
         todo!()
     }
 
     fn get_element<'b>(
         &self,
-        expr: ExprRef,
-        index: impl Into<BitVecValueRef<'b>>,
+        _expr: ExprRef,
+        _index: impl Into<BitVecValueRef<'b>>,
     ) -> Option<BitVecValueRef<'_>> {
         todo!()
     }
@@ -119,7 +135,7 @@ impl<'a> Simulator for Interpreter<'a> {
         todo!()
     }
 
-    fn restore_snapshot(&mut self, id: Self::SnapshotId) {
+    fn restore_snapshot(&mut self, _id: Self::SnapshotId) {
         todo!()
     }
 }

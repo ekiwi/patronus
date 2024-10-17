@@ -6,7 +6,7 @@ use baa::BitVecOps;
 use patronus::btor2;
 use patronus::ir::Context;
 use patronus::mc::Simulator;
-use patronus::sim::interpreter::{InitKind, Interpreter};
+use patronus::sim::interpreter::Interpreter;
 
 const COUNT_2: &str = r#"
 1 sort bitvec 3
@@ -31,7 +31,7 @@ fn interpret_count_2() {
     let mut sim = Interpreter::new(&ctx, &sys);
 
     // init
-    sim.init(InitKind::Zero);
+    sim.init();
     sim.update();
     assert_eq!(sim.get(counter_state).unwrap().to_u64().unwrap(), 0);
 
@@ -84,7 +84,7 @@ fn interpret_delay() {
     let mut sim = Interpreter::new(&ctx, &sys);
 
     // init
-    sim.init(InitKind::Zero);
+    sim.init();
     sim.update();
     assert_eq!(sim.get(reg0).unwrap().to_u64().unwrap(), 0, "reg0@0");
     assert_eq!(sim.get(reg1).unwrap().to_u64().unwrap(), 0, "reg1@0");
@@ -110,7 +110,7 @@ fn interpret_swap() {
     let mut sim = Interpreter::new(&ctx, &sys);
 
     // init
-    sim.init(InitKind::Zero);
+    sim.init();
     sim.update();
     assert_eq!(sim.get(a).unwrap().to_u64().unwrap(), 0, "a@0");
     assert_eq!(sim.get(b).unwrap().to_u64().unwrap(), 1, "b@0");

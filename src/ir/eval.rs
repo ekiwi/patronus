@@ -9,15 +9,16 @@
 
 use crate::ir::{Context, Expr, ExprRef, ForEachChild, TypeCheck};
 use baa::{
-    ArrayMutOps, ArrayOps, ArrayValue, BitVecOps, BitVecValue, BitVecValueIndex, BitVecValueRef,
-    IndexToRef, Word,
+    ArrayMutOps, ArrayOps, ArrayValue, BitVecMutOps, BitVecOps, BitVecValue, BitVecValueIndex,
+    BitVecValueRef, IndexToMutRef, IndexToRef, Word,
 };
 use smallvec::SmallVec;
 use std::collections::HashMap;
 
-pub trait GetSymbolValue {
-    fn get_bv(&self, ctx: &Context, symbol: &ExprRef) -> Option<BitVecValue>;
-    fn get_array(&self, ctx: &Context, symbol: &ExprRef) -> Option<ArrayValue>;
+/// Returns a value for an expression if it is available.
+pub trait GetExprValue {
+    fn get_bv(&self, ctx: &Context, symbol: ExprRef) -> Option<BitVecValue>;
+    fn get_array(&self, ctx: &Context, symbol: ExprRef) -> Option<ArrayValue>;
 }
 
 type SymbolValueStoreIndex = u32;
@@ -30,19 +31,31 @@ pub struct SymbolValueStore {
 }
 
 impl SymbolValueStore {
-    pub fn define_bv<'a>(&mut self, symbol: &ExprRef, value: impl Into<BitVecValueRef<'a>>) {
+    pub fn define_bv<'a>(&mut self, symbol: ExprRef, value: impl Into<BitVecValueRef<'a>>) {
         let value = value.into();
         let index = self.bit_vec_words.len() as SymbolValueStoreIndex;
-        debug_assert!(!self.lookup.contains_key(symbol));
-        self.lookup.insert(*symbol, index);
+        debug_assert!(!self.lookup.contains_key(&symbol));
+        self.lookup.insert(symbol, index);
         self.bit_vec_words.extend_from_slice(value.words());
     }
 
-    pub fn define_array(&mut self, symbol: &ExprRef, value: ArrayValue) {
+    pub fn update_bv<'a>(&mut self, symbol: ExprRef, value: impl Into<BitVecValueRef<'a>>) {
+        let value = value.into();
+        let raw_index = self.lookup[&symbol];
+        let index = BitVecValueIndex::new(raw_index, value.width());
+        self.bit_vec_words.get_mut_ref(index).assign(value);
+    }
+
+    pub fn define_array(&mut self, symbol: ExprRef, value: ArrayValue) {
         let index = self.arrays.len() as SymbolValueStoreIndex;
-        debug_assert!(!self.lookup.contains_key(symbol));
-        self.lookup.insert(*symbol, index);
+        debug_assert!(!self.lookup.contains_key(&symbol));
+        self.lookup.insert(symbol, index);
         self.arrays.push(value);
+    }
+
+    pub fn update_array(&mut self, symbol: ExprRef, value: ArrayValue) {
+        let raw_index = self.lookup[&symbol];
+        self.arrays[raw_index as usize] = value;
     }
 
     pub fn clear(&mut self) {
@@ -52,17 +65,17 @@ impl SymbolValueStore {
     }
 }
 
-impl GetSymbolValue for SymbolValueStore {
-    fn get_bv(&self, ctx: &Context, symbol: &ExprRef) -> Option<BitVecValue> {
+impl GetExprValue for SymbolValueStore {
+    fn get_bv(&self, ctx: &Context, symbol: ExprRef) -> Option<BitVecValue> {
         let width = symbol.get_bv_type(ctx)?;
-        let index = BitVecValueIndex::new(*self.lookup.get(symbol)?, width);
+        let index = BitVecValueIndex::new(*self.lookup.get(&symbol)?, width);
         Some(self.bit_vec_words.get_ref(index).into())
     }
 
     #[cfg(debug_assertions)]
-    fn get_array(&self, ctx: &Context, symbol: &ExprRef) -> Option<ArrayValue> {
+    fn get_array(&self, ctx: &Context, symbol: ExprRef) -> Option<ArrayValue> {
         let tpe = symbol.get_array_type(ctx).unwrap();
-        let value = self.arrays[*self.lookup.get(symbol)? as usize].clone();
+        let value = self.arrays[*self.lookup.get(&symbol)? as usize].clone();
         debug_assert_eq!(value.data_width(), tpe.data_width);
         debug_assert_eq!(value.index_width(), tpe.index_width);
         Some(value)
@@ -78,7 +91,7 @@ impl From<&[(ExprRef, BitVecValue)]> for SymbolValueStore {
     fn from(value: &[(ExprRef, BitVecValue)]) -> Self {
         let mut out = SymbolValueStore::default();
         for (expr, value) in value.iter() {
-            out.define_bv(expr, value);
+            out.define_bv(*expr, value);
         }
         out
     }
@@ -88,42 +101,42 @@ impl From<&[(ExprRef, ArrayValue)]> for SymbolValueStore {
     fn from(value: &[(ExprRef, ArrayValue)]) -> Self {
         let mut out = SymbolValueStore::default();
         for (expr, value) in value.iter() {
-            out.define_array(expr, value.clone());
+            out.define_array(*expr, value.clone());
         }
         out
     }
 }
 
-impl GetSymbolValue for HashMap<ExprRef, BitVecValue> {
-    fn get_bv(&self, _ctx: &Context, symbol: &ExprRef) -> Option<BitVecValue> {
-        self.get(symbol).cloned()
+impl GetExprValue for HashMap<ExprRef, BitVecValue> {
+    fn get_bv(&self, _ctx: &Context, symbol: ExprRef) -> Option<BitVecValue> {
+        self.get(&symbol).cloned()
     }
 
-    fn get_array(&self, _ctx: &Context, _symbol: &ExprRef) -> Option<ArrayValue> {
+    fn get_array(&self, _ctx: &Context, _symbol: ExprRef) -> Option<ArrayValue> {
         None
     }
 }
 
-impl GetSymbolValue for [(ExprRef, BitVecValue)] {
-    fn get_bv(&self, _ctx: &Context, symbol: &ExprRef) -> Option<BitVecValue> {
+impl GetExprValue for [(ExprRef, BitVecValue)] {
+    fn get_bv(&self, _ctx: &Context, symbol: ExprRef) -> Option<BitVecValue> {
         self.iter()
-            .find(|(e, _v)| e == symbol)
+            .find(|(e, _v)| *e == symbol)
             .map(|(_e, v)| v.clone())
     }
 
-    fn get_array(&self, _ctx: &Context, _symbol: &ExprRef) -> Option<ArrayValue> {
+    fn get_array(&self, _ctx: &Context, _symbol: ExprRef) -> Option<ArrayValue> {
         None
     }
 }
 
-impl GetSymbolValue for [(ExprRef, ArrayValue)] {
-    fn get_bv(&self, _ctx: &Context, _symbol: &ExprRef) -> Option<BitVecValue> {
+impl GetExprValue for [(ExprRef, ArrayValue)] {
+    fn get_bv(&self, _ctx: &Context, _symbol: ExprRef) -> Option<BitVecValue> {
         None
     }
 
-    fn get_array(&self, _ctx: &Context, symbol: &ExprRef) -> Option<ArrayValue> {
+    fn get_array(&self, _ctx: &Context, symbol: ExprRef) -> Option<ArrayValue> {
         self.iter()
-            .find(|(e, _v)| e == symbol)
+            .find(|(e, _v)| *e == symbol)
             .map(|(_e, v)| v.clone())
     }
 }
@@ -148,7 +161,7 @@ fn bin_op(stack: &mut BitVecStack, op: impl Fn(BitVecValue, BitVecValue) -> BitV
 
 pub fn eval_bv_expr(
     ctx: &Context,
-    symbols: &(impl GetSymbolValue + ?Sized),
+    symbols: &(impl GetExprValue + ?Sized),
     expr: ExprRef,
 ) -> BitVecValue {
     debug_assert!(
@@ -164,7 +177,7 @@ pub fn eval_bv_expr(
 
 pub fn eval_array_expr(
     ctx: &Context,
-    symbols: &(impl GetSymbolValue + ?Sized),
+    symbols: &(impl GetExprValue + ?Sized),
     expr: ExprRef,
 ) -> ArrayValue {
     debug_assert!(
@@ -180,7 +193,7 @@ pub fn eval_array_expr(
 
 fn eval_expr(
     ctx: &Context,
-    symbols: &(impl GetSymbolValue + ?Sized),
+    values: &(impl GetExprValue + ?Sized),
     expr: ExprRef,
 ) -> (BitVecStack, ArrayStack) {
     let mut bv_stack: BitVecStack = SmallVec::with_capacity(4);
@@ -193,6 +206,22 @@ fn eval_expr(
 
         // Check if there are children that we need to compute first.
         if !args_available {
+            // Check to see if a value is already provided. In that case, we do not
+            // need to evaluate the children, we just directly use the value.
+            if expr.is_bv_type() {
+                if let Some(value) = values.get_bv(ctx, e) {
+                    bv_stack.push(value);
+                    continue; // done
+                }
+            } else {
+                debug_assert!(expr.is_array_type());
+                if let Some(value) = values.get_array(ctx, e) {
+                    array_stack.push(value);
+                    continue; // done
+                }
+            }
+
+            // otherwise, we check if there are child expressions to evaluate
             let mut has_child = false;
             expr.for_each_child(|c| {
                 if !has_child {
@@ -208,9 +237,16 @@ fn eval_expr(
         }
 
         // Otherwise, all arguments are available on the stack for us to use.
-        match ctx.get(e) {
+        match expr {
             // nullary
-            Expr::BVSymbol { .. } => bv_stack.push(symbols.get_bv(ctx, &e).unwrap()),
+            Expr::BVSymbol { name, width } => {
+                // we should not get here
+                // TODO: turn into return Err
+                panic!(
+                    "No value found for symbol: {} : bv<{width}>",
+                    ctx.get_str(*name)
+                );
+            }
             Expr::BVLiteral(value) => bv_stack.push(value.get(ctx).into()),
             // unary
             Expr::BVZeroExt { by, .. } => un_op(&mut bv_stack, |e| e.zero_extend(*by)),
@@ -273,7 +309,18 @@ fn eval_expr(
                     .unwrap_or_else(|| panic!("index argument is missing"));
                 bv_stack.push(array.select(&index));
             }
-            Expr::ArraySymbol { .. } => array_stack.push(symbols.get_array(ctx, &e).unwrap()),
+            Expr::ArraySymbol {
+                name,
+                index_width,
+                data_width,
+            } => {
+                // we should not get here
+                // TODO: turn into return Err
+                panic!(
+                    "No value found for symbol: {} : bv<{index_width}> -> bv<{data_width}>",
+                    ctx.get_str(*name)
+                );
+            }
             Expr::ArrayConstant { index_width, .. } => {
                 let default = bv_stack
                     .pop()
