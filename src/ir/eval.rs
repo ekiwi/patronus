@@ -89,8 +89,8 @@ impl GetExprValue for SymbolValueStore {
     }
 
     #[cfg(not(debug_assertions))]
-    fn get_array(&self, _ctx: &Context, symbol: &ExprRef) -> Option<ArrayValue> {
-        Some(self.arrays[*self.lookup.get(symbol)? as usize].clone())
+    fn get_array(&self, _ctx: &Context, symbol: ExprRef) -> Option<ArrayValue> {
+        Some(self.arrays[*self.lookup.get(&symbol)? as usize].clone())
     }
 }
 
