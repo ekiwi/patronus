@@ -396,7 +396,6 @@ mod tests {
     use super::{eval_array_expr, eval_bv_expr, SymbolValueStore};
     use crate::ir::*;
     use baa::*;
-    use std::ops::Index;
 
     #[test]
     fn test_eval_bv_expr() {

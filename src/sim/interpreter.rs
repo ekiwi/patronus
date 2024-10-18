@@ -44,7 +44,7 @@ pub struct Interpreter<'a> {
     sys: &'a TransitionSystem,
     step_count: u64,
     data: SymbolValueStore,
-    snapshots: Vec<Vec<Word>>,
+    snapshots: Vec<SymbolValueStore>,
     do_trace: bool,
 }
 
@@ -156,18 +156,12 @@ impl<'a> Simulator for Interpreter<'a> {
     }
 
     fn take_snapshot(&mut self) -> Self::SnapshotId {
-        todo!()
+        let id = self.snapshots.len() as u32;
+        self.snapshots.push(self.data.clone());
+        id
     }
 
-    fn restore_snapshot(&mut self, _id: Self::SnapshotId) {
-        todo!()
+    fn restore_snapshot(&mut self, id: Self::SnapshotId) {
+        self.data = self.snapshots[id as usize].clone();
     }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn type_size() {}
 }
