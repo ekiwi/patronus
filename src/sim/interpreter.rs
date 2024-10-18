@@ -17,17 +17,18 @@ pub trait Simulator {
     /// Advance the state.
     fn step(&mut self);
 
-    /// Change the value or an expression in the simulator. Be careful!
+    /// Change the value or an expression in the simulator.
     fn set<'a>(&mut self, expr: ExprRef, value: impl Into<BitVecValueRef<'a>>);
 
-    fn get(&self, expr: ExprRef) -> Option<BitVecValueRef<'_>>;
+    /// Inspect the value of any bit vector expression in the circuit
+    fn get(&self, expr: ExprRef) -> Option<BitVecValue>;
 
     /// Retrieve the value of an array element
     fn get_element<'a>(
         &self,
         expr: ExprRef,
         index: impl Into<BitVecValueRef<'a>>,
-    ) -> Option<BitVecValueRef<'_>>;
+    ) -> Option<BitVecValue>;
 
     fn step_count(&self) -> u64;
 
@@ -42,7 +43,7 @@ pub struct Interpreter<'a> {
     ctx: &'a Context,
     sys: &'a TransitionSystem,
     step_count: u64,
-    state: SymbolValueStore,
+    data: SymbolValueStore,
     snapshots: Vec<Vec<Word>>,
     do_trace: bool,
 }
@@ -61,7 +62,7 @@ impl<'a> Interpreter<'a> {
             ctx,
             sys,
             step_count: 0,
-            state: Default::default(),
+            data: Default::default(),
             snapshots: vec![],
             do_trace,
         }
@@ -88,17 +89,22 @@ impl<'a> Simulator for Interpreter<'a> {
     type SnapshotId = u32;
 
     fn init(&mut self) {
-        self.state.clear();
+        self.data.clear();
 
         // allocate space for inputs, and states
-        for (_, state) in self.sys.states() {
-            set_signal_to_zero(self.ctx, &mut self.state, state.symbol);
-            if state.init.is_some() {
-                todo!("deal with init expressions!");
-            }
+        for state in self.sys.states.iter() {
+            set_signal_to_zero(self.ctx, &mut self.data, state.symbol);
         }
         for (symbol, _) in self.sys.get_signals(|s| s.is_input()) {
-            set_signal_to_zero(self.ctx, &mut self.state, symbol);
+            set_signal_to_zero(self.ctx, &mut self.data, symbol);
+        }
+
+        // evaluate init expressions
+        for state in self.sys.states.iter() {
+            if let Some(init) = state.init {
+                let value = eval_expr(self.ctx, &self.data, init);
+                self.data.update(state.symbol, value);
+            }
         }
     }
 
@@ -107,23 +113,41 @@ impl<'a> Simulator for Interpreter<'a> {
     }
 
     fn step(&mut self) {
-        // calculate all next states and then
+        // calculate all next states
+        let next_states = self
+            .sys
+            .states
+            .iter()
+            .map(|s| s.next.map(|n| eval_expr(self.ctx, &self.data, n)))
+            .collect::<Vec<_>>();
 
-        // assign next state to current state
-        todo!()
+        // assign next value to store
+        for (state, next_value) in self.sys.states.iter().zip(next_states.into_iter()) {
+            if let Some(value) = next_value {
+                self.data.update(state.symbol, value);
+            }
+        }
+
+        // increment step cout
+        self.step_count += 1;
     }
 
-    fn set<'b>(&mut self, expr: ExprRef, value: impl Into<BitVecValueRef<'b>>) {}
+    fn set<'b>(&mut self, expr: ExprRef, value: impl Into<BitVecValueRef<'b>>) {
+        self.data.update_bv(expr, value);
+    }
 
-    fn get(&self, _expr: ExprRef) -> Option<BitVecValueRef<'_>> {
-        todo!()
+    fn get(&self, expr: ExprRef) -> Option<BitVecValue> {
+        if !self.ctx.get(expr).is_bv_type() {
+            return None;
+        }
+        Some(eval_bv_expr(self.ctx, &self.data, expr))
     }
 
     fn get_element<'b>(
         &self,
         _expr: ExprRef,
         _index: impl Into<BitVecValueRef<'b>>,
-    ) -> Option<BitVecValueRef<'_>> {
+    ) -> Option<BitVecValue> {
         todo!()
     }
 

@@ -58,6 +58,13 @@ impl SymbolValueStore {
         self.arrays[raw_index as usize] = value;
     }
 
+    pub fn update(&mut self, symbol: ExprRef, value: Value) {
+        match value {
+            Value::Array(value) => self.update_array(symbol, value),
+            Value::BitVec(value) => self.update_bv(symbol, &value),
+        }
+    }
+
     pub fn clear(&mut self) {
         self.arrays.clear();
         self.bit_vec_words.clear();
@@ -169,7 +176,7 @@ pub fn eval_bv_expr(
         "Not a bit-vector expression: {:?}",
         ctx.get(expr)
     );
-    let (mut bv_stack, array_stack) = eval_expr(ctx, symbols, expr);
+    let (mut bv_stack, array_stack) = eval_expr_internal(ctx, symbols, expr);
     debug_assert!(array_stack.is_empty());
     debug_assert_eq!(bv_stack.len(), 1);
     bv_stack.pop().unwrap()
@@ -185,13 +192,32 @@ pub fn eval_array_expr(
         "Not an array expression: {:?}",
         ctx.get(expr)
     );
-    let (bv_stack, mut array_stack) = eval_expr(ctx, symbols, expr);
+    let (bv_stack, mut array_stack) = eval_expr_internal(ctx, symbols, expr);
     debug_assert!(bv_stack.is_empty());
     debug_assert_eq!(array_stack.len(), 1);
     array_stack.pop().unwrap()
 }
 
-fn eval_expr(
+#[derive(Clone)]
+pub enum Value {
+    Array(ArrayValue),
+    BitVec(BitVecValue),
+}
+
+pub fn eval_expr(ctx: &Context, symbols: &(impl GetExprValue + ?Sized), expr: ExprRef) -> Value {
+    let (mut bv_stack, mut array_stack) = eval_expr_internal(ctx, symbols, expr);
+    debug_assert_eq!(bv_stack.len() + array_stack.len(), 1);
+    if let Some(value) = bv_stack.pop() {
+        debug_assert!(ctx.get(expr).is_bv_type());
+        Value::BitVec(value)
+    } else {
+        let value = array_stack.pop().unwrap();
+        debug_assert!(ctx.get(expr).is_array_type());
+        Value::Array(value)
+    }
+}
+
+fn eval_expr_internal(
     ctx: &Context,
     values: &(impl GetExprValue + ?Sized),
     expr: ExprRef,

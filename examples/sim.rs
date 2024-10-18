@@ -8,7 +8,7 @@ use num_bigint::BigUint;
 use num_traits::Num;
 use patronus::ir::*;
 use patronus::mc::Simulator;
-use patronus::sim::interpreter::{InitKind, Interpreter};
+use patronus::sim::interpreter::Interpreter;
 use patronus::*;
 use std::collections::HashMap;
 use std::io::BufRead;
@@ -71,10 +71,11 @@ fn main() {
 
     match args.init {
         Init::Zero => {
-            sim.init(InitKind::Zero);
+            sim.init();
         }
         Init::Random => {
-            sim.init(InitKind::Random(0));
+            println!("WARN: random initialization is currently not supported");
+            sim.init();
         }
     }
     let delta_load = std::time::Instant::now() - start_load;
