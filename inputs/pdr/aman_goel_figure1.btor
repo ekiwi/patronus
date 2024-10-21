@@ -7,10 +7,17 @@
 6 init 3 5 4
 7 state 3 v
 8 init 3 7 4
-9 add 3 7 4
-10 add 3 5 7
-11 ult 1 5 7
-12 ite 3 11 10 9
-13 next 3 5 12
-14 next 3 7 9
+9 add 3 5 7
+10 neq 1 9 4
+11 const 1 1
+12 not 1 10
+13 and 1 11 12
+14 bad 13 aman_goel_figure1.v:12.15-12.40
+15 add 3 7 4
+16 add 3 5 7
+17 ult 1 5 7
+18 ite 3 17 16 15
+19 next 3 5 18
+20 add 3 7 4
+21 next 3 7 20
 ; end of yosys output

@@ -646,9 +646,8 @@ impl TransitionSystemEncoding for UnrollSmtEncoding {
             let out = convert_tpe(smt_ctx, state.symbol.get_type(ctx));
             match state.next {
                 Some(value) => {
-                    let is_const = value == state.symbol;
                     // constant states never change from their initial value
-                    if !is_const {
+                    if !state.is_const() {
                         let body = self.expr_in_step(ctx, smt_ctx, value, prev_step);
                         smt_ctx.define_const(escape_smt_identifier(&name), out, body)?;
                     }

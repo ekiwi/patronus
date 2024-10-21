@@ -25,6 +25,8 @@ struct Args {
     #[arg(short, long)]
     dump_smt: bool,
     #[arg(short, long)]
+    skip_simplify: bool,
+    #[arg(short, long)]
     pdr: bool,
     #[arg(value_name = "BTOR2", index = 1)]
     filename: String,
@@ -38,7 +40,16 @@ pub enum Solver {
 
 fn main() -> ExitCode {
     let args = Args::parse();
-    let (mut ctx, sys) = btor2::parse_file(&args.filename).expect("Failed to load btor2 file!");
+    let (mut ctx, mut sys) = btor2::parse_file(&args.filename).expect("Failed to load btor2 file!");
+
+    if !args.skip_simplify {
+        if args.verbose {
+            println!("simplifying...")
+        };
+        // replace_anonymous_inputs_with_zero(&mut ctx, &mut sys);
+        simplify_expressions(&mut ctx, &mut sys);
+    }
+
     if args.verbose {
         println!("Loaded: {}", sys.name);
         println!("{}", sys.serialize_to_str(&ctx));

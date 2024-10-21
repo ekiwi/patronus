@@ -7,6 +7,7 @@ module example(clk);
     if (u < v) u <= u + v;
     else u <= v + `W'd1;
     v <= v + `W'd1;
-    assert((u + v) != `W'd1);
   end
+
+  always @(*) assert ((u + v) != `W'd1);
 endmodule
