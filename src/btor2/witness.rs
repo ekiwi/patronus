@@ -1,6 +1,7 @@
 // Copyright 2023 The Regents of the University of California
+// Copyright 2024 Cornell University
 // released under BSD 3-Clause License
-// author: Kevin Laeufer <laeufer@berkeley.edu>
+// author: Kevin Laeufer <laeufer@cornell.edu>
 
 use crate::btor2::parse::tokenize_line;
 use crate::ir;
@@ -154,7 +155,7 @@ fn update_value(old: &Option<Value>, new: Value) -> Value {
             assert_eq!(oa.tpe, na.tpe);
             let mut updates = oa.updates.clone();
             updates.append(&mut na.updates);
-            WitnessValue::Array(WitnessArray {
+            Value::Array(WitnessArray {
                 tpe: oa.tpe,
                 default: oa.default.clone(),
                 updates,
@@ -171,7 +172,7 @@ fn ensure_space<T: Default + Clone>(v: &mut Vec<T>, index: usize) {
     }
 }
 
-fn parse_assignment<'a>(tokens: &'a [&'a str]) -> (usize, &'a str, WitnessValue) {
+fn parse_assignment<'a>(tokens: &'a [&'a str]) -> (usize, &'a str, Value) {
     let is_array = match tokens.len() {
         3 => false, // its a bit vector
         4 => true,
@@ -208,10 +209,10 @@ fn parse_assignment<'a>(tokens: &'a [&'a str]) -> (usize, &'a str, WitnessValue)
             default: None,
             updates: vec![(index_value, data_value)],
         };
-        (index, name, WitnessValue::Array(value))
+        (index, name, Value::Array(value))
     } else {
         let (value, width) = parse_big_uint_from_bit_string(tokens[1]);
-        (index, name, WitnessValue::Scalar(value, width))
+        (index, name, Value::Scalar(value, width))
     }
 }
 
@@ -302,7 +303,7 @@ fn print_witness_value(
     suffix: &str,
 ) -> std::io::Result<()> {
     match value {
-        WitnessValue::Scalar(value, width) => {
+        Value::Scalar(value, width) => {
             writeln!(
                 out,
                 "{id} {} {}{suffix}",
@@ -310,7 +311,7 @@ fn print_witness_value(
                 name
             )
         }
-        WitnessValue::Array(a) => {
+        Value::Array(a) => {
             match a.default {
                 None => {} // nothing to do
                 Some(_) => todo!("serialize array default value in witness"),

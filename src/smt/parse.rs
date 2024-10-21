@@ -1,0 +1,188 @@
+// Copyright 2023 The Regents of the University of California
+// Copyright 2024 Cornell University
+// released under BSD 3-Clause License
+// author: Kevin Laeufer <laeufer@cornell.edu>
+
+use crate::ir::*;
+use baa::{BitVecValue, WidthInt};
+use easy_smt as smt;
+
+pub fn parse_smt_bit_vec(smt_ctx: &smt::Context, expr: smt::SExpr) -> Option<BitVecValue> {
+    let data = smt_ctx.get(expr);
+    match data {
+        smt::SExprData::Atom(value) => Some(smt_bit_vec_str_to_value(value)),
+        // unwraps expressions like: ((a true))
+        smt::SExprData::List([inner]) => parse_smt_bit_vec(smt_ctx, *inner),
+        // unwraps expressions like: (a true)
+        smt::SExprData::List([_, value]) => parse_smt_bit_vec(smt_ctx, *value),
+        _ => None,
+    }
+}
+
+pub fn parse_smt_array(smt_ctx: &smt::Context, expr: smt::SExpr) -> Option<baa::ArrayValue> {
+    let data = smt_ctx.get(expr);
+    match data {
+        smt::SExprData::List([p0, p1]) => parse_smt_as_const(smt_ctx, *p0, *p1),
+        smt::SExprData::List([id, array, index, value]) => {
+            parse_smt_store(smt_ctx, *id, *array, *index, *value)
+        }
+        _ => todo!("Unexpected array expression: {}", smt_ctx.display(expr)),
+    }
+}
+
+fn parse_smt_as_const(
+    smt_ctx: &smt::Context,
+    p0: smt::SExpr,
+    p1: smt::SExpr,
+) -> Option<baa::ArrayValue> {
+    match smt_ctx.get(p0) {
+        smt::SExprData::List([as_str, const_str, array_tpe]) => {
+            parse_smt_id(smt_ctx, *as_str, "as")?;
+            parse_smt_id(smt_ctx, *const_str, "const")?;
+            let tpe = parse_smt_array_tpe(smt_ctx, *array_tpe)?;
+            let (default_value, _width) = parse_smt_bit_vec(smt_ctx, p1)?;
+            Some(WitnessArray {
+                tpe,
+                default: Some(default_value),
+                updates: Vec::new(),
+            })
+        }
+        _ => None,
+    }
+}
+
+fn parse_smt_store(
+    smt_ctx: &smt::Context,
+    id: smt::SExpr,
+    array: smt::SExpr,
+    index: smt::SExpr,
+    value: smt::SExpr,
+) -> Option<baa::ArrayValue> {
+    parse_smt_id(smt_ctx, id, "store")?;
+    let mut inner = parse_smt_array(smt_ctx, array)?;
+    let (index_val, _) = parse_smt_bit_vec(smt_ctx, index)?;
+    let (data_val, _) = parse_smt_bit_vec(smt_ctx, value)?;
+    inner.add_update(index_val, data_val);
+    Some(inner)
+}
+
+fn parse_smt_array_tpe(smt_ctx: &smt::Context, expr: smt::SExpr) -> Option<ArrayType> {
+    match smt_ctx.get(expr) {
+        smt::SExprData::List([array, index, data]) => {
+            parse_smt_id(smt_ctx, *array, "Array")?;
+            let index_width = parse_smt_bit_vec_tpe(smt_ctx, *index)?;
+            let data_width = parse_smt_bit_vec_tpe(smt_ctx, *data)?;
+            Some(ArrayType {
+                index_width,
+                data_width,
+            })
+        }
+        _ => None,
+    }
+}
+
+fn parse_smt_bit_vec_tpe(smt_ctx: &smt::Context, expr: smt::SExpr) -> Option<WidthInt> {
+    match smt_ctx.get(expr) {
+        smt::SExprData::List([under_score, bit_vec, width]) => {
+            parse_smt_id(smt_ctx, *under_score, "_")?;
+            parse_smt_id(smt_ctx, *bit_vec, "BitVec")?;
+            match smt_ctx.get(*width) {
+                smt::SExprData::Atom(val) => Some(WidthInt::from_str_radix(val, 10).unwrap()),
+                _ => None,
+            }
+        }
+        _ => None,
+    }
+}
+
+fn parse_smt_id(smt_ctx: &smt::Context, expr: smt::SExpr, expected: &str) -> Option<()> {
+    match smt_ctx.get(expr) {
+        smt::SExprData::Atom(val) if val == expected => Some(()),
+        _ => None,
+    }
+}
+
+fn smt_bit_vec_str_to_value(a: &str) -> (BigUint, WidthInt) {
+    if let Some(suffix) = a.strip_prefix("#b") {
+        parse_big_uint_from_bit_string(suffix)
+    } else if let Some(_suffix) = a.strip_prefix("#x") {
+        todo!("hex string: {a}")
+    } else if a == "true" {
+        (BigUint::one(), 1)
+    } else if a == "false" {
+        (BigUint::zero(), 1)
+    } else {
+        todo!("decimal string: {a}")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use easy_smt::*;
+
+    #[test]
+    fn test_parse_smt_array_const_and_store() {
+        let ctx = ContextBuilder::new().build().unwrap();
+        let data_width = 32usize;
+        let index_width = 5usize;
+        let default_value = 0b110011u64;
+        let tpe = ctx.array_sort(
+            ctx.bit_vec_sort(ctx.numeral(index_width)),
+            ctx.bit_vec_sort(ctx.numeral(data_width)),
+        );
+        let default = ctx.binary(data_width, default_value);
+
+        // check the base expression
+        // ((as const (Array (_ BitVec 5) (_ BitVec 32))) #b00000000000000000000000000110011)
+        let base = ctx.const_array(tpe, default);
+        let base_val = parse_smt_array(&ctx, base).unwrap();
+        assert_eq!(base_val.default, Some(BigUint::from(default_value)));
+
+        // store
+        // (store <base> #b01110 #x00000000)
+        let store_index: usize = 14;
+        let store_data: usize = 0;
+        let store = ctx.store(
+            base,
+            ctx.binary(index_width, store_index),
+            ctx.binary(data_width, store_data),
+        );
+        let store_val = parse_smt_array(&ctx, store).unwrap();
+        assert_eq!(store_val.default, Some(BigUint::from(default_value)));
+        assert_eq!(
+            store_val.updates,
+            vec![(BigUint::from(store_index), BigUint::from(store_data))]
+        );
+
+        // two stores
+        // (store <store> #b01110 #x00000011)
+        let store2_index: usize = 14;
+        let store2_data: usize = 3;
+        let store2 = ctx.store(
+            store,
+            ctx.binary(index_width, store2_index),
+            ctx.binary(data_width, store2_data),
+        );
+        let store2_val = parse_smt_array(&ctx, store2).unwrap();
+        assert_eq!(store2_val.default, Some(BigUint::from(default_value)));
+        assert_eq!(
+            store2_val.updates,
+            vec![
+                // should be overwritten
+                (BigUint::from(store2_index), BigUint::from(store2_data))
+            ]
+        );
+    }
+
+    #[test]
+    fn test_yices2_result_parsing() {
+        // yices will produce responses like this for a `get-value` call:
+        // ((n9@0 true))
+        let ctx = ContextBuilder::new().build().unwrap();
+        let r0 = ctx.list(vec![ctx.list(vec![ctx.atom("n9@0"), ctx.true_()])]);
+        let (val0, width0) = parse_smt_bit_vec(&ctx, r0).unwrap();
+        assert_eq!(val0, BigUint::from(1u8));
+        assert_eq!(width0, 1);
+    }
+}

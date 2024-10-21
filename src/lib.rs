@@ -8,3 +8,4 @@ pub mod btor2;
 pub mod ir;
 pub mod mc;
 pub mod sim;
+mod smt;
