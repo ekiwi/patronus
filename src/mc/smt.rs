@@ -3,11 +3,9 @@
 // author: Kevin Laeufer <laeufer@berkeley.edu>
 
 use crate::ir::*;
-use crate::mc::{parse_big_uint_from_bit_string, Witness, WitnessArray, WitnessValue};
-use baa::{BitVecOps, WidthInt};
+use crate::mc::Witness;
+use baa::{BitVecOps, BitVecValue, WidthInt};
 use easy_smt as smt;
-use num_bigint::BigUint;
-use num_traits::{One, Zero};
 use std::borrow::Cow;
 use std::collections::HashSet;
 
@@ -272,7 +270,7 @@ pub fn get_smt_value(
     Ok(res)
 }
 
-fn parse_smt_bit_vec(smt_ctx: &smt::Context, expr: smt::SExpr) -> Option<(BigUint, WidthInt)> {
+fn parse_smt_bit_vec(smt_ctx: &smt::Context, expr: smt::SExpr) -> Option<BitVecValue> {
     let data = smt_ctx.get(expr);
     match data {
         smt::SExprData::Atom(value) => Some(smt_bit_vec_str_to_value(value)),

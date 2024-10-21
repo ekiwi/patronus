@@ -10,7 +10,7 @@
 use crate::ir::{Context, Expr, ExprRef, ForEachChild, TypeCheck};
 use baa::{
     ArrayMutOps, ArrayOps, ArrayValue, BitVecMutOps, BitVecOps, BitVecValue, BitVecValueIndex,
-    BitVecValueRef, IndexToMutRef, IndexToRef, Word,
+    BitVecValueRef, IndexToMutRef, IndexToRef, Value, Word,
 };
 use smallvec::SmallVec;
 use std::collections::HashMap;
@@ -196,12 +196,6 @@ pub fn eval_array_expr(
     debug_assert!(bv_stack.is_empty());
     debug_assert_eq!(array_stack.len(), 1);
     array_stack.pop().unwrap()
-}
-
-#[derive(Clone)]
-pub enum Value {
-    Array(ArrayValue),
-    BitVec(BitVecValue),
 }
 
 pub fn eval_expr(ctx: &Context, symbols: &(impl GetExprValue + ?Sized), expr: ExprRef) -> Value {

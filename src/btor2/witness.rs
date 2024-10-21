@@ -4,9 +4,8 @@
 
 use crate::btor2::parse::tokenize_line;
 use crate::ir;
-use crate::mc::{parse_big_uint_from_bit_string, Witness, WitnessArray, WitnessValue};
-use baa::WidthInt;
-use num_bigint::BigUint;
+use crate::mc::Witness;
+use baa::{Value, WidthInt};
 use std::borrow::Cow;
 use std::io::{BufRead, Write};
 
@@ -147,10 +146,10 @@ pub fn parse_witnesses(input: &mut impl BufRead, parse_max: usize) -> Result<Vec
 }
 
 // combines witness values (this is mostly relevant for arrays which might have several updates)
-fn update_value(old: &Option<WitnessValue>, new: WitnessValue) -> WitnessValue {
+fn update_value(old: &Option<Value>, new: Value) -> Value {
     match (old, new) {
         (None, n) => n,
-        (Some(WitnessValue::Array(oa)), WitnessValue::Array(mut na)) => {
+        (Some(Value::Array(oa)), Value::Array(mut na)) => {
             assert!(na.default.is_none(), "cannot overwrite the default value!");
             assert_eq!(oa.tpe, na.tpe);
             let mut updates = oa.updates.clone();
@@ -297,7 +296,7 @@ fn to_bit_string(value: &BigUint, width: WidthInt) -> Option<String> {
 
 fn print_witness_value(
     out: &mut impl Write,
-    value: &WitnessValue,
+    value: &Value,
     name: &str,
     id: usize,
     suffix: &str,

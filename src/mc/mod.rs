@@ -11,4 +11,4 @@ pub use smt::{
     SmtModelCheckerOptions, SmtSolverCmd, TransitionSystemEncoding, UnrollSmtEncoding,
     BITWUZLA_CMD, YICES2_CMD,
 };
-pub use types::{parse_big_uint_from_bit_string, Witness, WitnessArray, WitnessValue};
+pub use types::Witness;
