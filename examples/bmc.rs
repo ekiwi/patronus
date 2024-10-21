@@ -5,6 +5,7 @@
 use clap::{Parser, ValueEnum};
 use patronus::ir::*;
 use patronus::*;
+use std::process::ExitCode;
 
 #[derive(Parser, Debug)]
 #[command(name = "bmc")]
@@ -23,6 +24,8 @@ struct Args {
     verbose: bool,
     #[arg(short, long)]
     dump_smt: bool,
+    #[arg(short, long)]
+    pdr: bool,
     #[arg(value_name = "BTOR2", index = 1)]
     filename: String,
 }
@@ -33,7 +36,7 @@ pub enum Solver {
     Yices2,
 }
 
-fn main() {
+fn main() -> ExitCode {
     let args = Args::parse();
     let (mut ctx, sys) = btor2::parse_file(&args.filename).expect("Failed to load btor2 file!");
     if args.verbose {
@@ -58,14 +61,27 @@ fn main() {
             solver.name
         );
     }
-    let checker = mc::SmtModelChecker::new(solver, checker_opts);
-    let res = checker.check(&mut ctx, &sys, k_max).unwrap();
+
+    let res = if args.pdr {
+        let checker = mc::Pdr::new(solver, checker_opts);
+        checker.check(&mut ctx, &sys).unwrap()
+    } else {
+        let checker = mc::SmtModelChecker::new(solver, checker_opts);
+        checker.check(&mut ctx, &sys, k_max).unwrap()
+    };
+
     match res {
         mc::ModelCheckResult::Success => {
             println!("unsat");
+            ExitCode::SUCCESS
+        }
+        mc::ModelCheckResult::Unknown => {
+            println!("Failed to produce a result!");
+            ExitCode::FAILURE
         }
         mc::ModelCheckResult::Fail(wit) => {
             btor2::print_witness(&mut std::io::stdout(), &wit).unwrap();
+            ExitCode::SUCCESS
         }
     }
 }

@@ -21,7 +21,9 @@ pub struct SmtSolverCmd {
 
 pub const BITWUZLA_CMD: SmtSolverCmd = SmtSolverCmd {
     name: "bitwuzla",
-    args: &["--smt2", "--incremental"],
+    // older versions take the --smt2 and --incremental argument
+    // args: &["--smt2", "--incremental"],
+    args: &[],
     supports_uf: false,
     supports_check_assuming: true,
 };
@@ -383,6 +385,7 @@ fn smt_bit_vec_str_to_value(a: &str) -> (BigUint, WidthInt) {
 
 pub enum ModelCheckResult {
     Success,
+    Unknown,
     Fail(Witness),
 }
 
