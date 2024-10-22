@@ -4,7 +4,7 @@
 // author: Kevin Laeufer <laeufer@cornell.edu>
 
 use crate::ir::*;
-use baa::{BitVecValue, WidthInt};
+use baa::{ArrayMutOps, ArrayValue, BitVecValue, WidthInt};
 use easy_smt as smt;
 
 pub fn parse_smt_bit_vec(smt_ctx: &smt::Context, expr: smt::SExpr) -> Option<BitVecValue> {
@@ -34,18 +34,15 @@ fn parse_smt_as_const(
     smt_ctx: &smt::Context,
     p0: smt::SExpr,
     p1: smt::SExpr,
-) -> Option<baa::ArrayValue> {
+) -> Option<ArrayValue> {
     match smt_ctx.get(p0) {
         smt::SExprData::List([as_str, const_str, array_tpe]) => {
             parse_smt_id(smt_ctx, *as_str, "as")?;
             parse_smt_id(smt_ctx, *const_str, "const")?;
             let tpe = parse_smt_array_tpe(smt_ctx, *array_tpe)?;
-            let (default_value, _width) = parse_smt_bit_vec(smt_ctx, p1)?;
-            Some(WitnessArray {
-                tpe,
-                default: Some(default_value),
-                updates: Vec::new(),
-            })
+            let default_value = parse_smt_bit_vec(smt_ctx, p1)?;
+            let array = ArrayValue::new_sparse(tpe.index_width, &default_value);
+            Some(array)
         }
         _ => None,
     }
@@ -60,9 +57,9 @@ fn parse_smt_store(
 ) -> Option<baa::ArrayValue> {
     parse_smt_id(smt_ctx, id, "store")?;
     let mut inner = parse_smt_array(smt_ctx, array)?;
-    let (index_val, _) = parse_smt_bit_vec(smt_ctx, index)?;
-    let (data_val, _) = parse_smt_bit_vec(smt_ctx, value)?;
-    inner.add_update(index_val, data_val);
+    let index = parse_smt_bit_vec(smt_ctx, index)?;
+    let data = parse_smt_bit_vec(smt_ctx, value)?;
+    inner.store(&index, &data);
     Some(inner)
 }
 
@@ -102,15 +99,15 @@ fn parse_smt_id(smt_ctx: &smt::Context, expr: smt::SExpr, expected: &str) -> Opt
     }
 }
 
-fn smt_bit_vec_str_to_value(a: &str) -> (BigUint, WidthInt) {
+fn smt_bit_vec_str_to_value(a: &str) -> BitVecValue {
     if let Some(suffix) = a.strip_prefix("#b") {
-        parse_big_uint_from_bit_string(suffix)
+        BitVecValue::from_bit_str(suffix)
     } else if let Some(_suffix) = a.strip_prefix("#x") {
         todo!("hex string: {a}")
     } else if a == "true" {
-        (BigUint::one(), 1)
+        BitVecValue::tru()
     } else if a == "false" {
-        (BigUint::zero(), 1)
+        BitVecValue::fals()
     } else {
         todo!("decimal string: {a}")
     }

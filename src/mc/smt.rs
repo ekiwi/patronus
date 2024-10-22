@@ -4,6 +4,7 @@
 // author: Kevin Laeufer <laeufer@cornell.edu>
 
 use crate::ir::*;
+use crate::mc::types::InitValue;
 use crate::mc::Witness;
 use crate::smt::*;
 use baa::*;
@@ -194,7 +195,18 @@ impl SmtModelChecker {
             let value = get_smt_value(smt_ctx, sym_at, state.symbol.get_type(ctx))?;
             // we assume that state ids are monotonically increasing with +1
             assert_eq!(wit.init.len(), state_cnt);
-            wit.init.push(Some(value));
+            // convert to a witness value
+            let wit_value = match value {
+                Value::Array(v) => {
+                    // TODO: narrow down the relevant indices
+                    let indices = (0..v.num_elements())
+                        .map(|ii| BitVecValue::from_u64(ii as u64, v.index_width()))
+                        .collect::<Vec<_>>();
+                    InitValue::Array(v, indices)
+                }
+                Value::BitVec(v) => InitValue::BitVec(v),
+            };
+            wit.init.push(wit_value);
             // also save state name
             wit.init_names
                 .push(Some(state.symbol.get_symbol_name(ctx).unwrap().to_string()))
@@ -239,7 +251,7 @@ pub fn check_assuming(
     }
 }
 
-// pops context for solver that do not not support check assuming
+// pops context for solver that do not support check assuming
 #[inline]
 pub fn check_assuming_end(
     smt_ctx: &mut smt::Context,

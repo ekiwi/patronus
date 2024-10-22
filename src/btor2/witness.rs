@@ -5,8 +5,8 @@
 
 use crate::btor2::parse::tokenize_line;
 use crate::ir;
-use crate::mc::Witness;
-use baa::{Value, WidthInt};
+use crate::mc::{InitValue, Witness};
+use baa::{ArrayMutOps, ArrayOps, ArrayValue, BitVecOps, BitVecValue, Value, WidthInt};
 use std::borrow::Cow;
 use std::io::{BufRead, Write};
 
@@ -172,7 +172,7 @@ fn ensure_space<T: Default + Clone>(v: &mut Vec<T>, index: usize) {
     }
 }
 
-fn parse_assignment<'a>(tokens: &'a [&'a str]) -> (usize, &'a str, Value) {
+fn parse_assignment<'a>(tokens: &'a [&'a str]) -> (usize, &'a str, InitValue) {
     let is_array = match tokens.len() {
         3 => false, // its a bit vector
         4 => true,
@@ -198,21 +198,15 @@ fn parse_assignment<'a>(tokens: &'a [&'a str]) -> (usize, &'a str, Value) {
     if is_array {
         let index_str = tokens[1];
         assert!(index_str.starts_with('[') && index_str.ends_with(']'));
-        let (index_value, index_width) =
-            parse_big_uint_from_bit_string(&index_str[1..index_str.len() - 1]);
-        let (data_value, data_width) = parse_big_uint_from_bit_string(tokens[2]);
-        let value = WitnessArray {
-            tpe: ir::ArrayType {
-                index_width,
-                data_width,
-            },
-            default: None,
-            updates: vec![(index_value, data_value)],
-        };
-        (index, name, Value::Array(value))
+        let index = BitVecValue::from_bit_str(&index_str[1..index_str.len() - 1]);
+        let data = BitVecValue::from_bit_str(tokens[2]);
+        let mut array = ArrayValue::new_sparse(index.width(), &BitVecValue::zero(data.width()));
+        array.store(&index, &data);
+        let indices = vec![index];
+        (index, name, InitValue::Array(array, indices))
     } else {
-        let (value, width) = parse_big_uint_from_bit_string(tokens[1]);
-        (index, name, Value::Scalar(value, width))
+        let value = BitVecValue::from_bit_str(tokens[1]);
+        (index, name, InitValue::BitVec(value))
     }
 }
 
@@ -240,19 +234,17 @@ pub fn print_witness(out: &mut impl Write, witness: &Witness) -> std::io::Result
     if !witness.init.is_empty() {
         assert_eq!(witness.init.len(), witness.init_names.len());
         writeln!(out, "#0")?;
-        for (id, (maybe_value, maybe_name)) in witness
+        for (id, (value, maybe_name)) in witness
             .init
             .iter()
             .zip(witness.init_names.iter())
             .enumerate()
         {
-            if let Some(value) = maybe_value {
-                let name = maybe_name
-                    .as_ref()
-                    .map(Cow::from)
-                    .unwrap_or(Cow::from(format!("state_{}", id)));
-                print_witness_value(out, value, &name, id, "#0")?;
-            }
+            let name = maybe_name
+                .as_ref()
+                .map(Cow::from)
+                .unwrap_or(Cow::from(format!("state_{}", id)));
+            print_witness_init_value(out, value, &name, id, "#0")?;
         }
     }
 
@@ -269,7 +261,7 @@ pub fn print_witness(out: &mut impl Write, witness: &Witness) -> std::io::Result
                     .as_ref()
                     .map(Cow::from)
                     .unwrap_or(Cow::from(format!("input_{}", id)));
-                print_witness_value(out, value, &name, id, &suffix)?;
+                print_witness_input_value(out, value, &name, id, &suffix)?;
             }
         }
     }
@@ -295,7 +287,7 @@ fn to_bit_string(value: &BigUint, width: WidthInt) -> Option<String> {
     }
 }
 
-fn print_witness_value(
+fn print_witness_input_value(
     out: &mut impl Write,
     value: &Value,
     name: &str,
@@ -303,29 +295,39 @@ fn print_witness_value(
     suffix: &str,
 ) -> std::io::Result<()> {
     match value {
-        Value::Scalar(value, width) => {
-            writeln!(
-                out,
-                "{id} {} {}{suffix}",
-                to_bit_string(value, *width).unwrap(),
-                name
-            )
+        Value::BitVec(value) => {
+            writeln!(out, "{id} {} {}{suffix}", value.to_bit_str(), name)
         }
-        Value::Array(a) => {
-            match a.default {
-                None => {} // nothing to do
-                Some(_) => todo!("serialize array default value in witness"),
-            }
-            for (index, value) in a.updates.iter() {
+        Value::Array(_) => {
+            todo!("add support for array type inputs")
+        }
+    }
+}
+
+fn print_witness_init_value(
+    out: &mut impl Write,
+    value: &InitValue,
+    name: &str,
+    id: usize,
+    suffix: &str,
+) -> std::io::Result<()> {
+    match value {
+        InitValue::BitVec(value) => {
+            writeln!(out, "{id} {} {}{suffix}", value.to_bit_str(), name)
+        }
+        InitValue::Array(a, indices) => {
+            for index in indices.iter() {
+                let value = a.select(index);
                 writeln!(
                     out,
                     "{id} [{}] {} {}{suffix}",
-                    to_bit_string(index, a.tpe.index_width).unwrap(),
-                    to_bit_string(value, a.tpe.data_width).unwrap(),
+                    index.to_bit_str(),
+                    value.to_bit_str(),
                     name
                 )?;
             }
             Ok(())
         }
+        InitValue::None => Ok(()),
     }
 }
