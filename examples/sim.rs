@@ -4,8 +4,6 @@
 
 use baa::{BitVecOps, BitVecValue, WidthInt};
 use clap::{arg, Parser, ValueEnum};
-use num_bigint::BigUint;
-use num_traits::Num;
 use patronus::ir::*;
 use patronus::mc::Simulator;
 use patronus::sim::interpreter::Interpreter;
@@ -211,9 +209,8 @@ fn do_step(
                 // apply input
                 let trimmed = cell.trim();
                 if trimmed.to_ascii_lowercase() != "x" {
-                    let expected_big = BigUint::from_str_radix(trimmed, 10).unwrap();
                     let width = output.3;
-                    let expected = BitVecValue::from_big_uint(&expected_big, width);
+                    let expected = BitVecValue::from_str_radix(trimmed, 10, width).unwrap();
                     let actual = sim.get(output.1).unwrap();
                     assert_eq!(expected, actual, "{}@{step_id}", output.2);
                 }

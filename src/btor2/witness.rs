@@ -4,9 +4,8 @@
 // author: Kevin Laeufer <laeufer@cornell.edu>
 
 use crate::btor2::parse::tokenize_line;
-use crate::ir;
 use crate::mc::{InitValue, Witness};
-use baa::{ArrayMutOps, ArrayOps, ArrayValue, BitVecOps, BitVecValue, Value, WidthInt};
+use baa::*;
 use std::borrow::Cow;
 use std::io::{BufRead, Write};
 
@@ -108,7 +107,7 @@ pub fn parse_witnesses(input: &mut impl BufRead, parse_max: usize) -> Result<Vec
                         // we ignore anything but the starting state
                         let (ii, name, value) = parse_assignment(&tok.tokens);
                         ensure_space(&mut wit.init, ii);
-                        wit.init[ii] = Some(update_value(&wit.init[ii], value));
+                        wit.init[ii] = update_value(wit.init[ii].clone(), value);
                         ensure_space(&mut wit.init_names, ii);
                         wit.init_names[ii] = Some(name.to_string());
                     }
@@ -130,7 +129,8 @@ pub fn parse_witnesses(input: &mut impl BufRead, parse_max: usize) -> Result<Vec
                     let tok = tokenize_line(line);
                     let (ii, name, value) = parse_assignment(&tok.tokens);
                     ensure_space(&mut inputs, ii);
-                    inputs[ii] = Some(update_value(&inputs[ii], value));
+                    debug_assert!(inputs[ii].is_none());
+                    inputs[ii] = value.try_into().ok();
                     if wit.inputs.is_empty() {
                         // the first time around, we save the names
                         ensure_space(&mut wit.input_names, ii);
@@ -147,19 +147,18 @@ pub fn parse_witnesses(input: &mut impl BufRead, parse_max: usize) -> Result<Vec
 }
 
 // combines witness values (this is mostly relevant for arrays which might have several updates)
-fn update_value(old: &Option<Value>, new: Value) -> Value {
+fn update_value(old: InitValue, new: InitValue) -> InitValue {
     match (old, new) {
-        (None, n) => n,
-        (Some(Value::Array(oa)), Value::Array(mut na)) => {
-            assert!(na.default.is_none(), "cannot overwrite the default value!");
-            assert_eq!(oa.tpe, na.tpe);
-            let mut updates = oa.updates.clone();
-            updates.append(&mut na.updates);
-            Value::Array(WitnessArray {
-                tpe: oa.tpe,
-                default: oa.default.clone(),
-                updates,
-            })
+        (InitValue::None, n) => n,
+        (InitValue::Array(mut oa, mut oi), InitValue::Array(na, ni)) => {
+            for index in ni.iter() {
+                oa.store(index, &na.select(index));
+            }
+            // combine indices
+            oi.extend_from_slice(&ni);
+            oi.sort();
+            oi.dedup();
+            InitValue::Array(oa, oi)
         }
         (o, n) => panic!("Unexpected combination: {o:?} {n:?}"),
     }
@@ -198,14 +197,15 @@ fn parse_assignment<'a>(tokens: &'a [&'a str]) -> (usize, &'a str, InitValue) {
     if is_array {
         let index_str = tokens[1];
         assert!(index_str.starts_with('[') && index_str.ends_with(']'));
-        let index = BitVecValue::from_bit_str(&index_str[1..index_str.len() - 1]);
-        let data = BitVecValue::from_bit_str(tokens[2]);
-        let mut array = ArrayValue::new_sparse(index.width(), &BitVecValue::zero(data.width()));
-        array.store(&index, &data);
-        let indices = vec![index];
+        let array_index = BitVecValue::from_bit_str(&index_str[1..index_str.len() - 1]).unwrap();
+        let data = BitVecValue::from_bit_str(tokens[2]).unwrap();
+        let mut array =
+            ArrayValue::new_sparse(array_index.width(), &BitVecValue::zero(data.width()));
+        array.store(&array_index, &data);
+        let indices = vec![array_index];
         (index, name, InitValue::Array(array, indices))
     } else {
-        let value = BitVecValue::from_bit_str(tokens[1]);
+        let value = BitVecValue::from_bit_str(tokens[1]).unwrap();
         (index, name, InitValue::BitVec(value))
     }
 }
@@ -271,22 +271,6 @@ pub fn print_witness(out: &mut impl Write, witness: &Witness) -> std::io::Result
     Ok(())
 }
 
-/// Returns the value as a fixed with bit string.
-fn to_bit_string(value: &BigUint, width: WidthInt) -> Option<String> {
-    let base_str = value.to_str_radix(2);
-    let base_len = base_str.len();
-    if base_len == width as usize {
-        Some(base_str)
-    } else {
-        // pad with zeros
-        assert!(base_len < width as usize);
-        let zeros = width as usize - base_len;
-        let mut out = "0".repeat(zeros);
-        out.push_str(&base_str);
-        Some(out)
-    }
-}
-
 fn print_witness_input_value(
     out: &mut impl Write,
     value: &Value,
@@ -316,6 +300,18 @@ fn print_witness_init_value(
             writeln!(out, "{id} {} {}{suffix}", value.to_bit_str(), name)
         }
         InitValue::Array(a, indices) => {
+            // sort indices to ensure that we start with the lower index
+            let mut indices = indices.clone();
+            indices.sort_by(|a, b| {
+                if a.is_equal(b) {
+                    std::cmp::Ordering::Equal
+                } else if a.is_greater(b) {
+                    std::cmp::Ordering::Greater
+                } else {
+                    std::cmp::Ordering::Less
+                }
+            });
+
             for index in indices.iter() {
                 let value = a.select(index);
                 writeln!(

@@ -101,9 +101,9 @@ fn parse_smt_id(smt_ctx: &smt::Context, expr: smt::SExpr, expected: &str) -> Opt
 
 fn smt_bit_vec_str_to_value(a: &str) -> BitVecValue {
     if let Some(suffix) = a.strip_prefix("#b") {
-        BitVecValue::from_bit_str(suffix)
-    } else if let Some(_suffix) = a.strip_prefix("#x") {
-        todo!("hex string: {a}")
+        BitVecValue::from_bit_str(suffix).unwrap()
+    } else if let Some(suffix) = a.strip_prefix("#x") {
+        BitVecValue::from_hex_str(suffix).unwrap()
     } else if a == "true" {
         BitVecValue::tru()
     } else if a == "false" {
@@ -116,6 +116,9 @@ fn smt_bit_vec_str_to_value(a: &str) -> BitVecValue {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::smt::serialize::PatronSmtHelpers;
+    use baa::ArrayOps;
+    use baa::*;
     use easy_smt::*;
 
     #[test]
@@ -134,7 +137,15 @@ mod tests {
         // ((as const (Array (_ BitVec 5) (_ BitVec 32))) #b00000000000000000000000000110011)
         let base = ctx.const_array(tpe, default);
         let base_val = parse_smt_array(&ctx, base).unwrap();
-        assert_eq!(base_val.default, Some(BigUint::from(default_value)));
+        for ii in 0..(1 << 5) {
+            assert_eq!(
+                base_val
+                    .select(&BitVecValue::from_u64(ii, 5))
+                    .to_u64()
+                    .unwrap(),
+                default_value
+            );
+        }
 
         // store
         // (store <base> #b01110 #x00000000)
@@ -146,11 +157,17 @@ mod tests {
             ctx.binary(data_width, store_data),
         );
         let store_val = parse_smt_array(&ctx, store).unwrap();
-        assert_eq!(store_val.default, Some(BigUint::from(default_value)));
-        assert_eq!(
-            store_val.updates,
-            vec![(BigUint::from(store_index), BigUint::from(store_data))]
-        );
+        for ii in 0..(1 << 5) {
+            let data = store_val
+                .select(&BitVecValue::from_u64(ii, 5))
+                .to_u64()
+                .unwrap();
+            if ii == store_index as u64 {
+                assert_eq!(data, store_data as u64);
+            } else {
+                assert_eq!(data, default_value);
+            }
+        }
 
         // two stores
         // (store <store> #b01110 #x00000011)
@@ -162,14 +179,18 @@ mod tests {
             ctx.binary(data_width, store2_data),
         );
         let store2_val = parse_smt_array(&ctx, store2).unwrap();
-        assert_eq!(store2_val.default, Some(BigUint::from(default_value)));
-        assert_eq!(
-            store2_val.updates,
-            vec![
-                // should be overwritten
-                (BigUint::from(store2_index), BigUint::from(store2_data))
-            ]
-        );
+        for ii in 0..(1 << 5) {
+            let data = store2_val
+                .select(&BitVecValue::from_u64(ii, 5))
+                .to_u64()
+                .unwrap();
+            if ii == store_index as u64 {
+                assert_eq!(store_index, store2_index);
+                assert_eq!(data, store2_data as u64);
+            } else {
+                assert_eq!(data, default_value);
+            }
+        }
     }
 
     #[test]
@@ -178,8 +199,9 @@ mod tests {
         // ((n9@0 true))
         let ctx = ContextBuilder::new().build().unwrap();
         let r0 = ctx.list(vec![ctx.list(vec![ctx.atom("n9@0"), ctx.true_()])]);
-        let (val0, width0) = parse_smt_bit_vec(&ctx, r0).unwrap();
-        assert_eq!(val0, BigUint::from(1u8));
-        assert_eq!(width0, 1);
+        let val0 = parse_smt_bit_vec(&ctx, r0).unwrap();
+        assert_eq!(val0.to_u64().unwrap(), 1);
+        assert_eq!(val0.width(), 1);
+        assert!(val0.is_tru());
     }
 }

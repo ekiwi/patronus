@@ -368,7 +368,7 @@ fn unescape_smt_identifier(id: &str) -> &str {
     }
 }
 
-trait PatronSmtHelpers {
+pub trait PatronSmtHelpers {
     /// Zero extend a bit-vector.
     fn zext(&self, e: smt::SExpr, by: usize) -> smt::SExpr;
 

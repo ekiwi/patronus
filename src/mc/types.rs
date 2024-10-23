@@ -3,13 +3,27 @@
 // released under BSD 3-Clause License
 // author: Kevin Laeufer <laeufer@cornell.edu>
 
-#[derive(Debug)]
+use baa::Value;
+
+#[derive(Debug, Clone)]
 pub enum InitValue {
     BitVec(baa::BitVecValue),
     /// For arrays we store the array data + the entries that are relevant.
     Array(baa::ArrayValue, Vec<baa::BitVecValue>),
     /// No value available
     None,
+}
+
+impl TryFrom<InitValue> for baa::Value {
+    type Error = ();
+
+    fn try_from(value: InitValue) -> Result<Self, Self::Error> {
+        match value {
+            InitValue::BitVec(v) => Ok(Value::BitVec(v)),
+            InitValue::Array(v, _) => Ok(Value::Array(v)),
+            InitValue::None => Err(()),
+        }
+    }
 }
 
 impl Default for InitValue {
