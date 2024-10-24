@@ -23,7 +23,7 @@ use std::fmt::{Debug, Formatter};
 use std::num::{NonZeroU16, NonZeroU32};
 
 /// Uniquely identifies a [`String`] stored in a [`Context`].
-#[derive(PartialEq, Eq, Clone, Copy, Hash)]
+#[derive(PartialEq, Eq, Clone, Copy, Hash, PartialOrd, Ord)]
 pub struct StringRef(NonZeroU16);
 
 impl Debug for StringRef {
