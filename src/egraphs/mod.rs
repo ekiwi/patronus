@@ -3,7 +3,7 @@
 // author: Kevin Laeufer <laeufer@cornell.edu>
 use crate::ir;
 use baa::WidthInt;
-use egg::Id;
+use egg::{rewrite, Id};
 
 /// Shadow version of our `[crate::ir::Expr]` that abides by the `egg` rules.
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
@@ -23,7 +23,10 @@ impl egg::Language for Expr {
             return false;
         }
         // special comparisons for additional attributes
-        todo!()
+        match (self, other) {
+            (Expr::BVNot(_, w0), Expr::BVNot(_, w1)) => w0 == w1,
+            (_, _) => true,
+        }
     }
 
     fn children(&self) -> &[Id] {
@@ -41,7 +44,59 @@ impl egg::Language for Expr {
     }
 }
 
+impl egg::FromOp for Expr {
+    type Error = ();
+
+    fn from_op(op: &str, children: Vec<Id>) -> Result<Self, Self::Error> {
+        match op {
+            "not" => Ok(Expr::BVNot([children[0]], 1)),
+            _ => Err(()),
+        }
+    }
+}
+
 type ExprGraph<N> = egg::EGraph<Expr, N>;
 
 /// Convert from our internal representation to the shadow version suitable for egg.
-fn to_eclass<N: egg::Analysis<Expr>>(ctx: &ir::Context, e: ir::ExprRef, graph: &mut ExprGraph<N>) {}
+fn to_egg(ctx: &ir::Context, e: ir::ExprRef) -> egg::RecExpr<Expr> {
+    let mut out = egg::RecExpr::default();
+    ir::traversal::bottom_up(ctx, e, |ctx, expr, children| match *expr {
+        ir::Expr::BVSymbol { name, width } => out.add(Expr::BVSymbol { name, width }),
+        ir::Expr::BVNot(e, width) => out.add(Expr::BVNot([children[0]], width)),
+        _ => todo!(),
+    });
+    out
+}
+
+fn basic_rewrites() -> Vec<egg::Rewrite<Expr, ()>> {
+    vec![rewrite!("not-not"; "(not (not ?a))" => "?a")]
+}
+
+fn from_egg(ctx: &mut ir::Context, expr: &egg::RecExpr<Expr>) -> ir::ExprRef {
+    todo!("how can we convert a RecExpr back?")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_not_not() {
+        let mut ctx = ir::Context::default();
+        let a = ctx.bv_symbol("a", 1);
+        let not_not_a = ctx.build(|c| c.not(c.not(a)));
+        let egg_expr_in = to_egg(&ctx, not_not_a);
+        let runner = egg::Runner::default()
+            .with_expr(&egg_expr_in)
+            .run(&basic_rewrites());
+        let root = runner.roots[0];
+        let extractor = egg::Extractor::new(&runner.egraph, egg::AstSize);
+        let (best_cost, egg_expr_out) = extractor.find_best(root);
+
+        // this conversion is not implemented yet, however, if we print out the egg expression,
+        // we see that the result is in fact the expected `a`
+        let simplified = from_egg(&mut ctx, &egg_expr_out);
+        assert_eq!(simplified, a);
+        assert_eq!(best_cost, 1);
+    }
+}

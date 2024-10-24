@@ -8,6 +8,7 @@ mod expr;
 mod serialize;
 mod transform;
 mod transition_system;
+pub mod traversal;
 mod type_check;
 
 pub use analysis::{

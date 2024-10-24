@@ -421,6 +421,7 @@ pub trait ForEachChild<T: Clone> {
             children.push(c.clone());
         });
     }
+    fn num_children(&self) -> usize;
 }
 
 impl ForEachChild<ExprRef> for Expr {
@@ -556,6 +557,46 @@ impl ForEachChild<ExprRef> for Expr {
             }
         }
     }
+
+    fn num_children(&self) -> usize {
+        match self {
+            Expr::BVSymbol { .. } => 0,
+            Expr::BVLiteral(_) => 0,
+            Expr::BVZeroExt { .. } => 1,
+            Expr::BVSignExt { .. } => 1,
+            Expr::BVSlice { .. } => 1,
+            Expr::BVNot(_, _) => 1,
+            Expr::BVNegate(_, _) => 1,
+            Expr::BVEqual(_, _) => 2,
+            Expr::BVImplies(_, _) => 2,
+            Expr::BVGreater(_, _) => 2,
+            Expr::BVGreaterSigned(_, _, _) => 2,
+            Expr::BVGreaterEqual(_, _) => 2,
+            Expr::BVGreaterEqualSigned(_, _, _) => 2,
+            Expr::BVConcat(_, _, _) => 2,
+            Expr::BVAnd(_, _, _) => 2,
+            Expr::BVOr(_, _, _) => 2,
+            Expr::BVXor(_, _, _) => 2,
+            Expr::BVShiftLeft(_, _, _) => 2,
+            Expr::BVArithmeticShiftRight(_, _, _) => 2,
+            Expr::BVShiftRight(_, _, _) => 2,
+            Expr::BVAdd(_, _, _) => 2,
+            Expr::BVMul(_, _, _) => 2,
+            Expr::BVSignedDiv(_, _, _) => 2,
+            Expr::BVUnsignedDiv(_, _, _) => 2,
+            Expr::BVSignedMod(_, _, _) => 2,
+            Expr::BVSignedRem(_, _, _) => 2,
+            Expr::BVUnsignedRem(_, _, _) => 2,
+            Expr::BVSub(_, _, _) => 2,
+            Expr::BVArrayRead { .. } => 2,
+            Expr::BVIte { .. } => 3,
+            Expr::ArraySymbol { .. } => 0,
+            Expr::ArrayConstant { .. } => 1,
+            Expr::ArrayEqual(_, _) => 2,
+            Expr::ArrayStore { .. } => 3,
+            Expr::ArrayIte { .. } => 3,
+        }
+    }
 }
 
 impl ForEachChild<ExprRef> for State {
@@ -566,6 +607,10 @@ impl ForEachChild<ExprRef> for State {
         if let Some(init) = &self.init {
             (visitor)(init);
         }
+    }
+
+    fn num_children(&self) -> usize {
+        self.next.is_some() as usize + self.init.is_some() as usize
     }
 }
 
