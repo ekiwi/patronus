@@ -5,6 +5,7 @@
 
 use crate::expr::*;
 use crate::mc::Witness;
+use crate::mc::act_lit::{ActLitPool, with_act_scope};
 use crate::mc::encoding::{Step, TransitionSystemEncoding, UnrollSmtEncoding};
 use crate::mc::types::{InitValue, ModelCheckResult, Result};
 use crate::mc::utils::{check_assuming, check_assuming_end, get_smt_value};
@@ -38,6 +39,8 @@ pub fn bmc(
     let constraints = sys.constraints.clone();
     let bad_states = sys.bad_states.clone();
 
+    let mut act_lit_pool = ActLitPool::default();
+
     if k_max > 0 && sys.states.is_empty() {
         println!(
             "[warn]: k_max={k_max} is unnecessarily large. System {} has no states.",
@@ -65,6 +68,7 @@ pub fn bmc(
 
         if check_bad_states_individually {
             for expr_ref in bad_states.iter() {
+                // don't need to proxy because bad state signals are effectively Boolean literals
                 let expr = enc.get_signal_at(ctx, *expr_ref, k);
                 let res = check_assuming(ctx, smt_ctx, [expr])?;
 
@@ -77,20 +81,30 @@ pub fn bmc(
                 check_assuming_end(smt_ctx)?;
             }
         } else {
-            let all_bads = bad_states
-                .iter()
-                .map(|expr_ref| enc.get_signal_at(ctx, *expr_ref, k))
-                .collect::<Vec<_>>();
-            let any_bad = all_bads.into_iter().reduce(|a, b| ctx.or(a, b)).unwrap();
-            let res = check_assuming(ctx, smt_ctx, [any_bad])?;
+            let res = with_act_scope(ctx, smt_ctx, |ctx, smt_ctx, scope| {
+                let all_bads = bad_states
+                    .iter()
+                    .map(|expr_ref| enc.get_signal_at(ctx, *expr_ref, k))
+                    .collect::<Vec<_>>();
 
-            // count expression uses
-            let use_counts = count_system_expr_uses(ctx, sys);
-            if res == CheckSatResponse::Sat {
-                let wit = get_witness(sys, ctx, &use_counts, smt_ctx, &enc, k, &bad_states)?;
-                return Ok(ModelCheckResult::Fail(wit));
+                let any_bad = all_bads.into_iter().reduce(|a, b| ctx.or(a, b)).unwrap();
+                let bad_proxy = act_lit_pool.imply(ctx, smt_ctx, scope, any_bad)?;
+
+                let res = check_assuming(ctx, smt_ctx, [bad_proxy])?;
+
+                // count expression uses
+                let use_counts = count_system_expr_uses(ctx, sys);
+                if res == CheckSatResponse::Sat {
+                    let wit = get_witness(sys, ctx, &use_counts, smt_ctx, &enc, k, &bad_states)?;
+                    return Ok(Some(ModelCheckResult::Fail(wit)));
+                }
+                check_assuming_end(smt_ctx)?;
+                Ok(None)
+            })?;
+
+            if let Some(fail) = res {
+                return Ok(fail);
             }
-            check_assuming_end(smt_ctx)?;
         }
 
         // advance
