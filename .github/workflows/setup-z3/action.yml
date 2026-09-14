@@ -12,14 +12,14 @@ runs:
   using: composite
   steps:
     - name: Cache Z3
-      id: cache-z3
+      id: cachez3
       uses: actions/cache@v6
       with:
         key: z3-${{ runner.os }}-${{ inputs.version }}-glibc-${{ inputs.glibc_version }}
         path: /tmp/z3
     - name: Download Z3
       shell: sh
-      if: steps.cache-z3.outputs.cache-hit != 'true'
+      if: steps.cachez3.outputs.cache-hit != 'true'
       run: |
         mkdir /tmp/z3
         cd /tmp/z3
