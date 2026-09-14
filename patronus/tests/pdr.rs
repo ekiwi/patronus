@@ -82,7 +82,6 @@ fn run_pdr_str(
 }
 
 /// Run PDR on a BTOR file and possibly return the result if solver is compatible with options
-/// (e.g. YICES2 cannot be run with UNSAT cores enabled)
 fn run_pdr_file(
     solver: &SmtLibSolver,
     btor_file: &str,
@@ -298,6 +297,20 @@ fn case_quiz4_sat(solver: &SmtLibSolver) {
     }
 }
 
+fn case_dangling(solver: &SmtLibSolver) {
+    let Some((ctx, sys, res)) =
+        run_pdr_file(solver, "../inputs/unittest/dangling.btor2", None, false)
+    else {
+        return;
+    };
+
+    if let ModelCheckResult::Fail(wit) = res {
+        validate_witness(&ctx, &sys, &wit);
+    } else {
+        panic!("test_dangling failed");
+    }
+}
+
 fn case_const_array(solver: &SmtLibSolver) {
     let Some((ctx, sys, res)) = run_pdr_file(
         solver,
@@ -394,6 +407,30 @@ fn case_quiz4_unsat(solver: &SmtLibSolver) {
     assert!(matches!(res, ModelCheckResult::Success));
 }
 
+fn case_simple_mac(solver: &SmtLibSolver) {
+    let Some((_, _, res)) = run_pdr_file(
+        solver,
+        "../inputs/unittest/simple_MAC_no_stall.btor2",
+        None,
+        false,
+    ) else {
+        return;
+    };
+    assert!(matches!(res, ModelCheckResult::Success));
+}
+
+fn case_pipe(solver: &SmtLibSolver) {
+    let Some((_, _, res)) = run_pdr_file(
+        solver,
+        "../inputs/unittest/pipe-no-stall.btor2",
+        None,
+        false,
+    ) else {
+        return;
+    };
+    assert!(matches!(res, ModelCheckResult::Success));
+}
+
 #[cfg(test)]
 mod pdr {
     use super::*;
@@ -454,6 +491,11 @@ mod pdr {
     }
 
     #[test]
+    fn test_dangling() {
+        case_dangling(&solver_from_env());
+    }
+
+    #[test]
     fn test_const_array() {
         case_const_array(&solver_from_env());
     }
@@ -483,7 +525,7 @@ mod pdr {
         case_aman_goel_4bit(&solver_from_env());
     }
 
-    #[ignore = "Need more blocked cube generalization"]
+    #[ignore = "need more blocked cube generalization"]
     #[test]
     fn test_aman_goel_16bit() {
         case_aman_goel_16bit(&solver_from_env());
@@ -502,5 +544,15 @@ mod pdr {
     #[test]
     fn test_quiz4_unsat() {
         case_quiz4_unsat(&solver_from_env());
+    }
+
+    #[test]
+    fn test_simple_mac() {
+        case_simple_mac(&solver_from_env());
+    }
+
+    #[test]
+    fn test_pipe() {
+        case_pipe(&solver_from_env());
     }
 }
