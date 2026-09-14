@@ -18,6 +18,7 @@ runs:
         key: z3-${{ runner.os }}-${{ inputs.version }}-glibc-${{ inputs.glibc_version }}
         path: /tmp/z3
     - name: Download Z3
+      shell: bash
       if: steps.cachez3.outputs.cache-hit != 'true'
       run: |
         mkdir -p /tmp/z3
@@ -27,4 +28,5 @@ runs:
         unzip -q z3.zip
         mv z3-*/* .
     - name: Add Z3 to Path
+      shell: bash
       run: echo "/tmp/z3/bin" >> "$GITHUB_PATH"
