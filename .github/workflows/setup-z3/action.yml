@@ -21,6 +21,7 @@ runs:
       shell: sh
       if: steps.cachez3.outputs.cache-hit != 'true'
       run: |
+        rm -rf /tmp/z3
         mkdir /tmp/z3
         cd /tmp/z3
         wget -q https://github.com/Z3Prover/z3/releases/download/z3-${{ inputs.version }}/z3-${{ inputs.version }}-x64-glibc-${{ inputs.glibc_version }}.zip -O z3.zip
