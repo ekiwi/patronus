@@ -12,21 +12,20 @@ runs:
   using: composite
   steps:
     - name: Cache Z3
-      id: cachez3
-      uses: actions/cache@v6
+      id: cache-z3
+      uses: actions/cache@v5
       with:
         key: z3-${{ runner.os }}-${{ inputs.version }}-glibc-${{ inputs.glibc_version }}
         path: /tmp/z3
     - name: Download Z3
-      shell: bash
-      if: steps.cachez3.outputs.cache-hit != 'true'
+      shell: sh
+      if: ${{ steps.cache-z3.outputs.cache-hit != 'true' }}
       run: |
-        mkdir -p /tmp/z3
+        mkdir /tmp/z3
         cd /tmp/z3
-        rm -r *
         wget -q https://github.com/Z3Prover/z3/releases/download/z3-${{ inputs.version }}/z3-${{ inputs.version }}-x64-glibc-${{ inputs.glibc_version }}.zip -O z3.zip
         unzip -q z3.zip
         mv z3-*/* .
     - name: Add Z3 to Path
-      shell: bash
+      shell: sh
       run: echo "/tmp/z3/bin" >> "$GITHUB_PATH"
