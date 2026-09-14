@@ -82,7 +82,6 @@ fn run_pdr_str(
 }
 
 /// Run PDR on a BTOR file and possibly return the result if solver is compatible with options
-/// (e.g. YICES2 cannot be run with UNSAT cores enabled)
 fn run_pdr_file(
     solver: &SmtLibSolver,
     btor_file: &str,
