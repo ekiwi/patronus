@@ -333,114 +333,40 @@ impl<E: TransitionSystemEncoding> PdrEncodingWrapper<E> {
 // Activation Literal Pool
 // -------------------------------------------------------------------------------------------------
 
-/// Collection of activation literals used in scope
-#[derive(Default)]
-struct ActLitScope {
-    act_lits: Vec<ExprRef>,
-}
-
-impl ActLitScope {
-    /// Permanently disable all activation literals in this scope
-    fn release(&mut self, ctx: &mut Context, smt_ctx: &mut impl SolverContext) -> Result<()> {
-        for lit in self.act_lits.drain(..) {
-            let neg_lit = ctx.not(lit);
-            smt_ctx.assert(ctx, neg_lit)?;
-        }
-        Ok(())
-    }
-}
-
 #[derive(Default)]
 struct ActLitPool {
     /// Activation literal ID tracker
     next_act_id: u64,
-
-    /// Cache mapping from stepped literal to activation literal
-    step_lit_cache: FxHashMap<ExprRef, ExprRef>,
+    /// Cache for global (irrevocable) activation literals.
+    global_act_lit_cache: FxHashMap<ExprRef, ExprRef>,
 }
 
 impl ActLitPool {
-    /// Create a new activation literal
-    fn create(&mut self, ctx: &mut Context, smt_ctx: &mut impl SolverContext) -> Result<ExprRef> {
-        // Intern activation literal and define in solver
-        let lit = ctx.bv_symbol(format!("{ACT_LIT_PREFIX}{}", self.next_act_id).as_str(), 1);
-        smt_ctx.declare_const(ctx, lit)?;
-
-        // Update activation literal counter and return
-        self.next_act_id += 1;
-        Ok(lit)
-    }
-
-    /// Create a temporary activation literal that is coupled with `body` (i.e. `act => body`)
-    /// and registered into `scope`
-    fn imply(
+    /// Create a global, i.e., and irrevocable activation literal for the `expr` and register
+    /// it with the solver
+    fn global_act_lit(
         &mut self,
         ctx: &mut Context,
         smt_ctx: &mut impl SolverContext,
-        scope: &mut ActLitScope,
-        body: ExprRef,
-    ) -> Result<ExprRef> {
-        // If solver supports compound expression assumptions, then activation literals
-        // are not needed
-        if smt_ctx.supports_check_assuming_exprs() {
-            return Ok(body);
-        }
-
-        // Create `act => body` and assert in solver
-        let act = self.create(ctx, smt_ctx)?;
-        let imp = ctx.implies(act, body);
-        smt_ctx.assert(ctx, imp)?;
-
-        // Register activation literal in scope
-        scope.act_lits.push(act);
-        Ok(act)
-    }
-
-    /// Create an activation literal for a stepped cube literal, caching the activation literal
-    /// with the associated stepped cube literal
-    ///
-    /// # Precondition
-    /// `stepped_lit` must be stepped
-    ///
-    /// # Note
-    /// Produced activation literal remains in global solver context. This is sound since
-    /// `act => stepped_lit` is a permanent fact.
-    fn step_lit_act(
-        &mut self,
-        ctx: &mut Context,
-        smt_ctx: &mut impl SolverContext,
-        stepped_lit: ExprRef,
+        expr: ExprRef,
     ) -> Result<ExprRef> {
         // Check cache for activation literal
-        if let Some(act) = self.step_lit_cache.get(&stepped_lit) {
-            return Ok(*act);
+        if let Some(&act) = self.global_act_lit_cache.get(&expr) {
+            Ok(act)
+        } else {
+            // create activation literal
+            let act = ctx.bv_symbol(format!("{ACT_LIT_PREFIX}{}", self.next_act_id).as_str(), 1);
+            self.next_act_id += 1;
+            smt_ctx.declare_const(ctx, act)?;
+
+            // Create `act => stepped_lit` and assert in solver
+            let imp = ctx.implies(act, expr);
+            smt_ctx.assert(ctx, imp)?;
+
+            // update cache
+            self.global_act_lit_cache.insert(expr, act);
+            Ok(act)
         }
-
-        // Create `act => stepped_lit` and assert in solver
-        let act = self.create(ctx, smt_ctx)?;
-        let imp = ctx.implies(act, stepped_lit);
-        smt_ctx.assert(ctx, imp)?;
-
-        // Register stepped literal and its activation literal in cache
-        self.step_lit_cache.insert(stepped_lit, act);
-        Ok(act)
-    }
-}
-
-/// Execute closure with a fresh [`ActLitScope`] and clean up all used activation literals in the end
-fn with_act_scope<S: SolverContext, T>(
-    ctx: &mut Context,
-    smt_ctx: &mut S,
-    f: impl FnOnce(&mut Context, &mut S, &mut ActLitScope) -> Result<T>,
-) -> Result<T> {
-    // Create new activation literal scope, run closure, and clean up used activation literals
-    let mut scope = ActLitScope::default();
-    let res = f(ctx, smt_ctx, &mut scope);
-    let cleanup = scope.release(ctx, smt_ctx);
-
-    match res {
-        Ok(v) => cleanup.map(|()| v), // Return result from closure, noting cleanup errors
-        Err(e) => Err(e),             // Return error produced by closure
     }
 }
 
@@ -573,7 +499,7 @@ impl BasePdr {
             .collect::<Vec<_>>()
             .into_iter()
             .fold(ctx.get_false(), |acc, b| ctx.or(acc, b));
-        let bad_act = pool.step_lit_act(ctx, smt_ctx, bad_from_expr)?;
+        let bad_act = pool.global_act_lit(ctx, smt_ctx, bad_from_expr)?;
 
         // `TO_STEP` constraint activation literal
         let cons_to_expr = sys
@@ -583,12 +509,12 @@ impl BasePdr {
             .collect::<Vec<_>>()
             .into_iter()
             .fold(ctx.get_true(), |acc, c| ctx.and(acc, c));
-        let cons_act = pool.step_lit_act(ctx, smt_ctx, cons_to_expr)?;
+        let cons_act = pool.global_act_lit(ctx, smt_ctx, cons_to_expr)?;
 
         // Initial frame activation literal
         let init_expr = init_cube.to_expr(ctx);
         let init_from_expr = enc.expr_at_step(ctx, init_expr, FROM_STEP);
-        let init_act = pool.step_lit_act(ctx, smt_ctx, init_from_expr)?;
+        let init_act = pool.global_act_lit(ctx, smt_ctx, init_from_expr)?;
 
         // Create infinite frame
         let inf_act = ctx.bv_symbol(format!("{ACT_LIT_PREFIX}inf").as_str(), 1);
@@ -731,7 +657,7 @@ impl BasePdr {
         for lit in rm_lits {
             // Create activation literal implication and add to mapping
             let expr_from = self.enc.expr_at_step(ctx, lit, FROM_STEP);
-            let act = self.pool.step_lit_act(ctx, smt_ctx, expr_from)?;
+            let act = self.pool.global_act_lit(ctx, smt_ctx, expr_from)?;
             lit_map.insert(act, lit);
         }
 
@@ -805,7 +731,7 @@ impl BasePdr {
         for &lit in &cube.cube.literals {
             // Activate `TO_STEP` literal and add to mapping
             let expr_to = self.enc.expr_at_step(ctx, lit, TO_STEP);
-            let act = self.pool.step_lit_act(ctx, smt_ctx, expr_to)?;
+            let act = self.pool.global_act_lit(ctx, smt_ctx, expr_to)?;
             lit_map.insert(act, lit);
         }
 
