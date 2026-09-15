@@ -23,6 +23,19 @@ baa.workspace = true
 rustc-hash.workspace = true
 thiserror.workspace = true
 fst-writer = "0.3.1"
+cranelift = { version = "0.125.4", features = ["jit", "module"], optional = true}
+inventory = {version = "0.3.20", optional = true}
+fixedbitset = {version = "0.5.7", optional = true}
+paste = {version = "1.0.15", optional = true}
+cranelift-reader = {version = "0.125.4", optional = true}
+walkdir = {version = "2.5.0", optional = true}
+delegate = { version = "0.13.4", optional = true }
+
+[features]
+default = ["jit", "inline", "aot-clif"]
+jit = ["dep:cranelift", "dep:inventory", "dep:fixedbitset", "dep:paste"]
+aot-clif = ["dep:cranelift-reader", "dep:walkdir", "dep:delegate"]
+inline = []
 
 [dev-dependencies]
 insta = { version = "1.*", features = ["yaml"] }
