@@ -13,13 +13,12 @@ mod inliner;
 mod runtime;
 mod slot;
 
-use super::*;
-use crate::expr::{self, *};
-use crate::system::*;
 use baa::*;
 use compiler::*;
 use cranelift::module::ModuleError;
 use fixedbitset::FixedBitSet;
+use patronus::expr::{self, *};
+use patronus::system::*;
 use rustc_hash::{FxHashMap, FxHashSet};
 use slot::*;
 use std::cell::{Cell, RefCell};
@@ -414,10 +413,10 @@ fn check_slot_dirtiness(a: SlotDataRef<'_>, b: SlotDataRef<'_>) -> bool {
     }
 }
 
-impl Simulator for JITEngine<'_> {
+impl patronus::sim::Simulator for JITEngine<'_> {
     type SnapshotId = u32;
-    fn init(&mut self, kind: InitKind) {
-        let mut generator = InitValueGenerator::from_kind(kind);
+    fn init(&mut self, kind: patronus::sim::InitKind) {
+        let mut generator = patronus::sim::InitValueGenerator::from_kind(kind);
         for mut data in &mut self.input_state_buffer.ledge {
             let init_value = generator.generate(data.tpe);
             data.reduce(converter::BaaValueSetter(&init_value));

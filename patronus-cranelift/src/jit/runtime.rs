@@ -1,12 +1,12 @@
 // Copyright 2025 Cornell University
 // released under BSD 3-Clause License
 // author: Zihan Li <zl2225@cornell.edu>
-use crate::expr::*;
 use baa::Word;
 use cranelift::codegen::ir::{AbiParam, FuncRef, Function, types};
 use cranelift::jit::{JITBuilder, JITModule};
 use cranelift::module::{Linkage, Module};
 use cranelift::prelude::*;
+use patronus::expr::*;
 use rustc_hash::FxHashMap;
 use trampoline::*;
 
@@ -184,13 +184,13 @@ fn bv_operation_name_mangle(sym: &str) -> String {
 
 macro_rules! reinterp_array_ptr_by_data_width {
     ($ptr: ident, $data_width: expr, $op: tt) => {
-        $crate::sim::jit::runtime::reinterp_array_ptr_by_data_width!(
+        $crate::jit::runtime::reinterp_array_ptr_by_data_width!(
             [$ptr], $data_width, $op
         )
     };
 
     ([$($ptr: ident),+], $data_width: expr, $op: tt) => {
-        $crate::sim::jit::runtime::reinterp_array_ptr_by_data_width!(
+        $crate::jit::runtime::reinterp_array_ptr_by_data_width!(
             @dispatch [($($ptr),+)], $data_width,
             [1..=8 => i8, 9..=16 => i16, 17..=32 => i32, 33..=64 => i64],
             $op
@@ -201,7 +201,7 @@ macro_rules! reinterp_array_ptr_by_data_width {
         match $data_width {
            $(
                 $pat => {
-                    $crate::sim::jit::runtime::reinterp_array_ptr_by_data_width!(@cast [$ptr], $primitive, $op)
+                    $crate::jit::runtime::reinterp_array_ptr_by_data_width!(@cast [$ptr], $primitive, $op)
                 },
            )+
            _ => unreachable!()
@@ -392,7 +392,7 @@ pub(super) unsafe fn bv_words_slice_from_raw_parts_mut<'a>(
 macro_rules! bv_value_ref {
     ($ptr: expr, $width: expr) => {
         baa::BitVecValueRef::new(
-            $crate::sim::jit::runtime::bv_words_slice_from_raw_parts($ptr, $width as u64),
+            $crate::jit::runtime::bv_words_slice_from_raw_parts($ptr, $width as u64),
             $width as baa::WidthInt,
         )
     };
@@ -408,7 +408,7 @@ macro_rules! bv_value_mut {
     ($ptr: expr, $width: expr) => {
         baa::BitVecValueMutRef::new(
             $width as baa::WidthInt,
-            $crate::sim::jit::runtime::bv_words_slice_from_raw_parts_mut($ptr, $width as u64),
+            $crate::jit::runtime::bv_words_slice_from_raw_parts_mut($ptr, $width as u64),
         )
     };
 }

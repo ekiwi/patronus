@@ -1,10 +1,11 @@
 // Copyright 2025 Cornell University
 // released under BSD 3-Clause License
 // author: Zihan Li <zl2225@cornell.edu>
-use crate::expr::{self, *};
+
 use baa::{BitVecOps, BitVecValueRef};
 use cranelift::codegen::ir::FuncRef;
 use cranelift::prelude::*;
+use patronus::expr::{self, *};
 
 use super::compiler::{BVCodeGenVTable, CodeGenContext, TaggedValue};
 

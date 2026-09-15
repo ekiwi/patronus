@@ -6,11 +6,5 @@ mod interpreter;
 
 mod wave;
 
-#[cfg(feature = "jit")]
-mod jit;
-
 pub use interface::*;
 pub use interpreter::*;
-
-#[cfg(feature = "jit")]
-pub use jit::*;

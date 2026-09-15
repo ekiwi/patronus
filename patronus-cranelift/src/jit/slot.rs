@@ -2,8 +2,8 @@
 // released under BSD 3-Clause License
 // author: Zihan Li <zl2225@cornell.edu>
 use super::runtime;
-use crate::expr::{self, *};
-use crate::system::*;
+use patronus::expr::{self, *};
+use patronus::system::*;
 use rustc_hash::FxHashMap;
 
 #[repr(transparent)]

@@ -2,8 +2,9 @@ use patronus::btor2;
 use patronus::expr::Context;
 use patronus::sim::Simulator;
 
-#[cfg(feature = "jit")]
-use patronus::sim::{InitKind, JITEngine};
+use patronus::sim::InitKind;
+
+use patronus_cranelift::JITEngine;
 
 const COUNT_2: &str = r#"
 1 sort bitvec 3
@@ -19,7 +20,6 @@ const COUNT_2: &str = r#"
 11 bad 10
 "#;
 
-#[cfg(feature = "jit")]
 #[test]
 fn jit_count_2() {
     let mut ctx = Context::default();
@@ -66,7 +66,6 @@ fn jit_count_2() {
     assert_eq!(sim.get(counter_state).try_into_u64().unwrap(), 7);
 }
 
-#[cfg(feature = "jit")]
 #[test]
 fn jit_delay() {
     let (ctx, sys) = btor2::parse_file("../inputs/unittest/delay.btor").unwrap();
@@ -90,7 +89,6 @@ fn jit_delay() {
     assert_eq!(sim.get(reg1).try_into_u64().unwrap(), 1, "reg1@2");
 }
 
-#[cfg(feature = "jit")]
 #[test]
 fn jit_swap() {
     let (ctx, sys) = btor2::parse_file("../inputs/unittest/swap.btor").unwrap();

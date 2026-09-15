@@ -111,7 +111,7 @@ impl Context {
         index.into()
     }
 
-    pub(crate) fn num_exprs(&self) -> usize {
+    pub fn num_exprs(&self) -> usize {
         self.exprs.len()
     }
 

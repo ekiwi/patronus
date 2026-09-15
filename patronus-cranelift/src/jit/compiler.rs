@@ -6,8 +6,8 @@ use super::expr_graph::*;
 use super::heap::*;
 use super::slot::{ExprLedge, StateBuffer};
 use super::{JITResult, THIN_BV_MAX_WIDTH, runtime};
-use crate::expr::{self, *};
-use crate::system::*;
+use patronus::expr::{self, *};
+use patronus::system::*;
 
 use baa::{BitVecValueRef, Word};
 use cranelift::codegen::ir;
@@ -442,7 +442,7 @@ impl CodeGenContext<'_, '_, '_> {
                 if array_references[array].iter().any(|&other| {
                     debug_assert!(!independent_expressions(&bottom_up_expr_graph, e, other));
                     !(matches!(self.expr_ctx[other], Expr::ArrayIte { .. })
-                        && other.is_parent_of(&bottom_up_expr_graph, e))
+                        && is_parent_of(&other, &bottom_up_expr_graph, e))
                 }) {
                     let cow_slot = self.reserve_intermediate_array_cache_slot(
                         expr.get_array_type(self.expr_ctx).unwrap(),
