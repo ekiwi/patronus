@@ -2,14 +2,10 @@
 // released under BSD 3-Clause License
 // author: Zihan Li <zl2225@cornell.edu>
 mod bv_codegen;
-#[cfg(feature = "aot-clif")]
-mod clif_loader;
 mod compiler;
 mod converter;
 mod expr_graph;
 mod heap;
-#[cfg(feature = "inline")]
-mod inliner;
 mod runtime;
 mod slot;
 

@@ -21,8 +21,6 @@ pub(super) struct JITCompiler {
     pub(super) sealed_heap_resources: Vec<ManagedHeapResource>,
     pub(super) active_heap_resource: ManagedHeapResource,
     pub(super) constant: ManagedHeapResource,
-    #[cfg(feature = "aot-clif")]
-    aot_symtab: Option<super::clif_loader::SymTab>,
 }
 
 #[derive(Default)]
@@ -71,39 +69,12 @@ impl JITCompiler {
         )
         .unwrap_or_else(|err| panic!("fail to launch jit instance, due to: {err:?}"));
         runtime::load_runtime_lib(&mut builder);
-        #[cfg(feature = "aot-clif")]
-        {
-            super::clif_loader::register_symbol_lookup_fallback(&mut builder);
-            let mut module = JITModule::new(builder);
-            const EXPECTED_AOT_SYMBOLS: &[&str] = &["slice", "concat"];
-            let mut clif_ctx = module.make_context();
-            let aot_symtab =
-                super::clif_loader::register_precompiled_clif_function(&mut module, &mut clif_ctx);
-            for &sym in EXPECTED_AOT_SYMBOLS {
-                if aot_symtab
-                    .as_ref()
-                    .is_none_or(|aot_symtab| !aot_symtab.contains_key(sym))
-                {
-                    eprintln!("expected symbol `{sym}` not found in provided clif files");
-                }
-            }
-            Self {
-                module,
-                sealed_heap_resources: vec![],
-                active_heap_resource: Default::default(),
-                constant: Default::default(),
-                aot_symtab,
-            }
-        }
 
-        #[cfg(not(feature = "aot-clif"))]
-        {
-            Self {
-                module: JITModule::new(builder),
-                sealed_heap_resources: vec![],
-                active_heap_resource: Default::default(),
-                constant: Default::default(),
-            }
+        Self {
+            module: JITModule::new(builder),
+            sealed_heap_resources: vec![],
+            active_heap_resource: Default::default(),
+            constant: Default::default(),
         }
     }
 
@@ -232,21 +203,6 @@ impl JITCompiler {
 
         let runtime_lib =
             runtime::import_runtime_lib_to_func_scope(&mut self.module, &mut cranelift_ctx.func);
-        #[cfg(feature = "aot-clif")]
-        let aot_lib = {
-            self.aot_symtab.as_ref().map(|aot_symtab| {
-                aot_symtab
-                    .iter()
-                    .map(|(sym, loaded_func)| {
-                        (
-                            sym.to_string(),
-                            self.module
-                                .declare_func_in_func(loaded_func.id, &mut cranelift_ctx.func),
-                        )
-                    })
-                    .collect::<FxHashMap<_, _>>()
-            })
-        };
 
         let mut fn_builder_ctx = FunctionBuilderContext::new();
         let mut fn_builder = FunctionBuilder::new(&mut cranelift_ctx.func, &mut fn_builder_ctx);
@@ -268,52 +224,12 @@ impl JITCompiler {
             int: types::I64,
             long_live_cache_read_holes: vec![],
             consume_input,
-            #[cfg(feature = "aot-clif")]
-            aot_lib,
         };
         codegen_ctx.codegen(codegen_epilogue);
 
         let function_id = self
             .module
             .declare_anonymous_function(&cranelift_ctx.func.signature)?;
-        #[cfg(feature = "inline")]
-        {
-            let policy = &|func_ref, caller: &ir::function::Function| {
-                caller
-                    .stencil
-                    .dfg
-                    .ext_funcs
-                    .get(func_ref)
-                    .and_then(|ext_data| {
-                        let ir::ExternalName::User(ext_user_ref) = ext_data.name else {
-                            return None;
-                        };
-                        let ext_user_name = caller.params.user_named_funcs().get(ext_user_ref)?;
-                        let func_id = cranelift::module::FuncId::from_u32(ext_user_name.index);
-                        // TODO: add search by `FuncId` support
-                        let (sym, loaded_func) =
-                            self.aot_symtab
-                                .as_ref()?
-                                .iter()
-                                .find_map(|(sym, loaded_func)| {
-                                    if loaded_func.id == func_id {
-                                        Some((sym, loaded_func))
-                                    } else {
-                                        None
-                                    }
-                                })?;
-                        eprintln!("inline candidate `{sym}`");
-                        debug_assert_eq!(ext_user_name.namespace, 0);
-                        Some(&loaded_func.content)
-                    })
-            };
-            if cranelift_ctx
-                .inline(super::inliner::JITInliner::new(policy))
-                .is_err()
-            {
-                eprintln!("inline failure!");
-            }
-        }
         self.module
             .define_function(function_id, &mut cranelift_ctx)?;
         self.module.clear_context(&mut cranelift_ctx);
@@ -390,8 +306,6 @@ pub(super) struct CodeGenContext<'expr, 'ctx, 'engine> {
     /// These replacement operations are done after codegen, when the number of long lived cache are determined.
     long_live_cache_read_holes: Vec<(Value, expr::Type)>,
     consume_input: bool,
-    #[cfg(feature = "aot-clif")]
-    pub(super) aot_lib: Option<FxHashMap<String, ir::FuncRef>>,
 }
 
 impl CodeGenContext<'_, '_, '_> {
@@ -618,11 +532,6 @@ impl TaggedValue {
         }
     }
 
-    #[cfg(feature = "aot-clif")]
-    pub(super) fn bv_num_words(&self) -> u32 {
-        self.expect_bv_type().div_ceil(baa::Word::BITS)
-    }
-
     pub(super) fn tag(value: Value, data_type: expr::Type) -> Self {
         Self { value, data_type }
     }
@@ -783,13 +692,6 @@ impl CodeGenContext<'_, '_, '_> {
             .call(self.runtime_lib.copy_from_bv, &[*dst, *src, width]);
     }
 
-    #[cfg(feature = "aot-clif")]
-    pub(super) fn aot_func_ref(&self, symbol: impl AsRef<str>) -> Option<ir::FuncRef> {
-        self.aot_lib
-            .as_ref()
-            .and_then(|aot_lib| aot_lib.get(symbol.as_ref()).copied())
-    }
-
     fn reserve_cloned_intermediate_cache_slot(&mut self, src: TaggedValue) -> TaggedValue {
         match src.data_type {
             expr::Type::Array(tpe) => {
@@ -918,17 +820,7 @@ impl CodeGenContext<'_, '_, '_> {
         let width = expr.get_bv_type(self.expr_ctx).unwrap();
         let vtable: &dyn BVCodeGenVTable = match width {
             0..=64 => &super::bv_codegen::BVWord::new(width),
-            _ => {
-                #[cfg(feature = "aot-clif")]
-                {
-                    &super::bv_codegen::BVIndirectAOT::new(width)
-                }
-
-                #[cfg(not(feature = "aot-clif"))]
-                {
-                    &super::bv_codegen::BVIndirect::new(width)
-                }
-            }
+            _ => &super::bv_codegen::BVIndirect::new(width),
         };
         let args: Vec<_> = args
             .iter()
